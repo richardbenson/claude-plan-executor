@@ -5,7 +5,13 @@
       "Bash(bun test *)",
       "Bash(bun run typecheck *)",
       "Bash(rtk git add *)",
-      "Bash(rtk git commit -m ' *)"
+      "Bash(rtk git commit -m ' *)",
+      "Bash(rtk grep *)",
+      "Bash(rtk ls *)",
+      "Bash(bun run *)",
+      "Bash(./cpe --help)",
+      "Bash(bun --version)",
+      "Bash(bun build *)"
     ]
   }
 }
