@@ -1,1 +1,6 @@
 discovery/probe-output/*
+node_modules/
+dist/
+cpe
+*.log
+.env
