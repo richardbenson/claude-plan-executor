@@ -4,7 +4,7 @@
 |---|---|---|---|---|---|---|---|
 | 01 | Project skeleton + tooling | complete | feature/claude-plan-executor-phase-1 | — | 2026-05-19 | 2026-05-19 | |
 | 02 | Embedded prompts | complete | feature/claude-plan-executor-phase-2 | 01 | 2026-05-19 | 2026-05-19 | |
-| 03 | Types + state taxonomy + storage | not-started | feature/claude-plan-executor-phase-3 | 02 | — | — | |
+| 03 | Types + state taxonomy + storage | complete | feature/claude-plan-executor-phase-3 | 02 | 2026-05-19 | 2026-05-19 | |
 | 04 | Worktree management + per-repo config | not-started | feature/claude-plan-executor-phase-4 | 03 | — | — | |
 | 05 | CLI parsing + non-TUI commands | not-started | feature/claude-plan-executor-phase-5 | 04 | — | — | |
 | 06 | Session runner + rate-limit handling | not-started | feature/claude-plan-executor-phase-6 | 05 | — | — | |
