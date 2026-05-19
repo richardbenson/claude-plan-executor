@@ -22,3 +22,8 @@ export const PHASE_RESULT_SCHEMA_PATH: string = resolve(
   dir,
   "phase-result-schema.json"
 );
+
+export const BOOTSTRAP_DETECT_SCHEMA_PATH: string = resolve(
+  dir,
+  "bootstrap-detect-schema.json"
+);
