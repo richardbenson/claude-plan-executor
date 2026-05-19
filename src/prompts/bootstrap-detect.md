@@ -13,10 +13,14 @@ Read these files if they exist (use the Read tool):
 Also check one directory deep:
 - Any directory at the repo root that contains its own README.md, CLAUDE.md, or QUICK_START.md
 
-## Step 2 — Read package manifests
+## Step 2 — Read package manifests and monorepo config
 
 Read these files if they exist at the repo root:
-- package.json
+- package.json (also check the `workspaces` field — presence means npm/yarn workspaces)
+- pnpm-workspace.yaml (pnpm workspaces)
+- nx.json (Nx monorepo)
+- turbo.json (Turborepo)
+- lerna.json (Lerna)
 - bun.lockb (check existence only)
 - yarn.lock (check existence only)
 - pnpm-lock.yaml (check existence only)
@@ -36,6 +40,12 @@ Based on what you found, propose an ordered array of shell commands to set up a 
 - Be a complete, self-contained shell command
 - Be safe to run in a fresh checkout (idempotent where possible)
 - Be ordered so later commands can depend on earlier ones completing
+
+**Monorepo tools**: if you detected a monorepo tool, use its conventions:
+- npm/yarn/pnpm/bun workspaces: a single install at the root handles all packages — do not add per-package installs
+- Nx: `npm install` (or pnpm/yarn) at root is sufficient for deps; add `npx nx run-many --target=build` only if native addons or generated code are evident
+- Turborepo: root install is sufficient; add `npx turbo build` only if a build step is clearly required before the worktree is usable
+- Lerna (v7+): root `npm install` handles bootstrap; for older Lerna, `npx lerna bootstrap`
 
 Examples of typical bootstrap commands:
 - `npm install` / `pnpm install` / `bun install` / `yarn install`
