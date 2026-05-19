@@ -1,0 +1,1 @@
+reply with the single word PONG and nothing else
