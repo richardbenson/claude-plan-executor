@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(bun install *)"
+      "Bash(bun install *)",
+      "Bash(bun test *)",
+      "Bash(bun run typecheck *)",
+      "Bash(rtk git add *)",
+      "Bash(rtk git commit -m ' *)"
     ]
   }
 }
