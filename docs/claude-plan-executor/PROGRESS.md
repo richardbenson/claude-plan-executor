@@ -2,7 +2,7 @@
 
 | # | Title | Status | Branch | Depends on | Started | Completed | Notes |
 |---|---|---|---|---|---|---|---|
-| 01 | Project skeleton + tooling | not-started | feature/claude-plan-executor-phase-1 | — | — | — | |
+| 01 | Project skeleton + tooling | complete | feature/claude-plan-executor-phase-1 | — | 2026-05-19 | 2026-05-19 | |
 | 02 | Embedded prompts | not-started | feature/claude-plan-executor-phase-2 | 01 | — | — | |
 | 03 | Types + state taxonomy + storage | not-started | feature/claude-plan-executor-phase-3 | 02 | — | — | |
 | 04 | Worktree management + per-repo config | not-started | feature/claude-plan-executor-phase-4 | 03 | — | — | |
