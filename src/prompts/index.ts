@@ -1,29 +1,41 @@
-import { resolve } from "node:path";
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
-const dir = import.meta.dir;
+// @ts-expect-error — Bun text import (embedded into compiled binary)
+import _planbot from './planbot.md' with { type: 'text' };
+// @ts-expect-error — Bun text import
+import _summarise from './summarise.md' with { type: 'text' };
+// @ts-expect-error — Bun text import
+import _bootstrapDetect from './bootstrap-detect.md' with { type: 'text' };
+import _phaseResultSchemaObj from './phase-result-schema.json';
+import _bootstrapDetectSchemaObj from './bootstrap-detect-schema.json';
 
-export const PLANBOT_PROMPT: string = await Bun.file(
-  resolve(dir, "planbot.md")
-).text();
+export const PLANBOT_PROMPT: string = _planbot as unknown as string;
+export const SUMMARISE_PROMPT: string = _summarise as unknown as string;
+export const BOOTSTRAP_DETECT_PROMPT: string = _bootstrapDetect as unknown as string;
+export const PHASE_RESULT_SCHEMA: string = JSON.stringify(_phaseResultSchemaObj, null, 2);
 
-export const SUMMARISE_PROMPT: string = await Bun.file(
-  resolve(dir, "summarise.md")
-).text();
+function writeTempSchema(name: string, content: string): string {
+  const dir = path.join(os.tmpdir(), 'cpe-schemas');
+  fs.mkdirSync(dir, { recursive: true });
+  const p = path.join(dir, name);
+  if (!fs.existsSync(p)) {
+    fs.writeFileSync(p, content);
+  }
+  return p;
+}
 
-export const BOOTSTRAP_DETECT_PROMPT: string = await Bun.file(
-  resolve(dir, "bootstrap-detect.md")
-).text();
+export function getPhaseResultSchemaPath(): string {
+  return writeTempSchema('phase-result-schema.json', PHASE_RESULT_SCHEMA);
+}
 
-export const PHASE_RESULT_SCHEMA: string = await Bun.file(
-  resolve(dir, "phase-result-schema.json")
-).text();
+export function getBootstrapDetectSchemaPath(): string {
+  return writeTempSchema(
+    'bootstrap-detect-schema.json',
+    JSON.stringify(_bootstrapDetectSchemaObj, null, 2),
+  );
+}
 
-export const PHASE_RESULT_SCHEMA_PATH: string = resolve(
-  dir,
-  "phase-result-schema.json"
-);
-
-export const BOOTSTRAP_DETECT_SCHEMA_PATH: string = resolve(
-  dir,
-  "bootstrap-detect-schema.json"
-);
+export const PHASE_RESULT_SCHEMA_PATH: string = getPhaseResultSchemaPath();
+export const BOOTSTRAP_DETECT_SCHEMA_PATH: string = getBootstrapDetectSchemaPath();

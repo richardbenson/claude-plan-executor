@@ -6,7 +6,7 @@
 | 02 | Embedded prompts | complete | feature/claude-plan-executor-phase-2 | 01 | 2026-05-19 | 2026-05-19 | |
 | 03 | Types + state taxonomy + storage | complete | feature/claude-plan-executor-phase-3 | 02 | 2026-05-19 | 2026-05-19 | |
 | 04 | Worktree management + per-repo config | complete | feature/claude-plan-executor-phase-4 | 03 | 2026-05-19 | 2026-05-19 | |
-| 05 | CLI parsing + non-TUI commands | not-started | feature/claude-plan-executor-phase-5 | 04 | — | — | |
+| 05 | CLI parsing + non-TUI commands | complete | feature/claude-plan-executor-phase-5 | 04 | 2026-05-19 | 2026-05-19 | |
 | 06 | Session runner + rate-limit handling | not-started | feature/claude-plan-executor-phase-6 | 05 | — | — | |
 | 07 | Live observability + event bus | not-started | feature/claude-plan-executor-phase-7 | 06 | — | — | |
 | 08 | Phase execution loop + VCS + finalisation | not-started | feature/claude-plan-executor-phase-8 | 07 | — | — | |
