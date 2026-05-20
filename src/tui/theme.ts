@@ -1,0 +1,22 @@
+export const bg = '#1a1b26';
+export const bgFloat = '#1f2335';
+export const bgHi = '#292e42';
+export const border = '#3b4261';
+export const borderHi = '#414868';
+export const dim = '#565f89';
+export const dim2 = '#737aa2';
+export const fgMute = '#9aa5ce';
+export const fgDark = '#a9b1d6';
+export const fg = '#c0caf5';
+export const blue = '#7aa2f7';
+export const cyan = '#7dcfff';
+export const cyan2 = '#2ac3de';
+export const teal = '#73daca';
+export const green = '#9ece6a';
+export const green2 = '#41a6b5';
+export const yellow = '#e0af68';
+export const orange = '#ff9e64';
+export const red = '#f7768e';
+export const magenta = '#bb9af7';
+
+export type Colors = typeof import('./theme.js');
