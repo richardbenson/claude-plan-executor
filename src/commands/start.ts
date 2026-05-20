@@ -65,7 +65,7 @@ export async function runQueueProcessor(config: AppConfig, bus: ActivityBus): Pr
 
 export async function startCommand(): Promise<void> {
   const config = readConfig();
-  const { unmount } = render(React.createElement(App, { config }));
+  const { unmount } = render(React.createElement(App, { config }), { incrementalRendering: true });
   try {
     await runQueueProcessor(config, activityBus);
   } finally {

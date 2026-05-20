@@ -17,7 +17,8 @@
       "Bash(rtk git remote get-url *)",
       "Bash(rtk git status *)",
       "Bash(rtk gh pr create *)",
-      "Bash(rtk git show *)"
+      "Bash(rtk git show *)",
+      "Bash(npm view *)"
     ]
   }
 }
