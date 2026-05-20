@@ -14,8 +14,8 @@
       "Bash(bun build *)",
       "Bash(rtk git log *)",
       "Bash(rtk git diff *)",
-      "Bash(git remote get-url *)",
-      "Bash(git status *)",
+      "Bash(rtk git remote get-url *)",
+      "Bash(rtk git status *)",
       "Bash(rtk gh pr create *)"
     ]
   }
