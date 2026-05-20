@@ -1,7 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
-import { BOOTSTRAP_DETECT_SCHEMA_PATH, BOOTSTRAP_DETECT_PROMPT } from '../prompts/index.js';
+import { BOOTSTRAP_DETECT_SCHEMA, BOOTSTRAP_DETECT_PROMPT } from '../prompts/index.js';
 
 export const REPO_CONFIG_FILENAME = 'cpe.config.json';
 
@@ -66,9 +65,9 @@ export async function runBootstrap(
   return { success: true };
 }
 
-async function detectBootstrap(repoPath: string): Promise<BootstrapDetectResult> {
+export async function detectBootstrap(repoPath: string): Promise<BootstrapDetectResult> {
   const proc = Bun.spawn(
-    ['claude', '-p', '--output-format=json', '--json-schema', BOOTSTRAP_DETECT_SCHEMA_PATH],
+    ['claude', '-p', '--output-format=json', '--json-schema', BOOTSTRAP_DETECT_SCHEMA],
     {
       cwd: repoPath,
       stdin: new TextEncoder().encode(BOOTSTRAP_DETECT_PROMPT),
@@ -80,17 +79,20 @@ async function detectBootstrap(repoPath: string): Promise<BootstrapDetectResult>
   const output = await new Response(proc.stdout).text();
   await proc.exited;
 
-  return JSON.parse(output) as BootstrapDetectResult;
+  const envelope = JSON.parse(output) as { structured_output: BootstrapDetectResult };
+  return envelope.structured_output;
 }
 
-function readChar(): string {
-  // Bun doesn't have a built-in single-char read; read a line and take the first char
-  const buf = Buffer.alloc(1);
-  // @ts-expect-error — Bun exposes readSync on fd 0
-  Bun.stdin.fd !== undefined
-    ? fs.readSync(0, buf, 0, 1, null)
-    : fs.readSync(process.stdin.fd, buf, 0, 1, null);
-  return buf.toString('utf8').trim();
+function readLine(): string {
+  const buf = Buffer.alloc(1024);
+  let total = 0;
+  while (true) {
+    const n = fs.readSync(0, buf, total, 1, null);
+    if (n === 0) break;
+    if (buf[total] === 0x0a) break; // newline consumed, not included
+    total += n;
+  }
+  return buf.slice(0, total).toString('utf8').trim();
 }
 
 function openInEditor(filePath: string): void {
@@ -118,7 +120,7 @@ export async function ensureRepoConfig(repoPath: string, giteaHost?: string): Pr
   process.stdout.write('  3. Skip — I don\'t need a bootstrap step\n');
   process.stdout.write('Choice [1/2/3]: ');
 
-  const choice = readChar();
+  const choice = readLine();
 
   if (choice === '1') {
     process.stdout.write('\nDetecting bootstrap commands...\n');
@@ -139,22 +141,15 @@ export async function ensureRepoConfig(repoPath: string, giteaHost?: string): Pr
       result.blockers.forEach(b => process.stdout.write(`  - ${b}\n`));
     }
 
-    process.stdout.write('\nAccept? [Y/edit/n]: ');
-    const answer = readChar();
+    process.stdout.write('\nSave? [Y/n]: ');
+    const answer = readLine();
 
     if (answer === 'n' || answer === 'N') {
       return stubAndReturn(repoPath);
-    } else if (answer === 'e') {
-      const config: RepoConfig = { bootstrap: result.commands };
-      const tmpPath = path.join(os.tmpdir(), 'cpe-bootstrap-edit.json');
-      fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2) + '\n');
-      openInEditor(tmpPath);
-      const edited = JSON.parse(fs.readFileSync(tmpPath, 'utf8')) as RepoConfig;
-      writeRepoConfig(repoPath, edited);
-      return edited;
     } else {
       const config: RepoConfig = { bootstrap: result.commands };
       writeRepoConfig(repoPath, config);
+      process.stdout.write(`Config written to ${path.join(repoPath, REPO_CONFIG_FILENAME)}\n`);
       return config;
     }
   } else if (choice === '2') {

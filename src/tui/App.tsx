@@ -2,13 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput, useStdout } from 'ink';
 import { Header } from './components/Header.js';
 import { Watch } from './Watch.js';
+import { Manage } from './Manage.js';
+import { SubprocessContext } from './SubprocessContext.js';
 import { activityBus } from '../events/bus.js';
-import { yellow, dim2 } from './theme.js';
+import { yellow } from './theme.js';
 import type { AppConfig } from '../types/meta.js';
 import type { ActivityEvent } from '../events/types.js';
 
 interface AppProps {
   config: AppConfig;
+  onInteractiveSubprocess?: (cmd: string[]) => void;
 }
 
 function useStdoutDimensions(): { columns: number; rows: number } {
@@ -30,21 +33,13 @@ function useStdoutDimensions(): { columns: number; rows: number } {
   return dimensions;
 }
 
-function Manage({ columns, rows }: { columns: number; rows: number }): React.ReactElement {
-  return (
-    <Box width={columns} height={rows - 1}>
-      <Text color={dim2}> Manage mode — coming in Phase 12 </Text>
-    </Box>
-  );
-}
-
 function QuitConfirmBar(): React.ReactElement {
   return (
     <Text color={yellow}> Really quit? Session is active. [y] quit  [n] cancel </Text>
   );
 }
 
-export function App({ config: _config }: AppProps): React.ReactElement {
+export function App({ config: _config, onInteractiveSubprocess }: AppProps): React.ReactElement {
   const { columns, rows } = useStdoutDimensions();
   const [mode, setMode] = useState<'watch' | 'manage'>('watch');
   const [sessionActive, setSessionActive] = useState(false);
@@ -83,16 +78,22 @@ export function App({ config: _config }: AppProps): React.ReactElement {
   const recentPhaseEvent = [...events].reverse().find(e => e.kind === 'phase');
   const queueStatusText = sessionActive || recentPhaseEvent ? 'queue running' : 'queue idle';
 
+  const subprocessContextValue = {
+    runInteractive: onInteractiveSubprocess ?? (() => {}),
+  };
+
   return (
-    <Box flexDirection="column" width={columns} height={rows}>
-      <Header
-        mode={mode.toUpperCase() as 'WATCH' | 'MANAGE'}
-        statusText={queueStatusText}
-      />
-      {showQuitConfirm && <QuitConfirmBar />}
-      {mode === 'watch'
-        ? <Watch columns={columns} rows={rows} />
-        : <Manage columns={columns} rows={rows} />}
-    </Box>
+    <SubprocessContext.Provider value={subprocessContextValue}>
+      <Box flexDirection="column" width={columns} height={rows}>
+        <Header
+          mode={mode.toUpperCase() as 'WATCH' | 'MANAGE'}
+          statusText={queueStatusText}
+        />
+        {showQuitConfirm && <QuitConfirmBar />}
+        {mode === 'watch'
+          ? <Watch columns={columns} rows={rows} />
+          : <Manage columns={columns} rows={rows} />}
+      </Box>
+    </SubprocessContext.Provider>
   );
 }

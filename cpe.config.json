@@ -1,0 +1,6 @@
+{
+  "bootstrap": [
+    "bun install",
+    "bun run build"
+  ]
+}

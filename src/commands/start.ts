@@ -65,10 +65,34 @@ export async function runQueueProcessor(config: AppConfig, bus: ActivityBus): Pr
 
 export async function startCommand(): Promise<void> {
   const config = readConfig();
-  const { unmount } = render(React.createElement(App, { config }), { incrementalRendering: true });
-  try {
-    await runQueueProcessor(config, activityBus);
-  } finally {
-    unmount();
+
+  // Queue processor runs independently; TUI can restart around it
+  runQueueProcessor(config, activityBus).catch(() => {});
+
+  while (true) {
+    let interactiveCmd: string[] | null = null;
+
+    const { unmount, waitUntilExit } = render(
+      React.createElement(App, {
+        config,
+        onInteractiveSubprocess: (cmd: string[]) => {
+          interactiveCmd = cmd;
+          unmount();
+        },
+      }),
+      { incrementalRendering: true },
+    );
+
+    await waitUntilExit();
+
+    if (!interactiveCmd) break; // user quit normally (process.exit or q)
+
+    // Hand the terminal to the subprocess, then loop back to re-render TUI
+    const proc = Bun.spawn(interactiveCmd, {
+      stdout: 'inherit',
+      stderr: 'inherit',
+      stdin: 'inherit',
+    });
+    await proc.exited;
   }
 }

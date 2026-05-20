@@ -14,7 +14,8 @@ import _bootstrapDetectSchemaObj from './bootstrap-detect-schema.json';
 export const PLANBOT_PROMPT: string = _planbot as unknown as string;
 export const SUMMARISE_PROMPT: string = _summarise as unknown as string;
 export const BOOTSTRAP_DETECT_PROMPT: string = _bootstrapDetect as unknown as string;
-export const PHASE_RESULT_SCHEMA: string = JSON.stringify(_phaseResultSchemaObj, null, 2);
+export const PHASE_RESULT_SCHEMA: string = JSON.stringify(_phaseResultSchemaObj);
+export const BOOTSTRAP_DETECT_SCHEMA: string = JSON.stringify(_bootstrapDetectSchemaObj);
 
 function writeTempSchema(name: string, content: string): string {
   const dir = path.join(os.tmpdir(), 'cpe-schemas');
