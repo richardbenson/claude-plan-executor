@@ -3,7 +3,7 @@ import { Box, Text } from 'ink';
 import * as path from 'path';
 import figlet from 'figlet';
 import { StateChip } from './StateChip.js';
-import { yellow, magenta, dim, dim2, fg, fgDark, border } from '../theme.js';
+import { yellow, magenta, dim, dim2, fg, fgDark } from '../theme.js';
 import type { QueueState } from '../hooks/useQueueState.js';
 
 interface Props {
@@ -11,15 +11,6 @@ interface Props {
   queueState: QueueState;
   columns: number;
   rows: number;
-}
-
-function useNow(): Date {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
-  return now;
 }
 
 function formatCountdownLabel(ms: number): string {
@@ -61,7 +52,12 @@ function UserPausedHero({ queueState }: { queueState: QueueState }): React.React
 }
 
 function LimitPausedFull({ queueState, columns }: { queueState: QueueState; columns: number }): React.ReactElement {
-  const now = useNow();
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
   const msUntil = queueState.limitResumeAt
     ? Math.max(0, queueState.limitResumeAt.getTime() - now.getTime())
     : 0;

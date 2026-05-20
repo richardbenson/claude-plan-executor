@@ -24,15 +24,6 @@ function formatCountdown(ms: number): string {
   return `${s}s until reset`;
 }
 
-function useNow(): Date {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
-  return now;
-}
-
 function UpNext({ queueState, colWidth }: { queueState: QueueState; colWidth: number }): React.ReactElement {
   const next3 = queueState.queuedRuns.slice(0, 3);
   // estimate ETA: each remaining phase ≈ 5 minutes
@@ -71,7 +62,14 @@ function UpNext({ queueState, colWidth }: { queueState: QueueState; colWidth: nu
 }
 
 function LimitWindow({ queueState, colWidth }: { queueState: QueueState; colWidth: number }): React.ReactElement {
-  const now = useNow();
+  // Only tick when there is an active countdown — avoids re-renders when idle.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    if (!queueState.limitResumeAt) return;
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, [Boolean(queueState.limitResumeAt)]);
+
   const msUntil = queueState.limitResumeAt
     ? queueState.limitResumeAt.getTime() - now.getTime()
     : -1;
