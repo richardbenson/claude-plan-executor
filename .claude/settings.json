@@ -18,7 +18,8 @@
       "Bash(rtk git status *)",
       "Bash(rtk gh pr create *)",
       "Bash(rtk git show *)",
-      "Bash(npm view *)"
+      "Bash(npm view *)",
+      "Bash(bun add *)"
     ]
   }
 }
