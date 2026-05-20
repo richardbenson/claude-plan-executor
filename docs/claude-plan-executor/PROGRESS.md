@@ -11,6 +11,6 @@
 | 07 | Live observability + event bus | complete | feature/claude-plan-executor-phase-7 | 06 | 2026-05-20 | 2026-05-20 | |
 | 08 | Phase execution loop + VCS + finalisation | complete | feature/claude-plan-executor-phase-8 | 07 | 2026-05-20 | 2026-05-20 | |
 | 09 | cpe plan flow + queue processor | complete | feature/claude-plan-executor-phase-9 | 08 | 2026-05-20 | 2026-05-20 | |
-| 10 | TUI shell + shared primitives | in-progress | feature/claude-plan-executor-phase-10 | 09 | 2026-05-20 | — | |
+| 10 | TUI shell + shared primitives | complete | feature/claude-plan-executor-phase-10 | 09 | 2026-05-20 | 2026-05-20 | |
 | 11 | TUI Watch mode | not-started | feature/claude-plan-executor-phase-11 | 10 | — | — | |
 | 12 | TUI Manage mode + phase drilldown | not-started | feature/claude-plan-executor-phase-12 | 11 | — | — | |
