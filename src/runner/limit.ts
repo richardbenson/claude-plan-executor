@@ -1,12 +1,13 @@
 import { updateMeta, updatePhase } from '../storage/meta.js';
 import { parseResetTime } from './reset-time.js';
 import type { ClaudeEnvelope } from './envelope.js';
+import type { ActivityBus } from '../events/bus.js';
 
 export async function handleRateLimit(
   envelope: ClaudeEnvelope,
   runId: string,
   phaseNumber: number,
-  bus: { emit: (event: unknown) => void } = { emit: () => {} },
+  bus: ActivityBus | { emit: (event: unknown) => void } = { emit: () => {} },
 ): Promise<{ resumeAt: Date; sessionId: string; hadWork: boolean }> {
   updatePhase(runId, phaseNumber, { session_id: envelope.session_id });
 
@@ -17,7 +18,13 @@ export async function handleRateLimit(
 
   updateMeta(runId, { status: 'paused-limit' });
 
-  bus.emit({ type: 'rate-limit', runId, phaseNumber, resumeAt, hadWork });
+  bus.emit({
+    kind: 'limit',
+    timestamp: new Date(),
+    runId,
+    phaseNumber,
+    resumeAt,
+  });
 
   process.stderr.write(`Rate limit hit. Window resets at ${resumeAt.toISOString()}\n`);
 
