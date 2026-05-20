@@ -16,7 +16,6 @@ function formatDatetime(): string {
     month: 'short',
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit',
     timeZoneName: 'short',
     hour12: false,
   }).formatToParts(now);
@@ -25,7 +24,7 @@ function formatDatetime(): string {
   const weekday = get('weekday').toLowerCase();
   const day = get('day');
   const month = get('month').toLowerCase();
-  const time = `${get('hour')}:${get('minute')}:${get('second')}`;
+  const time = `${get('hour')}:${get('minute')}`;
   const tz = get('timeZoneName');
 
   return `${weekday} ${day} ${month} · ${time} ${tz}`;
@@ -35,7 +34,9 @@ export function Header({ mode, statusText }: Props): React.ReactElement {
   const [datetime, setDatetime] = useState(formatDatetime());
 
   useEffect(() => {
-    const id = setInterval(() => setDatetime(formatDatetime()), 1000);
+    // Tick every minute — second-precision updates cause Ink to repaint the full
+    // screen once per second, which produces a visible flicker at the bottom.
+    const id = setInterval(() => setDatetime(formatDatetime()), 60_000);
     return () => clearInterval(id);
   }, []);
 

@@ -136,7 +136,29 @@ export function useQueueState(): QueueState {
   useEffect(() => {
     const id = setInterval(() => {
       try {
-        setState(deriveState());
+        setState(prev => {
+          const next = deriveState();
+          // Return the same reference when nothing meaningful changed so React
+          // bails out of the re-render entirely, preventing Ink from repainting.
+          if (
+            prev.activeRun?.id === next.activeRun?.id &&
+            prev.activePhase?.number === next.activePhase?.number &&
+            prev.allRuns.length === next.allRuns.length &&
+            prev.queuedRuns.length === next.queuedRuns.length &&
+            prev.isPaused === next.isPaused &&
+            prev.isLimitPaused === next.isLimitPaused &&
+            String(prev.limitResumeAt) === String(next.limitResumeAt) &&
+            prev.phasesCompleteToday === next.phasesCompleteToday &&
+            prev.budgetToday === next.budgetToday &&
+            prev.commitsToday === next.commitsToday &&
+            prev.prsToday === next.prsToday &&
+            prev.retriesToday === next.retriesToday &&
+            prev.failuresToday === next.failuresToday
+          ) {
+            return prev;
+          }
+          return next;
+        });
       } catch {
         // ignore transient read errors
       }
