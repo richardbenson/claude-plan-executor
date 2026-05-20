@@ -8,7 +8,7 @@
 | 04 | Worktree management + per-repo config | complete | feature/claude-plan-executor-phase-4 | 03 | 2026-05-19 | 2026-05-19 | |
 | 05 | CLI parsing + non-TUI commands | complete | feature/claude-plan-executor-phase-5 | 04 | 2026-05-19 | 2026-05-19 | |
 | 06 | Session runner + rate-limit handling | complete | feature/claude-plan-executor-phase-6 | 05 | 2026-05-19 | 2026-05-19 | |
-| 07 | Live observability + event bus | not-started | feature/claude-plan-executor-phase-7 | 06 | — | — | |
+| 07 | Live observability + event bus | in-progress | feature/claude-plan-executor-phase-7 | 06 | 2026-05-20 | — | |
 | 08 | Phase execution loop + VCS + finalisation | not-started | feature/claude-plan-executor-phase-8 | 07 | — | — | |
 | 09 | cpe plan flow + queue processor | not-started | feature/claude-plan-executor-phase-9 | 08 | — | — | |
 | 10 | TUI shell + shared primitives | not-started | feature/claude-plan-executor-phase-10 | 09 | — | — | |
