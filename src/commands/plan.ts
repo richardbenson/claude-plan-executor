@@ -1,4 +1,161 @@
-export async function planCommand(_details: string[]): Promise<void> {
-  console.log('cpe plan — not yet implemented (Phase 09)');
-  process.exit(0);
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { ulid } from 'ulid';
+import { getPrimaryRepo } from '../git/repo.js';
+import {
+  createWorktree,
+  removeWorktree,
+  deleteBranch,
+  renameWorktreeBranch,
+  moveWorktree,
+  WORKTREE_BASE,
+} from '../git/worktree.js';
+import { readConfig } from '../storage/config.js';
+import { getLogsDir } from '../storage/meta.js';
+import { ensureRepoConfig, runBootstrap } from '../config/repo-config.js';
+import { PLANBOT_PROMPT } from '../prompts/index.js';
+import { queuePlan } from './queue.js';
+
+async function readStdinToEof(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string));
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+function readOneLine(): string {
+  const buf = Buffer.alloc(1024);
+  let total = 0;
+  while (true) {
+    const n = fs.readSync(0, buf, total, 1, null);
+    if (n === 0) break;
+    if (buf[total] === 0x0a) break;
+    total += n;
+  }
+  return buf.slice(0, total).toString('utf8').trim();
+}
+
+function listDocsFolders(worktreePath: string): Set<string> {
+  const docsDir = path.join(worktreePath, 'docs');
+  try {
+    const entries = fs.readdirSync(docsDir, { withFileTypes: true });
+    const result = new Set<string>();
+    for (const entry of entries) {
+      if (entry.isDirectory() && fs.existsSync(path.join(docsDir, entry.name, 'PROGRESS.md'))) {
+        result.add(entry.name);
+      }
+    }
+    return result;
+  } catch {
+    return new Set();
+  }
+}
+
+export async function planCommand(details: string[]): Promise<void> {
+  let planDetails: string;
+
+  if (details.length === 0) {
+    console.log('Enter plan details (Ctrl+D when done):');
+    const input = await readStdinToEof();
+    planDetails = input.trim();
+    if (!planDetails) {
+      console.log('No details provided. Exiting.');
+      process.exit(0);
+    }
+  } else {
+    planDetails = details.join(' ').trim();
+  }
+
+  let repoPath: string;
+  try {
+    repoPath = getPrimaryRepo();
+  } catch (err) {
+    console.error(String(err));
+    process.exit(1);
+  }
+
+  const config = readConfig();
+  const repoConfig = await ensureRepoConfig(repoPath, config.gitea_host);
+
+  const runId = ulid();
+  const tempBranch = 'cpe/planning-' + Date.now();
+
+  let worktreePath: string;
+  try {
+    worktreePath = createWorktree(repoPath, runId, tempBranch, config.target_branch ?? 'main');
+  } catch (err) {
+    console.error('Failed to create worktree: ' + (err as Error).message);
+    process.exit(1);
+  }
+
+  const logsDir = getLogsDir(runId);
+  const bootstrapResult = await runBootstrap(worktreePath, repoConfig.bootstrap, logsDir + '/bootstrap.log');
+  if (!bootstrapResult.success) {
+    removeWorktree(repoPath, worktreePath, true);
+    deleteBranch(repoPath, tempBranch);
+    console.log('Bootstrap failed. Worktree cleaned up.');
+    process.exit(1);
+  }
+
+  const docsBefore = listDocsFolders(worktreePath);
+
+  const message = PLANBOT_PROMPT + '\n\n---\n\n' + planDetails;
+  const tmpFile = os.tmpdir() + '/cpe-plan-' + runId + '.md';
+  await Bun.write(tmpFile, message);
+
+  console.log('\n🚀 Starting planning session. Claude will guide you through creating the plan.\n');
+  console.log('   When done, exit Claude (Ctrl+D or type \'exit\').\n\n');
+
+  const proc = Bun.spawn(['claude'], {
+    cwd: worktreePath,
+    stdin: Bun.file(tmpFile),
+    stdout: 'inherit',
+    stderr: 'inherit',
+  });
+  await proc.exited;
+  const exitCode = proc.exitCode;
+
+  try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+
+  if (exitCode !== 0) {
+    console.log(
+      'Claude exited with code ' + exitCode +
+      '. If you hit the session limit, wait for the window to reset and re-run `cpe plan`.',
+    );
+  }
+
+  const docsAfter = listDocsFolders(worktreePath);
+  const newFolders = [...docsAfter].filter(f => !docsBefore.has(f));
+
+  if (newFolders.length === 0) {
+    console.log('No plan folder found in docs/. Planning cancelled.');
+    removeWorktree(repoPath, worktreePath, true);
+    deleteBranch(repoPath, tempBranch);
+    process.exit(0);
+  }
+
+  if (newFolders.length > 1) {
+    console.log('Multiple new folders found: ' + newFolders.join(', '));
+    console.log('Unexpected — using the first one: ' + newFolders[0]);
+  }
+  const folder = newFolders[0]!;
+
+  const featureBranch = 'feature/' + folder;
+  renameWorktreeBranch(repoPath, tempBranch, featureBranch);
+  const newWorktreePath = path.join(WORKTREE_BASE, folder + '-' + runId.slice(0, 8));
+  moveWorktree(repoPath, worktreePath, newWorktreePath);
+  worktreePath = newWorktreePath;
+
+  console.log('\nPlan created: docs/' + folder + '/');
+
+  process.stdout.write('Queue this plan now? [Y/n] ');
+  const answer = readOneLine();
+  if (answer.toLowerCase() === 'n') {
+    console.log('Run `cpe queue ' + folder + '` to queue it later.');
+  } else {
+    await queuePlan(repoPath, folder, runId, worktreePath, config, repoConfig);
+    console.log('Run `cpe start` to begin execution.');
+  }
 }
