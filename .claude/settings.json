@@ -11,7 +11,12 @@
       "Bash(bun run *)",
       "Bash(./cpe --help)",
       "Bash(bun --version)",
-      "Bash(bun build *)"
+      "Bash(bun build *)",
+      "Bash(rtk git log *)",
+      "Bash(rtk git diff *)",
+      "Bash(git remote get-url *)",
+      "Bash(git status *)",
+      "Bash(rtk gh pr create *)"
     ]
   }
 }
