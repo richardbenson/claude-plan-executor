@@ -13,4 +13,4 @@
 | 09 | cpe plan flow + queue processor | complete | feature/claude-plan-executor-phase-9 | 08 | 2026-05-20 | 2026-05-20 | |
 | 10 | TUI shell + shared primitives | complete | feature/claude-plan-executor-phase-10 | 09 | 2026-05-20 | 2026-05-20 | |
 | 11 | TUI Watch mode | complete | feature/claude-plan-executor-phase-11 | 10 | 2026-05-20 | 2026-05-20 | |
-| 12 | TUI Manage mode + phase drilldown | not-started | feature/claude-plan-executor-phase-12 | 11 | — | — | |
+| 12 | TUI Manage mode + phase drilldown | complete | feature/claude-plan-executor-phase-12 | 11 | 2026-05-20 | 2026-05-20 | Project complete |

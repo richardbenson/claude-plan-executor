@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput, useStdout } from 'ink';
 import { Header } from './components/Header.js';
 import { Watch } from './Watch.js';
+import { Manage } from './Manage.js';
 import { activityBus } from '../events/bus.js';
-import { yellow, dim2 } from './theme.js';
+import { yellow } from './theme.js';
 import type { AppConfig } from '../types/meta.js';
 import type { ActivityEvent } from '../events/types.js';
 
@@ -28,14 +29,6 @@ function useStdoutDimensions(): { columns: number; rows: number } {
   }, [stdout]);
 
   return dimensions;
-}
-
-function Manage({ columns, rows }: { columns: number; rows: number }): React.ReactElement {
-  return (
-    <Box width={columns} height={rows - 1}>
-      <Text color={dim2}> Manage mode — coming in Phase 12 </Text>
-    </Box>
-  );
 }
 
 function QuitConfirmBar(): React.ReactElement {

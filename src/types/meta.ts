@@ -43,6 +43,7 @@ export interface RunMeta {
   status: RunStatus;
   total_cost_usd: number;
   bootstrapped?: boolean;
+  claude_pid?: number;
   phases: PhaseEntry[];
 }
 
