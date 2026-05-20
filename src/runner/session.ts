@@ -7,7 +7,7 @@ export interface SessionOpts {
   promptFile: string;
   sessionId: string;
   logPath: string;
-  schemaPath: string;
+  schema: string;
 }
 
 export interface SessionResult {
@@ -16,9 +16,9 @@ export interface SessionResult {
 }
 
 export async function runSession(opts: SessionOpts): Promise<SessionResult> {
-  if (!opts.schemaPath) {
+  if (!opts.schema) {
     throw new Error(
-      'runSession: schemaPath is required — --json-schema and --output-format=json are mandatory together',
+      'runSession: schema is required — --json-schema and --output-format=json are mandatory together',
     );
   }
 
@@ -35,7 +35,7 @@ export async function runSession(opts: SessionOpts): Promise<SessionResult> {
       '--output-format',
       'json',
       '--json-schema',
-      opts.schemaPath,
+      opts.schema,
       '--input-format',
       'text',
     ],

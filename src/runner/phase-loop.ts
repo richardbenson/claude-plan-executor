@@ -6,7 +6,7 @@ import { classifyEnvelope } from './envelope.js';
 import { handleRateLimit } from './limit.js';
 import { startJsonlTail } from './jsonl-tail.js';
 import { getHead } from '../git/repo.js';
-import { PHASE_RESULT_SCHEMA_PATH } from '../prompts/index.js';
+import { PHASE_RESULT_SCHEMA } from '../prompts/index.js';
 import type { ActivityBus } from '../events/bus.js';
 import type { AppConfig, PhaseEntry } from '../types/meta.js';
 
@@ -94,7 +94,7 @@ export async function runPhase(
     promptFile,
     sessionId: uuid,
     logPath,
-    schemaPath: PHASE_RESULT_SCHEMA_PATH,
+    schema: PHASE_RESULT_SCHEMA,
   });
 
   // STEP 7 — stop JSONL tail
@@ -220,7 +220,7 @@ export async function resumeOrRestart(
   }
 
   // Resume the captured session
-  const schemaPath = PHASE_RESULT_SCHEMA_PATH;
+  const schema = PHASE_RESULT_SCHEMA;
   const continuationPrompt =
     'You were interrupted by a rate limit. Continue from where you left off. ' +
     'Some tool calls may have completed partially — verify the state of the working tree before ' +
@@ -248,7 +248,7 @@ export async function resumeOrRestart(
       '--output-format',
       'json',
       '--json-schema',
-      schemaPath,
+      schema,
     ],
     {
       cwd: meta.worktree_path,

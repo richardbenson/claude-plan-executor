@@ -22,7 +22,7 @@ function readLine(): string {
   return buf.slice(0, total).toString('utf8').trim();
 }
 
-function findPlanFolders(repoPath: string): string[] {
+export function findPlanFolders(repoPath: string): string[] {
   const docsDir = path.join(repoPath, 'docs');
   try {
     const entries = fs.readdirSync(docsDir, { withFileTypes: true });
@@ -35,7 +35,7 @@ function findPlanFolders(repoPath: string): string[] {
   }
 }
 
-function countPhaseFiles(dir: string): number {
+export function countPhaseFiles(dir: string): number {
   try {
     return fs
       .readdirSync(dir)
@@ -45,7 +45,7 @@ function countPhaseFiles(dir: string): number {
   }
 }
 
-function sortedPhaseFiles(dir: string): string[] {
+export function sortedPhaseFiles(dir: string): string[] {
   return fs
     .readdirSync(dir)
     .filter(f => /^PHASE_\d+\.prompt\.md$/.test(f))

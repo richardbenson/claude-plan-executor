@@ -5,6 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { StateChip } from './components/StateChip.js';
 import { border, cyan, bgHi, dim, dim2, fg, green2 } from './theme.js';
+import { useInteractiveSubprocess } from './SubprocessContext.js';
 import { activityBus } from '../events/bus.js';
 import { readMeta, getLogsDir } from '../storage/meta.js';
 import type { RunMeta, PhaseEntry } from '../types/meta.js';
@@ -61,6 +62,7 @@ export function Drilldown({ runId, phaseNumber, onClose, columns, rows }: Props)
   }
 
   const [selectedPhaseNumber, setSelectedPhaseNumber] = useState(phaseNumber);
+  const runInteractive = useInteractiveSubprocess();
   const phases = meta.phases;
   const selectedIdx = phases.findIndex(p => p.number === selectedPhaseNumber);
   const phase: PhaseEntry | undefined = phases[selectedIdx < 0 ? 0 : selectedIdx];
@@ -78,23 +80,16 @@ export function Drilldown({ runId, phaseNumber, onClose, columns, rows }: Props)
     if (input === 'l' && phase) {
       const logsDir = getLogsDir(runId);
       const logFile = path.join(logsDir, 'phase-' + String(phase.number).padStart(2, '0') + '.log');
-      Bun.spawn([process.env['PAGER'] ?? 'less', logFile], {
-        stdout: 'inherit', stderr: 'inherit', stdin: 'inherit',
-      });
+      runInteractive([process.env['PAGER'] ?? 'less', logFile]);
       return;
     }
     if (input === 'e' && phase) {
-      Bun.spawn([process.env['EDITOR'] ?? 'vi', meta.worktree_path], {
-        stdout: 'inherit', stderr: 'inherit', stdin: 'inherit',
-      });
+      runInteractive([process.env['EDITOR'] ?? 'vi', meta.worktree_path]);
       return;
     }
     if (input === 'd' && phase?.head_before && phase.commit_sha) {
       const pager = process.env['PAGER'] ?? 'less';
-      Bun.spawn(['sh', '-c', 'git diff ' + phase.head_before + '..' + phase.commit_sha + ' | ' + pager], {
-        cwd: meta.worktree_path,
-        stdout: 'inherit', stderr: 'inherit', stdin: 'inherit',
-      });
+      runInteractive(['sh', '-c', 'git diff ' + phase.head_before + '..' + phase.commit_sha + ' | ' + pager]);
       return;
     }
   });

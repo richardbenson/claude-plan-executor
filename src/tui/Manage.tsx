@@ -10,6 +10,9 @@ import { CommandPalette } from './components/CommandPalette.js';
 import { KillConfirmModal } from './components/KillConfirmModal.js';
 import { Drilldown } from './Drilldown.js';
 import { useQueueState } from './hooks/useQueueState.js';
+import { useInteractiveSubprocess } from './SubprocessContext.js';
+import { SubprocessOverlay } from './components/SubprocessOverlay.js';
+import { QueueWizard } from './components/QueueWizard.js';
 import { activityBus } from '../events/bus.js';
 import { readQueue, writeQueue } from '../storage/queue.js';
 import { updateMeta, updatePhase, getLogsDir } from '../storage/meta.js';
@@ -75,7 +78,10 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
   const [showPalette, setShowPalette] = useState(false);
   const [killConfirm, setKillConfirm] = useState(false);
   const [drilldown, setDrilldown] = useState<{ runId: string; phaseNumber: number } | null>(null);
+  const [overlay, setOverlay] = useState<{ command: string[]; title: string } | null>(null);
+  const [showQueueWizard, setShowQueueWizard] = useState(false);
   const [events, setEvents] = useState<ActivityEvent[]>([]);
+  const runInteractive = useInteractiveSubprocess();
 
   useEffect(() => {
     const unsub = activityBus.subscribe(ev => setEvents(prev => [...prev, ev]));
@@ -140,7 +146,7 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
         break;
       }
       case 'add': {
-        Bun.spawn(['cpe', 'queue'], { stdout: 'inherit', stderr: 'inherit', stdin: 'inherit' });
+        setShowQueueWizard(true);
         break;
       }
       case 'remove': {
@@ -155,18 +161,14 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
       case 'kill': setKillConfirm(true); break;
       case 'editor': {
         if (selectedRun) {
-          Bun.spawn([process.env['EDITOR'] ?? 'vi', selectedRun.worktree_path], {
-            stdout: 'inherit', stderr: 'inherit', stdin: 'inherit',
-          });
+          runInteractive([process.env['EDITOR'] ?? 'vi', selectedRun.worktree_path]);
         }
         break;
       }
       case 'log': {
         if (selectedRun && selectedPhase) {
           const logFile = path.join(getLogsDir(selectedRun.id), 'phase-' + String(selectedPhase.number).padStart(2, '0') + '.log');
-          Bun.spawn([process.env['PAGER'] ?? 'less', logFile], {
-            stdout: 'inherit', stderr: 'inherit', stdin: 'inherit',
-          });
+          runInteractive([process.env['PAGER'] ?? 'less', logFile]);
         }
         break;
       }
@@ -174,6 +176,7 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
   }
 
   useInput((input, key) => {
+    if (overlay || showQueueWizard) return;
     if (showPalette || killConfirm) return;
     if (drilldown) {
       if (key.escape) setDrilldown(null);
@@ -278,20 +281,14 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
     }
 
     if (input === 'e') {
-      if (selectedRun) {
-        Bun.spawn([process.env['EDITOR'] ?? 'vi', selectedRun.worktree_path], {
-          stdout: 'inherit', stderr: 'inherit', stdin: 'inherit',
-        });
-      }
+      if (selectedRun) runInteractive([process.env['EDITOR'] ?? 'vi', selectedRun.worktree_path]);
       return;
     }
 
     if (input === 'l') {
       if (selectedRun && selectedPhase) {
         const logFile = path.join(getLogsDir(selectedRun.id), 'phase-' + String(selectedPhase.number).padStart(2, '0') + '.log');
-        Bun.spawn([process.env['PAGER'] ?? 'less', logFile], {
-          stdout: 'inherit', stderr: 'inherit', stdin: 'inherit',
-        });
+        runInteractive([process.env['PAGER'] ?? 'less', logFile]);
       }
       return;
     }
@@ -299,7 +296,7 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
     if (input === ':') { setShowPalette(true); return; }
 
     if (input === 'a') {
-      Bun.spawn(['cpe', 'queue'], { stdout: 'inherit', stderr: 'inherit', stdin: 'inherit' });
+      setShowQueueWizard(true);
       return;
     }
 
@@ -309,6 +306,18 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
       if (drilldown) { setDrilldown(null); return; }
     }
   });
+
+  if (overlay) {
+    return (
+      <SubprocessOverlay
+        command={overlay.command}
+        title={overlay.title}
+        onClose={() => setOverlay(null)}
+        columns={columns}
+        rows={rows}
+      />
+    );
+  }
 
   if (drilldown) {
     return (
@@ -328,7 +337,7 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
     : 0;
 
   return (
-    <Box flexDirection="column" width={columns} height={rows - 2}>
+    <Box flexDirection="column" width={columns} height={rows - 2} overflow="hidden">
       {/* Triptych */}
       <Box flexDirection="row" flexGrow={1}>
         <QueuePane
@@ -385,6 +394,13 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
           elapsedMs={elapsedMs}
           onConfirm={handleKill}
           onCancel={() => setKillConfirm(false)}
+        />
+      )}
+      {showQueueWizard && (
+        <QueueWizard
+          onClose={() => setShowQueueWizard(false)}
+          columns={columns}
+          rows={rows}
         />
       )}
     </Box>

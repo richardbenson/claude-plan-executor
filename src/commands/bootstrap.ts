@@ -8,7 +8,7 @@ import {
   REPO_CONFIG_FILENAME,
   type RepoConfig,
 } from '../config/repo-config.js';
-import { BOOTSTRAP_DETECT_SCHEMA_PATH, BOOTSTRAP_DETECT_PROMPT } from '../prompts/index.js';
+import { BOOTSTRAP_DETECT_SCHEMA, BOOTSTRAP_DETECT_PROMPT } from '../prompts/index.js';
 import type { BootstrapDetectResult } from '../config/repo-config.js';
 
 interface BootstrapFlags {
@@ -26,7 +26,7 @@ function openInEditor(filePath: string): void {
 async function runDetect(repoPath: string): Promise<RepoConfig> {
   process.stdout.write('Detecting bootstrap commands...\n');
   const proc = Bun.spawn(
-    ['claude', '-p', '--output-format=json', '--json-schema', BOOTSTRAP_DETECT_SCHEMA_PATH],
+    ['claude', '-p', '--output-format=json', '--json-schema', BOOTSTRAP_DETECT_SCHEMA],
     {
       cwd: repoPath,
       stdin: new TextEncoder().encode(BOOTSTRAP_DETECT_PROMPT),
@@ -37,7 +37,8 @@ async function runDetect(repoPath: string): Promise<RepoConfig> {
   const output = await new Response(proc.stdout).text();
   await proc.exited;
 
-  const result = JSON.parse(output) as BootstrapDetectResult;
+  const envelope = JSON.parse(output) as { structured_output: BootstrapDetectResult };
+  const result = envelope.structured_output;
 
   process.stdout.write('\nSuggested commands:\n');
   result.commands.forEach(cmd => process.stdout.write(`  ${cmd}\n`));
