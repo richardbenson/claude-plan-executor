@@ -10,7 +10,8 @@
     "noImplicitAny": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "outDir": "./dist"
+    "outDir": "./dist",
+    "types": ["bun"]
   },
   "include": ["src"]
 }
