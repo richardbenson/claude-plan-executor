@@ -47,7 +47,6 @@ export async function startJsonlTail(
   while (Date.now() - start < 3000) {
     if (fs.existsSync(expectedPath)) {
       filePath = expectedPath;
-      process.stderr.write(`[jsonl-tail] using expected path: ${filePath}\n`);
       break;
     }
     await new Promise(resolve => setTimeout(resolve, 200));
@@ -56,9 +55,6 @@ export async function startJsonlTail(
   // Glob fallback
   if (!filePath) {
     filePath = await findJsonlByUuid(uuid);
-    if (filePath) {
-      process.stderr.write(`[jsonl-tail] found via glob: ${filePath}\n`);
-    }
   }
 
   // Total timeout check (10 seconds from start)

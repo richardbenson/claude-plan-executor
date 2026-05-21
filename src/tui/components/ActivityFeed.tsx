@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Text, Static } from 'ink';
+import { Box, Text } from 'ink';
 import {
   cyan, magenta, green, green2, yellow, red, dim, dim2, borderHi,
 } from '../theme.js';
@@ -98,22 +98,15 @@ function EventRow({ ev }: { ev: RenderedEvent }): React.ReactElement {
 }
 
 export function ActivityFeed({ events, availableRows, activeSessionId }: Props): React.ReactElement {
-  // Most recent on top
+  // Most recent first
   const rendered = events.map(renderEvent).reverse();
 
-  // Split: last in-progress edit stays live, rest go to Static
-  const liveIdx = rendered.findIndex(e => e.liveEdge);
-  const liveEvent = liveIdx >= 0 ? rendered[liveIdx] : null;
-  const staticEvents = rendered.filter((_, i) => i !== liveIdx);
-
   const maxRows = Math.max(0, availableRows - 2);
-  const visibleStatic = staticEvents.slice(0, liveEvent ? maxRows - 1 : maxRows);
+  const visible = rendered.slice(0, maxRows);
 
   const shortSession = activeSessionId
     ? activeSessionId.slice(0, 6)
     : (events[events.length - 1]?.runId?.slice(0, 6) ?? '------');
-
-  const separatorWidth = Math.min(48, 48);
 
   return (
     <Box flexDirection="column">
@@ -126,18 +119,12 @@ export function ActivityFeed({ events, availableRows, activeSessionId }: Props):
       </Box>
 
       {/* Separator */}
-      <Text color={borderHi}>{'·'.repeat(separatorWidth)}</Text>
+      <Text color={borderHi}>{'·'.repeat(48)}</Text>
 
-      {/* Live row (in-progress edit) */}
-      {liveEvent && <EventRow ev={liveEvent} />}
-
-      {/* Static historical rows */}
-      {visibleStatic.length === 0 && !liveEvent ? (
+      {visible.length === 0 ? (
         <Text color={dim}> (no events yet) </Text>
       ) : (
-        <Static items={visibleStatic}>
-          {(ev) => <EventRow key={ev.key} ev={ev} />}
-        </Static>
+        visible.map(ev => <EventRow key={ev.key} ev={ev} />)
       )}
     </Box>
   );
