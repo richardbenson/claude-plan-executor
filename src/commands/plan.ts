@@ -53,7 +53,7 @@ function listDocsFolders(worktreePath: string): Set<string> {
   }
 }
 
-export async function planCommand(details: string[]): Promise<void> {
+export async function planCommand(details: string[], options?: { disableSandbox?: boolean }): Promise<void> {
   let planDetails: string;
 
   if (details.length === 0) {
@@ -157,7 +157,7 @@ export async function planCommand(details: string[]): Promise<void> {
   if (answer.toLowerCase() === 'n') {
     console.log('Run `cpe queue ' + folder + '` to queue it later.');
   } else {
-    await queuePlan(repoPath, folder, runId, worktreePath, config, repoConfig);
+    await queuePlan(repoPath, folder, runId, worktreePath, config, repoConfig, options?.disableSandbox ?? false);
     console.log('Run `cpe start` to begin execution.');
   }
 }

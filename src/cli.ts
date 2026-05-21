@@ -31,11 +31,13 @@ export function setupCli(): void {
   program
     .command('plan [details...]')
     .description('Create a new plan interactively')
+    .option('--disable-sandbox', 'Skip sandbox injection for this run')
     .action(wrap(planCommand));
 
   program
     .command('queue [folder]')
     .description('Add a plan to the queue')
+    .option('--disable-sandbox', 'Skip sandbox injection for this run')
     .action(wrap(queueCommand));
 
   program

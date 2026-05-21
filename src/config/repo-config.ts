@@ -6,6 +6,7 @@ export const REPO_CONFIG_FILENAME = 'cpe.config.json';
 
 export interface RepoConfig {
   bootstrap: string[];
+  sandbox?: import('../types/meta.js').SandboxConfig;
 }
 
 export interface BootstrapDetectResult {
