@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { readMeta, updateMeta } from '../storage/meta.js';
+import { readMeta, updateMeta, getLogsDir } from '../storage/meta.js';
 import { SUMMARISE_PROMPT } from '../prompts/index.js';
 import { isGitHub, isGitea } from '../vcs/detect.js';
 import { createGitHubPr } from '../vcs/github.js';
@@ -32,16 +32,20 @@ export async function finaliseRun(runId: string, bus: ActivityBus): Promise<Fina
   const tmpFile = path.join(os.tmpdir(), `cpe-summarise-${runId}.md`);
   fs.writeFileSync(tmpFile, prompt);
 
-  // Step 3 — spawn headless claude -p
+  // Step 3 — spawn headless claude -p, capturing output to a log file
+  const logPath = path.join(getLogsDir(runId), 'finalise.log');
+  fs.mkdirSync(path.dirname(logPath), { recursive: true });
+  const logFd = fs.openSync(logPath, 'w');
   const proc = Bun.spawn(['claude', '-p', '--dangerously-skip-permissions'], {
     cwd: worktreePath,
     stdin: fs.openSync(tmpFile, 'r'),
-    stdout: 'inherit',
-    stderr: 'inherit',
+    stdout: logFd,
+    stderr: logFd,
   });
   const exitCode = await proc.exited;
+  try { fs.closeSync(logFd); } catch { /* ignore */ }
   if (exitCode !== 0) {
-    process.stderr.write(`[finalise] claude -p exited ${exitCode} — continuing anyway\n`);
+    process.stderr.write(`[finalise] claude -p exited ${exitCode} — see ${logPath}\n`);
   }
 
   // Step 4 — delete temp file
