@@ -11,19 +11,19 @@ interface PaletteCommand {
 }
 
 const COMMANDS: PaletteCommand[] = [
-  { category: 'queue', name: 'move up',            description: 'Move selected run earlier in queue',     action: 'queue-up' },
-  { category: 'queue', name: 'move down',           description: 'Move selected run later in queue',       action: 'queue-down' },
-  { category: 'queue', name: 'pause/resume',         description: 'Toggle queue pause',                    action: 'pause' },
-  { category: 'queue', name: 'add plan',             description: 'Interactively add a new plan to queue', action: 'add' },
-  { category: 'queue', name: 'archive run',            description: 'Hide run from all views (mark archived)', action: 'archive' },
-  { category: 'queue', name: 'remove run',           description: 'Remove selected run (keep worktree)',   action: 'remove' },
-  { category: 'queue', name: 'remove run + worktree', description: 'Remove run and delete worktree',       action: 'remove-worktree' },
-  { category: 'run',   name: 'retry phase',          description: 'Kill session and restart current phase', action: 'retry' },
-  { category: 'run',   name: 'skip phase',           description: 'Mark phase failed, advance to next',    action: 'skip' },
-  { category: 'run',   name: 'kill session',         description: 'Confirm and kill the running session',  action: 'kill' },
-  { category: 'run',   name: 'open worktree',        description: 'Open worktree in $EDITOR',              action: 'editor' },
-  { category: 'run',   name: 'tail phase log',       description: 'Open phase log in $PAGER',              action: 'log' },
-  { category: 'run',   name: 'open PR',              description: 'Open pull request in browser',         action: 'pr' },
+  { category: 'queue', name: 'move up', description: 'Move selected run earlier in queue', action: 'queue-up' },
+  { category: 'queue', name: 'move down', description: 'Move selected run later in queue', action: 'queue-down' },
+  { category: 'queue', name: 'pause/resume', description: 'Toggle queue pause', action: 'pause' },
+  { category: 'queue', name: 'add plan', description: 'Interactively add a new plan to queue', action: 'add' },
+  { category: 'queue', name: 'archive run', description: 'Hide run from all views (mark archived)', action: 'archive' },
+  { category: 'queue', name: 'remove run', description: 'Remove selected run (keep worktree)', action: 'remove' },
+  { category: 'queue', name: 'remove run + worktree', description: 'Remove run and delete worktree', action: 'remove-worktree' },
+  { category: 'run', name: 'retry phase', description: 'Kill session and restart current phase', action: 'retry' },
+  { category: 'run', name: 'skip phase', description: 'Mark phase failed, advance to next', action: 'skip' },
+  { category: 'run', name: 'kill session', description: 'Confirm and kill the running session', action: 'kill' },
+  { category: 'run', name: 'open worktree', description: 'Open worktree in $EDITOR', action: 'editor' },
+  { category: 'run', name: 'tail phase log', description: 'Open phase log in $PAGER', action: 'log' },
+  { category: 'run', name: 'open PR', description: 'Open pull request in browser', action: 'pr' },
 ];
 
 interface Props {
@@ -69,34 +69,42 @@ export function CommandPalette({ onClose, onRun, visible, columns }: Props): Rea
 
   return (
     <Box
-      flexDirection="column"
-      borderStyle="round"
-      borderColor={cyan}
-      backgroundColor={bgFloat}
-      width={modalWidth}
-      height={26}
-      overflow="hidden"
-      marginTop={4}
-      marginLeft={marginLeft}
+      position="absolute"
+      top={0}
+      left={0}
+      width="100%"
+      height="100%"
+      justifyContent="center"
+      alignItems="center"
     >
-      <Box>
-        <Text color={cyan}>{': '}</Text>
-        <TextInput value={query} onChange={v => { setQuery(v); setSelectedIdx(0); }} />
+      <Box
+        flexDirection="column"
+        borderStyle="round"
+        borderColor={cyan}
+        backgroundColor={bgFloat}
+        width={modalWidth}
+        height={26}
+        overflow="hidden"
+      >
+        <Box>
+          <Text color={cyan}>{': '}</Text>
+          <TextInput value={query} onChange={v => { setQuery(v); setSelectedIdx(0); }} />
+        </Box>
+        <Text color={dim}>{'─'.repeat(78)}</Text>
+        {filtered.map((cmd, i) => {
+          const selected = i === selectedIdx;
+          const catColor = cmd.category === 'queue' ? cyan : dim2;
+          return (
+            <Box key={cmd.action} backgroundColor={selected ? bgHi : undefined}>
+              <Text>{selected ? '▶ ' : '  '}</Text>
+              <Text color={catColor}>{cmd.category.padEnd(5)}</Text>
+              <Text color={fg}>{' ' + cmd.name.padEnd(24)}</Text>
+              <Text color={dim2}>{cmd.description}</Text>
+            </Box>
+          );
+        })}
+        {filtered.length === 0 && <Text color={dim}>{'  no commands match'}</Text>}
       </Box>
-      <Text color={dim}>{'─'.repeat(78)}</Text>
-      {filtered.map((cmd, i) => {
-        const selected = i === selectedIdx;
-        const catColor = cmd.category === 'queue' ? cyan : dim2;
-        return (
-          <Box key={cmd.action} backgroundColor={selected ? bgHi : undefined}>
-            <Text>{selected ? '▶ ' : '  '}</Text>
-            <Text color={catColor}>{cmd.category.padEnd(5)}</Text>
-            <Text color={fg}>{' ' + cmd.name.padEnd(24)}</Text>
-            <Text color={dim2}>{cmd.description}</Text>
-          </Box>
-        );
-      })}
-      {filtered.length === 0 && <Text color={dim}>{'  no commands match'}</Text>}
     </Box>
   );
 }

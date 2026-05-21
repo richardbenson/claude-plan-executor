@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
+import * as path from 'path';
 import { activityBus } from '../events/bus.js';
 import { useQueueState } from './hooks/useQueueState.js';
 import { WatchHero } from './components/WatchHero.js';
@@ -7,8 +8,9 @@ import { ActivityFeed } from './components/ActivityFeed.js';
 import { WatchBottomStrip } from './components/WatchBottomStrip.js';
 import { WatchPaused, UserPausedFooter } from './components/WatchPaused.js';
 import { CommandPalette } from './components/CommandPalette.js';
+import { QueueWizard } from './components/QueueWizard.js';
 import { readQueue, writeQueue } from '../storage/queue.js';
-import { updateMeta, updatePhase } from '../storage/meta.js';
+import { updateMeta, updatePhase, getLogsDir } from '../storage/meta.js';
 import { dim2, cyan, dim } from './theme.js';
 import type { ActivityEvent } from '../events/types.js';
 
@@ -25,6 +27,7 @@ export function Watch({ columns, rows, compact }: Props): React.ReactElement {
   const queueState = useQueueState();
   const [events, setEvents] = useState<ActivityEvent[]>(() => [...activityBus.getBuffer()]);
   const [showPalette, setShowPalette] = useState(false);
+  const [showQueueWizard, setShowQueueWizard] = useState(false);
 
   useEffect(() => {
     const unsub = activityBus.subscribe(ev => {
@@ -41,21 +44,43 @@ export function Watch({ columns, rows, compact }: Props): React.ReactElement {
   function handlePaletteCommand(action: string) {
     const run = queueState.activeRun;
     switch (action) {
+      case 'queue-up': {
+        if (!run) break;
+        const q = readQueue();
+        const qi = q.entries.findIndex(e => e.run_id === run.id);
+        if (qi > 0) {
+          const tmp = q.entries[qi - 1];
+          const cur = q.entries[qi];
+          if (tmp && cur) {
+            q.entries[qi - 1] = cur;
+            q.entries[qi] = tmp;
+            writeQueue(q);
+          }
+        }
+        break;
+      }
+      case 'queue-down': {
+        if (!run) break;
+        const q = readQueue();
+        const qi = q.entries.findIndex(e => e.run_id === run.id);
+        if (qi !== -1 && qi < q.entries.length - 1) {
+          const tmp = q.entries[qi + 1];
+          const cur = q.entries[qi];
+          if (tmp && cur) {
+            q.entries[qi + 1] = cur;
+            q.entries[qi] = tmp;
+            writeQueue(q);
+          }
+        }
+        break;
+      }
       case 'pause': {
         const q = readQueue();
         writeQueue({ ...q, paused: !q.paused });
         break;
       }
-      case 'kill': {
-        if (!run) break;
-        const pid = run.claude_pid;
-        if (pid) {
-          try { process.kill(pid, 'SIGTERM'); } catch {}
-          setTimeout(() => { try { process.kill(pid, 'SIGKILL'); } catch {} }, 5000);
-        }
-        const phase = queueState.activePhase;
-        if (phase) updatePhase(run.id, phase.number, { status: 'failed' });
-        updateMeta(run.id, { status: 'paused' });
+      case 'add': {
+        setShowQueueWizard(true);
         break;
       }
       case 'archive': {
@@ -66,6 +91,76 @@ export function Watch({ columns, rows, compact }: Props): React.ReactElement {
         qa.entries = qa.entries.filter(e => e.run_id !== run.id);
         writeQueue(qa);
         updateMeta(run.id, { status: 'archived' });
+        break;
+      }
+      case 'remove': {
+        if (run) {
+          const q = readQueue();
+          q.entries = q.entries.filter(e => e.run_id !== run.id);
+          writeQueue(q);
+        }
+        break;
+      }
+      case 'remove-worktree': {
+        if (run) {
+          const q = readQueue();
+          q.entries = q.entries.filter(e => e.run_id !== run.id);
+          writeQueue(q);
+        }
+        break;
+      }
+      case 'retry': {
+        const phase = queueState.activePhase;
+        if (!run || !phase) break;
+        const pid = run.claude_pid;
+        if (pid) {
+          try { process.kill(pid, 'SIGTERM'); } catch { }
+        }
+        updatePhase(run.id, phase.number, { status: 'pending', retry_count: 0 });
+        updateMeta(run.id, { status: 'queued' });
+        break;
+      }
+      case 'skip': {
+        const phase = queueState.activePhase;
+        if (!run || !phase) break;
+        updatePhase(run.id, phase.number, { status: 'failed', summary: 'skipped by user' });
+        const nextPhase = run.phases.find(p => p.number > phase.number);
+        if (nextPhase) {
+          updatePhase(run.id, nextPhase.number, { status: 'pending' });
+        }
+        updateMeta(run.id, { status: 'queued' });
+        break;
+      }
+      case 'kill': {
+        if (!run) break;
+        const pid = run.claude_pid;
+        if (pid) {
+          try { process.kill(pid, 'SIGTERM'); } catch { }
+          setTimeout(() => { try { process.kill(pid, 'SIGKILL'); } catch { } }, 5000);
+        }
+        const phase = queueState.activePhase;
+        if (phase) updatePhase(run.id, phase.number, { status: 'failed' });
+        updateMeta(run.id, { status: 'paused' });
+        break;
+      }
+      case 'editor': {
+        if (run) {
+          // TODO: Launch editor subprocess
+        }
+        break;
+      }
+      case 'log': {
+        const phase = queueState.activePhase;
+        if (run && phase) {
+          const logFile = path.join(getLogsDir(run.id), 'phase-' + String(phase.number).padStart(2, '0') + '.log');
+          // TODO: Launch pager subprocess
+        }
+        break;
+      }
+      case 'pr': {
+        if (run) {
+          // TODO: Open PR in browser
+        }
         break;
       }
     }
@@ -103,6 +198,13 @@ export function Watch({ columns, rows, compact }: Props): React.ReactElement {
             onClose={() => setShowPalette(false)}
             onRun={action => { handlePaletteCommand(action); setShowPalette(false); }}
             columns={columns}
+          />
+        )}
+        {showQueueWizard && (
+          <QueueWizard
+            onClose={() => setShowQueueWizard(false)}
+            columns={columns}
+            rows={rows}
           />
         )}
       </Box>
@@ -153,6 +255,13 @@ export function Watch({ columns, rows, compact }: Props): React.ReactElement {
           onClose={() => setShowPalette(false)}
           onRun={action => { handlePaletteCommand(action); setShowPalette(false); }}
           columns={columns}
+        />
+      )}
+      {showQueueWizard && (
+        <QueueWizard
+          onClose={() => setShowQueueWizard(false)}
+          columns={columns}
+          rows={rows}
         />
       )}
     </Box>
