@@ -70,8 +70,6 @@ export function CommandPalette({ onClose, onRun, visible }: Props): React.ReactE
       borderColor={cyan}
       backgroundColor={bgFloat}
       width={80}
-      marginTop={4}
-      marginLeft={20}
     >
       <Box>
         <Text color={cyan}>{': '}</Text>

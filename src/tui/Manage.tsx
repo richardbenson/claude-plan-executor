@@ -416,11 +416,13 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
 
       {/* Modals */}
       {showPalette && (
-        <CommandPalette
-          visible={showPalette}
-          onClose={() => setShowPalette(false)}
-          onRun={handlePaletteCommand}
-        />
+        <Box position="absolute" marginTop={2} marginLeft={10}>
+          <CommandPalette
+            visible={showPalette}
+            onClose={() => setShowPalette(false)}
+            onRun={handlePaletteCommand}
+          />
+        </Box>
       )}
       {killConfirm && qs.activeRun && qs.activePhase && (
         <KillConfirmModal
