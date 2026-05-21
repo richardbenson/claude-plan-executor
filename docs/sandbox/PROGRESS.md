@@ -6,7 +6,7 @@
 |---|-------|--------|--------|------------|---------|-----------|-------|
 | 1 | Sandbox module + types | complete | feature/sandbox | — | 2026-05-20 | 2026-05-20 | |
 | 2 | Queue/plan integration + --no-sandbox | complete | feature/sandbox | 1 | 2026-05-20 | 2026-05-20 | |
-| 3 | TUI sandbox indicator | not-started | feature/sandbox | 2 | — | — | |
+| 3 | TUI sandbox indicator | complete | feature/sandbox | 2 | 2026-05-21 | 2026-05-21 | |
 
 ## Phase Details
 
@@ -27,9 +27,9 @@
 **Notes:** —
 
 ### Phase 3 — TUI sandbox indicator
-**Status:** not-started
+**Status:** complete
 **Branch:** feature/sandbox
 **Dependencies:** 2
-**Date started:** —
-**Date completed:** —
+**Date started:** 2026-05-21
+**Date completed:** 2026-05-21
 **Notes:** —

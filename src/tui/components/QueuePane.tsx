@@ -43,12 +43,17 @@ export function QueuePane({ runs, selectedIndex, focused }: Props): React.ReactE
               <Text color={selected ? cyan : undefined}>{'┃'}</Text>
               <Text>{'  /' + run.plan_folder.slice(0, 10)}</Text>
             </Text>
-            <Text>
+            <Box flexDirection="row">
               <Text color={selected ? cyan : undefined}>{'┃'}</Text>
               <Text>{'  '}</Text>
               <StateChip status={run.status} showLabel={false} />
               <Text>{' ' + completePhases + '/' + totalPhases}</Text>
-            </Text>
+              {run.sandboxed && (
+                <Box marginLeft={1} flexShrink={0}>
+                  <Text color={dim}>{'⊡'}</Text>
+                </Box>
+              )}
+            </Box>
             <Text>
               <Text color={selected ? cyan : undefined}>{'┃'}</Text>
               {isExecuting
