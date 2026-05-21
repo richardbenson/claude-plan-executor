@@ -8,12 +8,15 @@ import _planbot from './planbot.md' with { type: 'text' };
 import _summarise from './summarise.md' with { type: 'text' };
 // @ts-expect-error — Bun text import
 import _bootstrapDetect from './bootstrap-detect.md' with { type: 'text' };
+// @ts-expect-error — Bun text import
+import _singlePrompt from './single-prompt.md' with { type: 'text' };
 import _phaseResultSchemaObj from './phase-result-schema.json';
 import _bootstrapDetectSchemaObj from './bootstrap-detect-schema.json';
 
 export const PLANBOT_PROMPT: string = _planbot as unknown as string;
 export const SUMMARISE_PROMPT: string = _summarise as unknown as string;
 export const BOOTSTRAP_DETECT_PROMPT: string = _bootstrapDetect as unknown as string;
+export const SINGLE_PROMPT_TEMPLATE: string = _singlePrompt as unknown as string;
 export const PHASE_RESULT_SCHEMA: string = JSON.stringify(_phaseResultSchemaObj);
 export const BOOTSTRAP_DETECT_SCHEMA: string = JSON.stringify(_bootstrapDetectSchemaObj);
 

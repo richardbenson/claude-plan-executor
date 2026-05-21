@@ -7,20 +7,20 @@
 - Phase PRs target the feature branch; feature PR targets `main`
 
 ## Phase 1: Type System and Data Model Extensions
-- Status: not-started
+- Status: complete
 - Branch: feature/single-prompt-queue-phase-1
 - Dependencies: none
-- Date started:
-- Date completed:
-- Notes:
+- Date started: 2026-05-21
+- Date completed: 2026-05-21
+- Notes: Added type field to QueueEntry, made plan_folder/phases optional in RunMeta, added prompt/prompt_source/github_issue_number fields. Updated all callers to use ?? [] / ?? '' fallbacks for backward compatibility.
 
 ## Phase 2: Single-Prompt Template and GitHub Issues Fetcher
-- Status: not-started
+- Status: complete
 - Branch: feature/single-prompt-queue-phase-2
 - Dependencies: Phase 1
-- Date started:
-- Date completed:
-- Notes:
+- Date started: 2026-05-21
+- Date completed: 2026-05-21
+- Notes: Created single-prompt.md template with {{USER_PROMPT}} placeholder. Exported as SINGLE_PROMPT_TEMPLATE. Added GitHubIssue interface and fetchGitHubIssues() to src/vcs/github.ts.
 
 ## Phase 3: QueueWizard Single-Prompt Flow
 - Status: not-started
