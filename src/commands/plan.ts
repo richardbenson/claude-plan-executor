@@ -105,8 +105,10 @@ export async function planCommand(details: string[]): Promise<void> {
   const tmpFile = os.tmpdir() + '/cpe-plan-' + runId + '.md';
   await Bun.write(tmpFile, message);
 
-  console.log('\n🚀 Starting planning session. Claude will guide you through creating the plan.\n');
-  console.log('   When done, exit Claude (Ctrl+D or type \'exit\').\n\n');
+  console.log('\n🚀 Starting planning session. Claude will guide you through creating the plan.');
+  console.log('   When done, exit Claude (Ctrl+D or type \'exit\').');
+  process.stdout.write('\nPress Enter to start...');
+  readOneLine();
 
   const proc = Bun.spawn(['claude'], {
     cwd: worktreePath,

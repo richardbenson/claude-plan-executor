@@ -30,7 +30,7 @@ export function setupCli(): void {
 
   program
     .command('plan [details...]')
-    .description('Create a new plan interactively (Phase 09)')
+    .description('Create a new plan interactively')
     .action(wrap(planCommand));
 
   program
@@ -40,7 +40,7 @@ export function setupCli(): void {
 
   program
     .command('start')
-    .description('Start the TUI / queue processor (Phase 09)')
+    .description('Start the TUI / queue processor')
     .action(wrap(startCommand));
 
   program

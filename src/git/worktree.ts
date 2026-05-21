@@ -114,21 +114,20 @@ export function listWorktrees(primaryRepo: string): WorktreeInfo[] {
 
 export function reconcileWorktrees(
   primaryRepo: string,
-  knownRunIds: string[],
+  knownRuns: { id: string; worktreePath: string }[],
 ): { orphaned: WorktreeInfo[]; missing: string[] } {
   const worktrees = listWorktrees(primaryRepo);
   const wtPathSet = new Set(worktrees.map(wt => wt.path));
+  const knownPaths = new Set(knownRuns.map(r => r.worktreePath));
 
   const orphaned = worktrees.filter(wt => {
     if (!wt.path.startsWith(WORKTREE_BASE)) return false;
-    const runId = path.basename(wt.path);
-    return !knownRunIds.includes(runId);
+    return !knownPaths.has(wt.path);
   });
 
-  const missing = knownRunIds.filter(id => {
-    const expectedPath = getWorktreePath(id);
-    return !wtPathSet.has(expectedPath);
-  });
+  const missing = knownRuns
+    .filter(r => !wtPathSet.has(r.worktreePath))
+    .map(r => r.id);
 
   return { orphaned, missing };
 }

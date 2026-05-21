@@ -61,6 +61,7 @@ export interface AppConfig {
   max_retries: number;
   gitea_host?: string;
   target_branch?: string;
+  dangerously_skip_permissions?: boolean;
 }
 
 export const DEFAULT_CONFIG: AppConfig = { max_retries: 1 };
