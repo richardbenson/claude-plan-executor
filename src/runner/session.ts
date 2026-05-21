@@ -8,6 +8,7 @@ export interface SessionOpts {
   sessionId: string;
   logPath: string;
   schema: string;
+  dangerouslySkipPermissions?: boolean;
 }
 
 export interface SessionResult {
@@ -26,19 +27,23 @@ export async function runSession(opts: SessionOpts): Promise<SessionResult> {
 
   const logStream = fs.createWriteStream(opts.logPath, { flags: 'a' });
 
-  const proc = Bun.spawn(
-    [
-      'claude',
-      '-p',
-      '--session-id',
-      opts.sessionId,
-      '--output-format',
-      'json',
-      '--json-schema',
-      opts.schema,
-      '--input-format',
-      'text',
-    ],
+  const args = [
+    'claude',
+    '-p',
+    '--session-id',
+    opts.sessionId,
+    '--output-format',
+    'json',
+    '--json-schema',
+    opts.schema,
+    '--input-format',
+    'text',
+  ];
+  if (opts.dangerouslySkipPermissions) {
+    args.push('--dangerously-skip-permissions');
+  }
+
+  const proc = Bun.spawn(args,
     {
       cwd: opts.worktreePath,
       stdin: Bun.file(opts.promptFile),

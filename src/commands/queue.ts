@@ -7,6 +7,7 @@ import { readConfig } from '../storage/config.js';
 import { writeMeta, updateMeta, getLogsDir } from '../storage/meta.js';
 import { enqueue } from '../storage/queue.js';
 import { ensureRepoConfig, runBootstrap } from '../config/repo-config.js';
+import { buildSandboxSettings, injectSandboxSettings } from '../runner/sandbox.js';
 import type { AppConfig } from '../types/meta.js';
 import type { RepoConfig } from '../config/repo-config.js';
 
@@ -63,6 +64,7 @@ export async function queuePlan(
   worktreePath: string,
   config: AppConfig,
   repoConfig: RepoConfig,
+  noSandbox: boolean = false,
 ): Promise<void> {
   const logPath = path.join(getLogsDir(runId), 'bootstrap.log');
   const bootstrapResult = await runBootstrap(worktreePath, repoConfig.bootstrap, logPath);
@@ -98,6 +100,12 @@ export async function queuePlan(
   const featureBranch = 'feature/' + folder;
   const targetBranch = config.target_branch ?? 'main';
 
+  const sandboxSettings = buildSandboxSettings(config, repoConfig, noSandbox);
+  const sandboxed = sandboxSettings !== null;
+  if (sandboxSettings) {
+    injectSandboxSettings(worktreePath, sandboxSettings);
+  }
+
   writeMeta(runId, {
     id: runId,
     primary_repo_path: repoPath,
@@ -109,6 +117,7 @@ export async function queuePlan(
     status: 'queued',
     total_cost_usd: 0,
     bootstrapped: true,
+    sandboxed,
     phases,
   });
 
@@ -123,7 +132,7 @@ export async function queuePlan(
   console.log("Run `cpe start` to begin execution.");
 }
 
-export async function queueCommand(folder?: string): Promise<void> {
+export async function queueCommand(folder?: string, options?: { disableSandbox?: boolean }): Promise<void> {
   let repoPath: string;
   try {
     repoPath = getPrimaryRepo();
@@ -173,5 +182,5 @@ export async function queueCommand(folder?: string): Promise<void> {
     process.exit(1);
   }
 
-  await queuePlan(repoPath, folder, runId, worktreePath, config, repoConfig);
+  await queuePlan(repoPath, folder, runId, worktreePath, config, repoConfig, options?.disableSandbox ?? false);
 }

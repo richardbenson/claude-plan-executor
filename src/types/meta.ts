@@ -1,5 +1,11 @@
 import type { RunStatus, PhaseStatus } from './state.js';
 
+export interface SandboxConfig {
+  enabled?: boolean;
+  allowedDomains?: string[];
+  allowWrite?: string[];
+}
+
 export interface TokenUsage {
   input_tokens: number;
   output_tokens: number;
@@ -43,6 +49,7 @@ export interface RunMeta {
   status: RunStatus;
   total_cost_usd: number;
   bootstrapped?: boolean;
+  sandboxed?: boolean;
   claude_pid?: number;
   phases: PhaseEntry[];
 }
@@ -61,6 +68,14 @@ export interface AppConfig {
   max_retries: number;
   gitea_host?: string;
   target_branch?: string;
+  dangerously_skip_permissions?: boolean;
+  sandbox?: SandboxConfig;
 }
 
-export const DEFAULT_CONFIG: AppConfig = { max_retries: 1 };
+export const DEFAULT_CONFIG: AppConfig = {
+  max_retries: 1,
+  sandbox: {
+    enabled: true,
+    allowedDomains: ['api.anthropic.com', 'github.com', 'registry.npmjs.org', 'pypi.org'],
+  },
+};

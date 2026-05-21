@@ -1,7 +1,12 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { type AppConfig, DEFAULT_CONFIG } from '../types/meta.js';
+import { type AppConfig, DEFAULT_CONFIG, type SandboxConfig } from '../types/meta.js';
+
+export const DEFAULT_SANDBOX: SandboxConfig = {
+  enabled: true,
+  allowedDomains: ['api.anthropic.com', 'github.com', 'registry.npmjs.org', 'pypi.org'],
+};
 
 export const CONFIG_PATH = path.join(os.homedir(), '.config', 'cpe', 'config.json');
 

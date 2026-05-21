@@ -2,7 +2,7 @@ import React from 'react';
 import { render } from 'ink';
 import { readConfig } from '../storage/config.js';
 import { readMeta, updateMeta } from '../storage/meta.js';
-import { isQueuePaused, dequeue } from '../storage/queue.js';
+import { isQueuePaused, dequeue, readQueue, writeQueue } from '../storage/queue.js';
 import { reconcileWorktrees } from '../git/worktree.js';
 import { runPhase, resumeOrRestart } from '../runner/phase-loop.js';
 import { finaliseRun } from '../runner/finalise.js';
@@ -30,7 +30,7 @@ export async function runQueueProcessor(config: AppConfig, bus: ActivityBus): Pr
 
     if (!reconciledRepos.has(meta.primary_repo_path)) {
       reconciledRepos.add(meta.primary_repo_path);
-      const { orphaned, missing } = reconcileWorktrees(meta.primary_repo_path, [runId]);
+      const { orphaned, missing } = reconcileWorktrees(meta.primary_repo_path, [{ id: runId, worktreePath: meta.worktree_path }]);
       if (orphaned.length > 0) {
         bus.emit({ kind: 'error', runId, phaseNumber: 0, message: 'Orphaned worktrees: ' + orphaned.map(w => w.path).join(', '), timestamp: new Date() });
       }
@@ -65,6 +65,12 @@ export async function runQueueProcessor(config: AppConfig, bus: ActivityBus): Pr
 
 export async function startCommand(): Promise<void> {
   const config = readConfig();
+
+  const queue = readQueue();
+  if (!queue.paused) {
+    queue.paused = true;
+    writeQueue(queue);
+  }
 
   // Queue processor runs independently; TUI can restart around it
   runQueueProcessor(config, activityBus).catch(() => {});

@@ -5,6 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { StateChip } from './components/StateChip.js';
 import { border, cyan, bgHi, dim, dim2, fg, green2 } from './theme.js';
+import { STATE_TABLE } from '../types/state.js';
 import { useInteractiveSubprocess } from './SubprocessContext.js';
 import { activityBus } from '../events/bus.js';
 import { readMeta, getLogsDir } from '../storage/meta.js';
@@ -133,6 +134,8 @@ export function Drilldown({ runId, phaseNumber, onClose, columns, rows }: Props)
               {/* 1. Metadata */}
               <Box flexDirection="row" flexWrap="wrap">
                 <StateChip status={phase.status} />
+                <Text color={dim}>{' · sandbox '}</Text>
+                <Text color={meta.sandboxed ? STATE_TABLE.complete.color : dim}>{meta.sandboxed ? 'enabled' : 'disabled'}</Text>
                 {phase.commit_sha && <Text color={green2}>{' · ' + phase.commit_sha.slice(0, 7)}</Text>}
                 <Text color={dim}>{' · ' + phase.retry_count + ' retries'}</Text>
                 <Text color={dim}>{' · ' + formatDuration(phase.started_at, phase.completed_at)}</Text>

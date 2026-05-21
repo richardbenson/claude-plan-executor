@@ -1,5 +1,4 @@
 import * as path from 'path';
-import { ulid } from 'ulid';
 import { readMeta, updateMeta, updatePhase, getLogsDir } from '../storage/meta.js';
 import { runSession } from './session.js';
 import { classifyEnvelope } from './envelope.js';
@@ -80,7 +79,7 @@ export async function runPhase(
   updatePhase(runId, phaseNumber, { head_before: headBefore });
 
   // STEP 4 — pre-allocate session UUID
-  const uuid = ulid();
+  const uuid = crypto.randomUUID();
   updatePhase(runId, phaseNumber, { session_id: uuid });
 
   // STEP 5 — start JSONL tail
@@ -95,6 +94,7 @@ export async function runPhase(
     sessionId: uuid,
     logPath,
     schema: PHASE_RESULT_SCHEMA,
+    dangerouslySkipPermissions: appConfig.dangerously_skip_permissions,
   });
 
   // STEP 7 — stop JSONL tail

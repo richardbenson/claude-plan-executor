@@ -5,7 +5,7 @@ import type { ActivityBus } from '../events/bus.js';
 import type { ActivityEvent, BashEvent, EditEvent } from '../events/types.js';
 
 export function encodeWorktreePath(worktreePath: string): string {
-  return worktreePath.replace(/\//g, '-').replace(/^-/, '');
+  return worktreePath.replace(/[/.]/g, '-');
 }
 
 export function getExpectedJsonlPath(uuid: string, worktreePath: string): string {

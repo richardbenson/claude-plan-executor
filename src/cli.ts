@@ -30,17 +30,19 @@ export function setupCli(): void {
 
   program
     .command('plan [details...]')
-    .description('Create a new plan interactively (Phase 09)')
+    .description('Create a new plan interactively')
+    .option('--disable-sandbox', 'Skip sandbox injection for this run')
     .action(wrap(planCommand));
 
   program
     .command('queue [folder]')
     .description('Add a plan to the queue')
+    .option('--disable-sandbox', 'Skip sandbox injection for this run')
     .action(wrap(queueCommand));
 
   program
     .command('start')
-    .description('Start the TUI / queue processor (Phase 09)')
+    .description('Start the TUI / queue processor')
     .action(wrap(startCommand));
 
   program

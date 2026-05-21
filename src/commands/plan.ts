@@ -53,7 +53,7 @@ function listDocsFolders(worktreePath: string): Set<string> {
   }
 }
 
-export async function planCommand(details: string[]): Promise<void> {
+export async function planCommand(details: string[], options?: { disableSandbox?: boolean }): Promise<void> {
   let planDetails: string;
 
   if (details.length === 0) {
@@ -105,8 +105,10 @@ export async function planCommand(details: string[]): Promise<void> {
   const tmpFile = os.tmpdir() + '/cpe-plan-' + runId + '.md';
   await Bun.write(tmpFile, message);
 
-  console.log('\n🚀 Starting planning session. Claude will guide you through creating the plan.\n');
-  console.log('   When done, exit Claude (Ctrl+D or type \'exit\').\n\n');
+  console.log('\n🚀 Starting planning session. Claude will guide you through creating the plan.');
+  console.log('   When done, exit Claude (Ctrl+D or type \'exit\').');
+  process.stdout.write('\nPress Enter to start...');
+  readOneLine();
 
   const proc = Bun.spawn(['claude'], {
     cwd: worktreePath,
@@ -155,7 +157,7 @@ export async function planCommand(details: string[]): Promise<void> {
   if (answer.toLowerCase() === 'n') {
     console.log('Run `cpe queue ' + folder + '` to queue it later.');
   } else {
-    await queuePlan(repoPath, folder, runId, worktreePath, config, repoConfig);
+    await queuePlan(repoPath, folder, runId, worktreePath, config, repoConfig, options?.disableSandbox ?? false);
     console.log('Run `cpe start` to begin execution.');
   }
 }

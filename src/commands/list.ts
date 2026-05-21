@@ -2,6 +2,8 @@ import * as path from 'path';
 import { readQueue } from '../storage/queue.js';
 import { readMeta } from '../storage/meta.js';
 
+const GAP = '  ';
+
 function pad(s: string, len: number): string {
   return s.length >= len ? s.slice(0, len) : s + ' '.repeat(len - s.length);
 }
@@ -13,14 +15,8 @@ export async function listCommand(): Promise<void> {
     return;
   }
 
-  const header =
-    pad('#', 3) +
-    pad('ID', 10) +
-    pad('REPO/PLAN', 30) +
-    pad('STATUS', 12) +
-    'PHASES';
-  console.log(header);
-  console.log('-'.repeat(70));
+  type Row = [string, string, string, string, string, string];
+  const rows: Row[] = [];
 
   for (let i = 0; i < queue.entries.length; i++) {
     const entry = queue.entries[i]!;
@@ -33,17 +29,22 @@ export async function listCommand(): Promise<void> {
 
     const shortId = entry.run_id.slice(0, 8) + '…';
     const repoName = path.basename(meta.primary_repo_path);
-    const repoPlan = `${repoName}/${meta.plan_folder}`;
     const completedPhases = meta.phases.filter(p => p.status === 'complete').length;
     const totalPhases = meta.phases.length;
-    const phaseSummary = `${completedPhases}/${totalPhases}`;
 
-    console.log(
-      pad(String(i + 1), 3) +
-        pad(shortId, 10) +
-        pad(repoPlan, 30) +
-        pad(meta.status, 12) +
-        phaseSummary,
-    );
+    rows.push([String(i + 1), shortId, repoName, meta.plan_folder, meta.status, `${completedPhases}/${totalPhases}`]);
   }
+
+  const headers: Row = ['#', 'ID', 'REPO', 'PLAN', 'STATUS', 'PHASES'];
+  const mins = [2, 9, 10, 10, 8, 6];
+  const widths = headers.map((h, i) =>
+    Math.max(mins[i]!, h.length, ...rows.map(r => r[i]!.length)),
+  );
+
+  const fmt = (row: Row) =>
+    row.slice(0, -1).map((cell, i) => pad(cell, widths[i]!)).join(GAP) + GAP + row[5]!;
+
+  console.log(fmt(headers));
+  console.log('-'.repeat(widths.slice(0, -1).reduce((s, w) => s + w + GAP.length, 0) + widths[5]!));
+  for (const row of rows) console.log(fmt(row));
 }
