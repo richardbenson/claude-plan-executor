@@ -6,6 +6,7 @@ import { Manage } from './Manage.js';
 import { SubprocessContext } from './SubprocessContext.js';
 import { activityBus } from '../events/bus.js';
 import { yellow } from './theme.js';
+import { useQueueState } from './hooks/useQueueState.js';
 import type { AppConfig } from '../types/meta.js';
 import type { ActivityEvent } from '../events/types.js';
 
@@ -45,12 +46,19 @@ export function App({ config: _config, onInteractiveSubprocess }: AppProps): Rea
   const [sessionActive, setSessionActive] = useState(false);
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
   const [events, setEvents] = useState<ActivityEvent[]>([]);
+  const queueState = useQueueState();
+  const sessionStartedAtRef = React.useRef<Date | null>(null);
+  const [sessionStartedAt, setSessionStartedAt] = useState<Date | null>(null);
 
   useEffect(() => {
     const unsub = activityBus.subscribe(event => {
       setEvents(prev => [...prev, event]);
       if (event.kind === 'phase') {
         setSessionActive(true);
+        if (!sessionStartedAtRef.current) {
+          sessionStartedAtRef.current = event.timestamp;
+          setSessionStartedAt(event.timestamp);
+        }
       } else if (event.kind === 'ok' || event.kind === 'error') {
         setSessionActive(false);
       }
@@ -75,8 +83,13 @@ export function App({ config: _config, onInteractiveSubprocess }: AppProps): Rea
     }
   });
 
-  const recentPhaseEvent = [...events].reverse().find(e => e.kind === 'phase');
-  const queueStatusText = sessionActive || recentPhaseEvent ? 'queue running' : 'queue idle';
+  const queueStatusText = queueState.isLimitPaused
+    ? 'queue paused · waiting on 5h limit window'
+    : queueState.isPaused
+    ? 'queue paused · by user'
+    : sessionActive
+    ? 'queue chewing'
+    : 'queue idle';
 
   const subprocessContextValue = {
     runInteractive: onInteractiveSubprocess ?? (() => {}),
@@ -88,6 +101,8 @@ export function App({ config: _config, onInteractiveSubprocess }: AppProps): Rea
         <Header
           mode={mode.toUpperCase() as 'WATCH' | 'MANAGE'}
           statusText={queueStatusText}
+          sessionActive={sessionActive}
+          startedAt={sessionStartedAt ?? undefined}
         />
         {showQuitConfirm && <QuitConfirmBar />}
         {mode === 'watch'
