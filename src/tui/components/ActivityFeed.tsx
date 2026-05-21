@@ -104,18 +104,25 @@ export function ActivityFeed({ events, availableRows, activeSessionId }: Props):
   const maxRows = Math.max(0, availableRows - 2);
   const visible = rendered.slice(0, maxRows);
 
-  const shortSession = activeSessionId
-    ? activeSessionId.slice(0, 6)
-    : (events[events.length - 1]?.runId?.slice(0, 6) ?? '------');
+  const isActive = !!activeSessionId;
 
   return (
     <Box flexDirection="column">
       {/* Header */}
       <Box>
         <Text> </Text>
-        <Text color={green}>●</Text>
-        <Text color={dim}> streaming session </Text>
-        <Text color={green2}>{shortSession}…</Text>
+        {isActive ? (
+          <>
+            <Text color={green}>●</Text>
+            <Text color={dim}> streaming session </Text>
+            <Text color={green2}>{activeSessionId!.slice(0, 6)}…</Text>
+          </>
+        ) : (
+          <>
+            <Text color={dim}>○</Text>
+            <Text color={dim}> no active session</Text>
+          </>
+        )}
       </Box>
 
       {/* Separator */}
