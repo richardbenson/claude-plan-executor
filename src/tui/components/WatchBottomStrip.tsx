@@ -7,6 +7,22 @@ import {
   dim, dim2, fg, green, green2, teal, orange, red, yellow, magenta, borderHi,
 } from '../theme.js';
 import type { QueueState } from '../hooks/useQueueState.js';
+import { activityBus } from '../../events/bus.js';
+
+function buildHourlyWindow(): number[] {
+  // 18 hourly buckets covering the last 18 hours (same as WatchHero sparkline)
+  const slots = new Array<number>(18).fill(0);
+  const now = new Date();
+  for (const ev of activityBus.getBuffer()) {
+    if (ev.kind !== 'ok') continue;
+    const hoursAgo = (now.getTime() - ev.timestamp.getTime()) / 3_600_000;
+    const idx = Math.floor(hoursAgo);
+    if (idx >= 0 && idx < 18) {
+      slots[17 - idx] = (slots[17 - idx] ?? 0) + ev.costUsd;
+    }
+  }
+  return slots;
+}
 
 interface Props {
   queueState: QueueState;
@@ -46,12 +62,13 @@ function UpNext({ queueState, colWidth }: { queueState: QueueState; colWidth: nu
       ) : (
         next3.map((run, i) => {
           const repo = path.basename(run.primary_repo_path);
-          const label = `${repo}/${run.plan_folder}`.slice(0, 14);
+          const label = `${repo}/${run.plan_folder}`.slice(0, 12);
           return (
             <Box key={run.id}>
               <Text color={dim2}>{String(i + 1).padStart(2)} </Text>
               <StateChip status="queued" showLabel={false} />
               <Text color={fg}> {label}</Text>
+              {queueState.isPaused && <Text color={yellow}>  ‖</Text>}
             </Box>
           );
         })
@@ -59,12 +76,6 @@ function UpNext({ queueState, colWidth }: { queueState: QueueState; colWidth: nu
       <Text color={dim}>{etaStr}</Text>
     </Box>
   );
-}
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (n >= 1_000) return Math.round(n / 1_000) + 'k';
-  return String(n);
 }
 
 function LimitWindow({ queueState, colWidth }: { queueState: QueueState; colWidth: number }): React.ReactElement {
@@ -88,22 +99,22 @@ function LimitWindow({ queueState, colWidth }: { queueState: QueueState; colWidt
     ? 'resets ' + queueState.limitResumeAt.toLocaleTimeString()
     : '';
 
-  const BAR_LEN = 14;
-  const currentTokens = queueState.hourlyTokenData[7] ?? 0;
-  const peakTokens = Math.max(...queueState.hourlyTokenData, 1);
-  const filled = currentTokens > 0 ? Math.max(1, Math.round((currentTokens / peakTokens) * BAR_LEN)) : 0;
-  const bar = '▰'.repeat(filled) + '▱'.repeat(BAR_LEN - filled);
-  const tokenLabel = currentTokens > 0 ? formatTokens(currentTokens) + ' this hr' : '—';
+  const isExhausted = queueState.isLimitPaused;
+  const windowData = buildHourlyWindow();
 
   return (
     <Box flexDirection="column" width={colWidth}>
       <Text color={dim} bold>LIMIT WINDOW</Text>
       <Text color={magenta}>{countdownStr}</Text>
-      <Text color={dim}>{bar}<Text color={dim2}> {tokenLabel}</Text></Text>
+      {isExhausted ? (
+        <Text color={magenta}>{'▰'.repeat(14)}<Text color={dim2}> 100% (limit hit)</Text></Text>
+      ) : (
+        <Text color={dim}>{'▱'.repeat(14)}<Text color={dim2}> window open</Text></Text>
+      )}
       {resetStr ? <Text color={dim}>{resetStr}</Text> : <Text color={dim}>no limit active</Text>}
       <Box>
-        <Text color={dim}>tokens/hour  </Text>
-        <Sparkline data={queueState.hourlyTokenData} width={8} color={dim2} />
+        <Text color={dim}>cost this window  </Text>
+        <Sparkline data={windowData.slice(-5)} width={8} color={isExhausted ? magenta : dim2} />
       </Box>
     </Box>
   );
