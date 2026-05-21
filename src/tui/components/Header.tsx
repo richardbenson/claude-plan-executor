@@ -7,6 +7,7 @@ interface Props {
   statusText: string;
   sessionActive?: boolean;
   startedAt?: Date;
+  compact?: boolean;
 }
 
 function formatDatetime(): string {
@@ -40,7 +41,7 @@ function formatElapsed(startedAt: Date): string {
   return `active ${m}m`;
 }
 
-export function Header({ mode, statusText, sessionActive, startedAt }: Props): React.ReactElement {
+export function Header({ mode, statusText, sessionActive, startedAt, compact }: Props): React.ReactElement {
   const [datetime, setDatetime] = useState(formatDatetime());
   const [elapsedStr, setElapsedStr] = useState(() =>
     startedAt ? formatElapsed(startedAt) : '',
@@ -72,10 +73,12 @@ export function Header({ mode, statusText, sessionActive, startedAt }: Props): R
         {sessionActive && <Text color={green}>● </Text>}
         <Text color={fgDark}>{statusText}</Text>
       </Box>
-      <Box>
-        {elapsedStr && <Text color={dim}>today · {elapsedStr}  </Text>}
-        <Text color={dim}>{datetime}</Text>
-      </Box>
+      {!compact && (
+        <Box>
+          {elapsedStr && <Text color={dim}>today · {elapsedStr}  </Text>}
+          <Text color={dim}>{datetime}</Text>
+        </Box>
+      )}
     </Box>
   );
 }

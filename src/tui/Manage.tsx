@@ -23,6 +23,7 @@ import type { ActivityEvent } from '../events/types.js';
 interface Props {
   columns: number;
   rows: number;
+  compact?: boolean;
 }
 
 function estimateDiskSize(worktreePath: string): string {
@@ -87,7 +88,7 @@ function StatusLine({
   );
 }
 
-export function Manage({ columns, rows }: Props): React.ReactElement {
+export function Manage({ columns, rows, compact }: Props): React.ReactElement {
   const qs = useQueueState();
   const [focusedPane, setFocusedPane] = useState<'queue' | 'phases' | 'executing'>('queue');
   const [selectedRunIndex, setSelectedRunIndex] = useState(0);
@@ -387,6 +388,72 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
   const elapsedMs = qs.activePhase?.started_at
     ? Date.now() - new Date(qs.activePhase.started_at).getTime()
     : 0;
+
+  if (compact) {
+    const paneHeight = rows - 3;
+    let activePane: React.ReactElement;
+    if (focusedPane === 'queue') {
+      activePane = (
+        <QueuePane
+          runs={allRuns}
+          selectedIndex={selectedRunIndex}
+          focused={true}
+          onSelect={setSelectedRunIndex}
+        />
+      );
+    } else if (focusedPane === 'phases') {
+      activePane = (
+        <PhasesPane
+          phases={phasesForSelectedRun}
+          selectedRun={selectedRun}
+          selectedIndex={selectedPhaseIndex}
+          focused={true}
+          onSelect={setSelectedPhaseIndex}
+          isPaused={qs.isPaused}
+        />
+      );
+    } else {
+      activePane = (
+        <ExecutingPane
+          runMeta={qs.activeRun}
+          activePhase={qs.activePhase}
+          events={events}
+          focused={true}
+          isPaused={qs.isPaused}
+        />
+      );
+    }
+
+    return (
+      <Box flexDirection="column" width={columns} height={rows - 1} overflow="hidden">
+        <Box flexGrow={1} height={paneHeight}>
+          {activePane}
+        </Box>
+        <Text color={dim}>
+          {'selected  ' + (selectedRun ? selectedRun.plan_folder + ' · ' + selectedRun.status : '—')}
+        </Text>
+        <Text color={dim}>{'Tab pane  ↑↓ select  ↵ open  p pause  K kill  q quit'}</Text>
+        {showPalette && (
+          <CommandPalette
+            visible={showPalette}
+            onClose={() => setShowPalette(false)}
+            onRun={handlePaletteCommand}
+            columns={columns}
+          />
+        )}
+        {killConfirm && qs.activeRun && qs.activePhase && (
+          <KillConfirmModal
+            runMeta={qs.activeRun}
+            phaseEntry={qs.activePhase}
+            elapsedMs={elapsedMs}
+            onConfirm={handleKill}
+            onCancel={() => setKillConfirm(false)}
+            columns={columns}
+          />
+        )}
+      </Box>
+    );
+  }
 
   return (
     <Box flexDirection="column" width={columns} height={rows - (qs.isPaused ? 3 : 2)} overflow="hidden">

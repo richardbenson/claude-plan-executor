@@ -42,6 +42,7 @@ function QuitConfirmBar(): React.ReactElement {
 
 export function App({ config: _config, onInteractiveSubprocess }: AppProps): React.ReactElement {
   const { columns, rows } = useStdoutDimensions();
+  const compact = columns < 100 || rows < 30;
   const [mode, setMode] = useState<'watch' | 'manage'>('watch');
   const [sessionActive, setSessionActive] = useState(false);
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
@@ -103,11 +104,12 @@ export function App({ config: _config, onInteractiveSubprocess }: AppProps): Rea
           statusText={queueStatusText}
           sessionActive={sessionActive}
           startedAt={sessionStartedAt ?? undefined}
+          compact={compact}
         />
         {showQuitConfirm && <QuitConfirmBar />}
         {mode === 'watch'
-          ? <Watch columns={columns} rows={rows} />
-          : <Manage columns={columns} rows={rows} />}
+          ? <Watch columns={columns} rows={rows} compact={compact} />
+          : <Manage columns={columns} rows={rows} compact={compact} />}
       </Box>
     </SubprocessContext.Provider>
   );
