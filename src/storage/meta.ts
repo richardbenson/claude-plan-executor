@@ -59,3 +59,19 @@ export function updatePhase(
   writeMeta(runId, updated, base);
   return updated;
 }
+
+export function extractPhaseTitle(
+  worktreePath: string,
+  planFolder: string,
+  promptFile: string,
+): string | undefined {
+  const docName = promptFile.replace('.prompt.md', '.md');
+  const docPath = path.join(worktreePath, 'docs', planFolder, docName);
+  try {
+    const content = fs.readFileSync(docPath, 'utf8');
+    const m = content.match(/^#{1,4}\s+Phase\s+\d+\s+—\s+(.+)$/m);
+    return m?.[1]?.trim();
+  } catch {
+    return undefined;
+  }
+}

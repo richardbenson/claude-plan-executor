@@ -114,7 +114,7 @@ export function Drilldown({ runId, phaseNumber, onClose, columns, rows }: Props)
           <Text color={dim}>{'PHASES · ' + meta.plan_folder}</Text>
           {phases.map((p) => {
             const sel = p.number === selectedPhaseNumber;
-            const label = phaseLabel(p.prompt_file);
+            const label = p.title ?? phaseLabel(p.prompt_file);
             return (
               <Box key={p.number} backgroundColor={sel ? bgHi : undefined}>
                 <StateChip status={p.status} showLabel={false} />

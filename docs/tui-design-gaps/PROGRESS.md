@@ -2,7 +2,7 @@
 
 | # | Title | Status | Branch | Depends on | Started | Completed | Notes |
 |---|---|---|---|---|---|---|---|
-| 1 | Phase titles throughout TUI | not-started | feature/tui-design-gaps | — | — | — | |
+| 1 | Phase titles throughout TUI | complete | feature/tui-design-gaps | — | 2026-05-21 | 2026-05-21 | |
 | 2 | Header live indicator + ActivityFeed label | not-started | feature/tui-design-gaps | 1 | — | — | |
 | 3 | StatusLine improvements + Drilldown keybinds | not-started | feature/tui-design-gaps | 1 | — | — | |
 | 4 | CommandBar + Manage paused banner | not-started | feature/tui-design-gaps | — | — | — | |
@@ -15,11 +15,11 @@
 ## Phase Details
 
 ### Phase 1 — Phase titles throughout TUI
-**Status:** not-started
+**Status:** complete
 **Branch:** feature/tui-design-gaps
 **Dependencies:** —
-**Date started:** —
-**Date completed:** —
+**Date started:** 2026-05-21
+**Date completed:** 2026-05-21
 **Notes:** —
 
 ### Phase 2 — Header live indicator + ActivityFeed label

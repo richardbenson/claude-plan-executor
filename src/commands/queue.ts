@@ -4,7 +4,7 @@ import { ulid } from 'ulid';
 import { getPrimaryRepo, getRemote } from '../git/repo.js';
 import { createWorktree } from '../git/worktree.js';
 import { readConfig } from '../storage/config.js';
-import { writeMeta, updateMeta, getLogsDir } from '../storage/meta.js';
+import { writeMeta, updateMeta, getLogsDir, extractPhaseTitle } from '../storage/meta.js';
 import { enqueue } from '../storage/queue.js';
 import { ensureRepoConfig, runBootstrap } from '../config/repo-config.js';
 import { buildSandboxSettings, injectSandboxSettings } from '../runner/sandbox.js';
@@ -86,6 +86,7 @@ export async function queuePlan(
   const phases = phaseFiles.map(f => ({
     number: parseInt(f.match(/PHASE_(\d+)/)![1]!, 10),
     prompt_file: f,
+    title: extractPhaseTitle(worktreePath, folder, f),
     status: 'pending' as const,
     retry_count: 0,
   }));

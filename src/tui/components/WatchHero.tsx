@@ -76,7 +76,9 @@ export function WatchHero({ queueState, columns }: Props): React.ReactElement {
             <Text> </Text>
             <Text color={fg}>
               phase {activePhase?.number ?? '?'} / {totalPhases}
-              {activePhase ? ` — ${path.basename(activePhase.prompt_file, '.prompt.md')}` : ''}
+              {activePhase
+                ? ` — ${activePhase.title ?? path.basename(activePhase.prompt_file, '.prompt.md').replace('PHASE_', 'phase ')}`
+                : ''}
             </Text>
             <Text>{'plan '}<Text color={cyan}>{progressBar}</Text></Text>
           </>
