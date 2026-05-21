@@ -60,11 +60,12 @@ export async function runPhase(
     throw new Error('runPhase called while run is paused-limit; caller must wait first');
   }
 
-  // STEP 2 — set phase executing
+  // STEP 2 — set phase + run executing
   const phaseEntry = meta.phases.find(p => p.number === phaseNumber);
   if (!phaseEntry) {
     throw new Error(`Phase ${phaseNumber} not found in run ${runId}`);
   }
+  updateMeta(runId, { status: 'executing' });
   updatePhase(runId, phaseNumber, { status: 'executing', started_at: new Date().toISOString() });
   bus.emit({
     kind: 'phase',

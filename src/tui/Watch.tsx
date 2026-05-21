@@ -99,7 +99,7 @@ export function Watch({ columns, rows }: Props): React.ReactElement {
     <Box flexDirection="column" width={columns} height={rows - 1}>
       {hero}
 
-      <Box flexDirection="column" flexGrow={1}>
+      <Box flexDirection="column" flexGrow={1} overflow="hidden">
         <ActivityFeed
           events={events}
           availableRows={feedRows}

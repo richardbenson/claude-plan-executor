@@ -40,7 +40,7 @@ function renderEvent(ev: ActivityEvent): RenderedEvent {
     case 'edit':
       return {
         key, color: magenta, glyph: '✎', kind: 'edit',
-        description: ev.file + (ev.inProgress ? ' █' : ` +${ev.additions} −${ev.deletions}`),
+        description: ev.file + (ev.inProgress ? ' █' : (ev.additions > 0 || ev.deletions > 0 ? ` +${ev.additions} −${ev.deletions}` : '')),
         timestamp: ev.timestamp,
         liveEdge: ev.inProgress,
       };

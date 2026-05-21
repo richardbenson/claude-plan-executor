@@ -106,7 +106,7 @@ export async function startJsonlTail(
         } catch {
           continue;
         }
-        for (const event of classifyJsonlEntry(entry, runId, phaseNumber, pendingEdits)) {
+        for (const event of classifyJsonlEntry(entry, runId, phaseNumber, pendingEdits, worktreePath)) {
           bus.emit(event);
         }
       }
@@ -134,6 +134,7 @@ export function classifyJsonlEntry(
   runId: string,
   phaseNumber: number,
   pendingEdits: Map<string, EditEvent | BashEvent>,
+  worktreePath?: string,
 ): ActivityEvent[] {
   if (!entry || typeof entry !== 'object') return [];
   const e = entry as Record<string, unknown>;
@@ -171,9 +172,13 @@ export function classifyJsonlEntry(
         const input = (i['input'] ?? {}) as Record<string, unknown>;
 
         if (name === 'Edit' || name === 'Write') {
+          let filePath = (input['file_path'] ?? input['path'] ?? '<unknown>') as string;
+          if (worktreePath && filePath.startsWith(worktreePath)) {
+            filePath = filePath.slice(worktreePath.length).replace(/^\//, '');
+          }
           const ev: EditEvent = {
             kind: 'edit', timestamp: new Date(), runId, phaseNumber,
-            file: (input['file_path'] ?? input['path'] ?? '<unknown>') as string,
+            file: filePath,
             additions: 0, deletions: 0, inProgress: true, toolUseId: id,
           };
           pendingEdits.set(id, ev);

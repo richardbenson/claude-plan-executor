@@ -374,7 +374,7 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
   return (
     <Box flexDirection="column" width={columns} height={rows - 2} overflow="hidden">
       {/* Triptych */}
-      <Box flexDirection="row" flexGrow={1}>
+      <Box flexDirection="row" flexGrow={1} overflow="hidden">
         <QueuePane
           runs={allRuns}
           selectedIndex={selectedRunIndex}

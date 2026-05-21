@@ -30,6 +30,12 @@ export function enqueue(runId: string, base?: string): void {
   writeQueue(queue, base);
 }
 
+export function enqueueFront(runId: string, base?: string): void {
+  const queue = readQueue(base);
+  queue.entries.unshift({ run_id: runId, added_at: new Date().toISOString() });
+  writeQueue(queue, base);
+}
+
 export function dequeue(base?: string): string | null {
   const queue = readQueue(base);
   const first = queue.entries.shift();
