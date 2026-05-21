@@ -30,11 +30,15 @@ interface Props {
   onClose: () => void;
   onRun: (command: string) => void;
   visible: boolean;
+  columns: number;
 }
 
-export function CommandPalette({ onClose, onRun, visible }: Props): React.ReactElement | null {
+export function CommandPalette({ onClose, onRun, visible, columns }: Props): React.ReactElement | null {
   const [query, setQuery] = useState('');
   const [selectedIdx, setSelectedIdx] = useState(0);
+
+  const modalWidth = 80;
+  const marginLeft = Math.max(0, Math.floor((columns - modalWidth - 2) / 2));
 
   const filtered = COMMANDS.filter(
     c =>
@@ -69,7 +73,11 @@ export function CommandPalette({ onClose, onRun, visible }: Props): React.ReactE
       borderStyle="round"
       borderColor={cyan}
       backgroundColor={bgFloat}
-      width={80}
+      width={modalWidth}
+      height={26}
+      overflow="hidden"
+      marginTop={4}
+      marginLeft={marginLeft}
     >
       <Box>
         <Text color={cyan}>{': '}</Text>

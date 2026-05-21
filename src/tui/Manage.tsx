@@ -441,13 +441,12 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
 
       {/* Modals */}
       {showPalette && (
-        <Box position="absolute" marginTop={2} marginLeft={10}>
-          <CommandPalette
-            visible={showPalette}
-            onClose={() => setShowPalette(false)}
-            onRun={handlePaletteCommand}
-          />
-        </Box>
+        <CommandPalette
+          visible={showPalette}
+          onClose={() => setShowPalette(false)}
+          onRun={handlePaletteCommand}
+          columns={columns}
+        />
       )}
       {killConfirm && qs.activeRun && qs.activePhase && (
         <KillConfirmModal
@@ -456,6 +455,7 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
           elapsedMs={elapsedMs}
           onConfirm={handleKill}
           onCancel={() => setKillConfirm(false)}
+          columns={columns}
         />
       )}
       {showQueueWizard && (

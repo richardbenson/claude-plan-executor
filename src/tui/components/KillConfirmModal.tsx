@@ -9,6 +9,7 @@ interface Props {
   elapsedMs: number;
   onConfirm: () => void;
   onCancel: () => void;
+  columns: number;
 }
 
 function formatDuration(ms: number): string {
@@ -24,7 +25,10 @@ function phaseLabel(promptFile: string): string {
   return m ? m[1] ?? promptFile : promptFile;
 }
 
-export function KillConfirmModal({ runMeta, phaseEntry, elapsedMs, onConfirm, onCancel }: Props): React.ReactElement {
+export function KillConfirmModal({ runMeta, phaseEntry, elapsedMs, onConfirm, onCancel, columns }: Props): React.ReactElement {
+  const modalWidth = 56;
+  const marginLeft = Math.max(0, Math.floor((columns - modalWidth - 2) / 2));
+
   useInput((input, key) => {
     if (input === 'K') { onConfirm(); return; }
     if (input === 'n' || key.escape) { onCancel(); return; }
@@ -41,9 +45,9 @@ export function KillConfirmModal({ runMeta, phaseEntry, elapsedMs, onConfirm, on
       borderStyle="round"
       borderColor={red}
       backgroundColor={bgFloat}
-      width={56}
+      width={modalWidth}
       marginTop={6}
-      marginLeft={32}
+      marginLeft={marginLeft}
     >
       <Text color={red}>{'⚠ KILL SESSION'}</Text>
       <Text>{''}</Text>

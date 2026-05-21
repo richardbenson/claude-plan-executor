@@ -7,7 +7,7 @@
 | 3 | StatusLine improvements + Drilldown keybinds | complete | feature/tui-design-gaps | 1 | 2026-05-21 | 2026-05-21 | |
 | 4 | CommandBar + Manage paused banner | complete | feature/tui-design-gaps | — | 2026-05-21 | 2026-05-21 | |
 | 5 | Limit window real data + Watch paused polish | complete | feature/tui-design-gaps | — | 2026-05-21 | 2026-05-21 | |
-| 6 | Modal dynamic centering | not-started | feature/tui-design-gaps | — | — | — | |
+| 6 | Modal dynamic centering | complete | feature/tui-design-gaps | — | 2026-05-21 | 2026-05-21 | |
 | 7 | Responsive sizing (80×24 compact) | not-started | feature/tui-design-gaps | — | — | — | |
 
 ---
@@ -55,11 +55,11 @@
 **Notes:** —
 
 ### Phase 6 — Modal dynamic centering
-**Status:** not-started
+**Status:** complete
 **Branch:** feature/tui-design-gaps
 **Dependencies:** —
-**Date started:** —
-**Date completed:** —
+**Date started:** 2026-05-21
+**Date completed:** 2026-05-21
 **Notes:** —
 
 ### Phase 7 — Responsive sizing (80×24 compact)

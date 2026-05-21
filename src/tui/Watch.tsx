@@ -112,13 +112,12 @@ export function Watch({ columns, rows }: Props): React.ReactElement {
       {footer}
 
       {showPalette && (
-        <Box position="absolute" marginTop={2} marginLeft={10}>
-          <CommandPalette
-            visible={showPalette}
-            onClose={() => setShowPalette(false)}
-            onRun={action => { handlePaletteCommand(action); setShowPalette(false); }}
-          />
-        </Box>
+        <CommandPalette
+          visible={showPalette}
+          onClose={() => setShowPalette(false)}
+          onRun={action => { handlePaletteCommand(action); setShowPalette(false); }}
+          columns={columns}
+        />
       )}
     </Box>
   );
