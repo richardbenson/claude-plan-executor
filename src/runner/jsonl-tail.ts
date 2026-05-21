@@ -106,8 +106,9 @@ export async function startJsonlTail(
         } catch {
           continue;
         }
-        const event = classifyJsonlEntry(entry, runId, phaseNumber, pendingEdits);
-        if (event) bus.emit(event);
+        for (const event of classifyJsonlEntry(entry, runId, phaseNumber, pendingEdits)) {
+          bus.emit(event);
+        }
       }
     } finally {
       fs.closeSync(fd);
@@ -117,108 +118,118 @@ export async function startJsonlTail(
   return () => watcher.close();
 }
 
+// Git commit output: "[branch-or-sha] message" on the first line
+const GIT_COMMIT_RE = /^\[(\S+)\s+([0-9a-f]{7,40})\]\s+(.+)/m;
+
+function extractResultText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content) && content.length > 0) {
+    return String((content[0] as Record<string, unknown>)?.['text'] ?? '');
+  }
+  return '';
+}
+
 export function classifyJsonlEntry(
   entry: unknown,
   runId: string,
   phaseNumber: number,
   pendingEdits: Map<string, EditEvent | BashEvent>,
-): ActivityEvent | null {
-  if (!entry || typeof entry !== 'object') return null;
+): ActivityEvent[] {
+  if (!entry || typeof entry !== 'object') return [];
   const e = entry as Record<string, unknown>;
 
   // Rate-limit error
   if (e['isApiErrorMessage'] === true && e['apiErrorStatus'] === 429) {
-    return {
+    return [{
       kind: 'limit',
       timestamp: new Date(),
       runId,
       phaseNumber,
       resumeAt: new Date(Date.now() + 5 * 60 * 1000),
-    };
+    }];
   }
 
-  // Tool use: assistant emitting tool calls
+  // Assistant turn: text narration + tool calls
   if (e['type'] === 'assistant') {
     const message = e['message'] as Record<string, unknown> | undefined;
     const content = message?.['content'];
-    if (!Array.isArray(content)) return null;
+    if (!Array.isArray(content)) return [];
 
-    let lastEvent: ActivityEvent | null = null;
+    const events: ActivityEvent[] = [];
     for (const item of content) {
       if (!item || typeof item !== 'object') continue;
       const i = item as Record<string, unknown>;
-      if (i['type'] !== 'tool_use') continue;
-      const id = i['id'] as string;
-      const name = i['name'] as string;
-      const input = (i['input'] ?? {}) as Record<string, unknown>;
 
-      if (name === 'Edit' || name === 'Write') {
-        const ev: EditEvent = {
-          kind: 'edit',
-          timestamp: new Date(),
-          runId,
-          phaseNumber,
-          file: (input['file_path'] ?? input['path'] ?? '<unknown>') as string,
-          additions: 0,
-          deletions: 0,
-          inProgress: true,
-          toolUseId: id,
-        };
-        pendingEdits.set(id, ev);
-        lastEvent = ev;
-      } else if (name === 'Bash') {
-        const ev: BashEvent = {
-          kind: 'bash',
-          timestamp: new Date(),
-          runId,
-          phaseNumber,
-          command: (input['command'] ?? '<bash>') as string,
-          toolUseId: id,
-        };
-        pendingEdits.set(id, ev);
-        lastEvent = ev;
+      if (i['type'] === 'text') {
+        const text = (i['text'] as string ?? '').trim();
+        if (text) {
+          events.push({ kind: 'text', timestamp: new Date(), runId, phaseNumber, text });
+        }
+      } else if (i['type'] === 'tool_use') {
+        const id = i['id'] as string;
+        const name = i['name'] as string;
+        const input = (i['input'] ?? {}) as Record<string, unknown>;
+
+        if (name === 'Edit' || name === 'Write') {
+          const ev: EditEvent = {
+            kind: 'edit', timestamp: new Date(), runId, phaseNumber,
+            file: (input['file_path'] ?? input['path'] ?? '<unknown>') as string,
+            additions: 0, deletions: 0, inProgress: true, toolUseId: id,
+          };
+          pendingEdits.set(id, ev);
+          events.push(ev);
+        } else if (name === 'Bash') {
+          const ev: BashEvent = {
+            kind: 'bash', timestamp: new Date(), runId, phaseNumber,
+            command: (input['command'] ?? '<bash>') as string,
+            toolUseId: id,
+          };
+          pendingEdits.set(id, ev);
+          events.push(ev);
+        }
       }
     }
-    return lastEvent;
+    return events;
   }
 
-  // Tool result
-  if (e['type'] === 'tool') {
-    const content = e['content'];
-    if (!Array.isArray(content)) return null;
+  // Tool results arrive as user messages in the JSONL format
+  if (e['type'] === 'user') {
+    const message = e['message'] as Record<string, unknown> | undefined;
+    const content = message?.['content'];
+    if (!Array.isArray(content)) return [];
 
+    const events: ActivityEvent[] = [];
     for (const item of content) {
       if (!item || typeof item !== 'object') continue;
       const i = item as Record<string, unknown>;
       if (i['type'] !== 'tool_result') continue;
+
       const toolUseId = i['tool_use_id'] as string | undefined;
       if (!toolUseId) continue;
       const pending = pendingEdits.get(toolUseId);
       if (!pending) continue;
-
       pendingEdits.delete(toolUseId);
 
+      const resultText = extractResultText(i['content']).slice(0, 200);
+
       if (pending.kind === 'edit') {
-        const updated: EditEvent = { ...pending, inProgress: false, timestamp: new Date() };
-        return updated;
+        events.push({ ...pending, inProgress: false, timestamp: new Date() });
       } else if (pending.kind === 'bash') {
-        const resultContent = i['content'];
-        const resultText =
-          typeof resultContent === 'string'
-            ? resultContent.slice(0, 120)
-            : Array.isArray(resultContent)
-              ? String((resultContent[0] as Record<string, unknown>)?.['text'] ?? '').slice(0, 120)
-              : undefined;
-        const updated: BashEvent = {
-          ...pending,
-          result: resultText,
-          timestamp: new Date(),
-        };
-        return updated;
+        const commitMatch = GIT_COMMIT_RE.exec(resultText);
+        if (commitMatch) {
+          // Promote to a commit event
+          events.push({
+            kind: 'commit', timestamp: new Date(), runId, phaseNumber,
+            sha: commitMatch[2]!,
+            message: commitMatch[3]!.slice(0, 72),
+          });
+        } else {
+          events.push({ ...pending, result: resultText.slice(0, 120), timestamp: new Date() });
+        }
       }
     }
-    return null;
+    return events;
   }
 
-  return null;
+  return [];
 }

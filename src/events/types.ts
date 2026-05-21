@@ -63,6 +63,11 @@ export interface LimitEvent extends ActivityEventBase {
   resumeAt: Date;
 }
 
+export interface TextEvent extends ActivityEventBase {
+  kind: 'text';
+  text: string;
+}
+
 export type ActivityEvent =
   | PhaseEvent
   | EditEvent
@@ -71,4 +76,5 @@ export type ActivityEvent =
   | OkEvent
   | PauseEvent
   | ErrorEvent
-  | LimitEvent;
+  | LimitEvent
+  | TextEvent;

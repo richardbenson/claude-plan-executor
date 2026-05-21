@@ -56,6 +56,14 @@ function renderEvent(ev: ActivityEvent): RenderedEvent {
         description: ev.sha.slice(0, 7) + ' · ' + ev.message.slice(0, 50),
         timestamp: ev.timestamp,
       };
+    case 'text': {
+      const firstLine = ev.text.split('\n')[0] ?? ev.text;
+      return {
+        key, color: dim, glyph: '»', kind: 'text',
+        description: firstLine.slice(0, 72),
+        timestamp: ev.timestamp,
+      };
+    }
     case 'ok':
       return {
         key, color: green, glyph: '✓', kind: 'ok',
