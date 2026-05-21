@@ -8,7 +8,7 @@ import { border, cyan, bgHi, dim, dim2, fg, green2 } from './theme.js';
 import { STATE_TABLE } from '../types/state.js';
 import { useInteractiveSubprocess } from './SubprocessContext.js';
 import { activityBus } from '../events/bus.js';
-import { readMeta, getLogsDir } from '../storage/meta.js';
+import { readMeta, getLogsDir, updatePhase, updateMeta } from '../storage/meta.js';
 import type { RunMeta, PhaseEntry } from '../types/meta.js';
 
 interface Props {
@@ -91,6 +91,26 @@ export function Drilldown({ runId, phaseNumber, onClose, columns, rows }: Props)
     if (input === 'd' && phase?.head_before && phase.commit_sha) {
       const pager = process.env['PAGER'] ?? 'less';
       runInteractive(['sh', '-c', 'git diff ' + phase.head_before + '..' + phase.commit_sha + ' | ' + pager]);
+      return;
+    }
+    if (input === 'r' && phase) {
+      const pid = meta.claude_pid;
+      if (pid) {
+        try { process.kill(pid, 'SIGTERM'); } catch {}
+      }
+      updatePhase(runId, phase.number, { status: 'pending', retry_count: 0 });
+      updateMeta(runId, { status: 'queued' });
+      try { meta = readMeta(runId); } catch {}
+      return;
+    }
+    if (input === 's' && phase) {
+      updatePhase(runId, phase.number, { status: 'failed', summary: 'skipped by user' });
+      const nextPhase = meta.phases.find(p => p.number > phase.number);
+      if (nextPhase) {
+        updatePhase(runId, nextPhase.number, { status: 'pending' });
+      }
+      updateMeta(runId, { status: 'queued' });
+      try { meta = readMeta(runId); } catch {}
       return;
     }
   });

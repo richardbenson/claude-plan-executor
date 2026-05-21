@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import * as fs from 'fs';
 import * as path from 'path';
+import { execSync } from 'child_process';
 import { QueuePane } from './components/QueuePane.js';
 import { PhasesPane } from './components/PhasesPane.js';
 import { ExecutingPane } from './components/ExecutingPane.js';
@@ -16,7 +17,7 @@ import { QueueWizard } from './components/QueueWizard.js';
 import { activityBus } from '../events/bus.js';
 import { readQueue, writeQueue } from '../storage/queue.js';
 import { updateMeta, updatePhase, getLogsDir } from '../storage/meta.js';
-import { borderHi, dim, dim2, cyan, fg } from './theme.js';
+import { borderHi, dim, dim2, cyan, fg, yellow } from './theme.js';
 import type { ActivityEvent } from '../events/types.js';
 
 interface Props {
@@ -26,22 +27,25 @@ interface Props {
 
 function estimateDiskSize(worktreePath: string): string {
   try {
-    const stat = fs.lstatSync(worktreePath);
-    if (!stat) return '?MB';
-    // rough estimate: just report directory exists
-    return '~?MB';
+    const result = execSync('du -sh ' + JSON.stringify(worktreePath), {
+      encoding: 'utf8',
+      timeout: 2000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return result.split('\t')[0]?.trim() ?? '?';
   } catch {
-    return '—';
+    return '?';
   }
 }
 
 function StatusLine({
-  columns, selectedRun, selectedPhaseIndex, allRuns,
+  columns, selectedRun, selectedPhaseIndex, allRuns, isPaused,
 }: {
   columns: number;
   selectedRun: import('../types/meta.js').RunMeta | null;
   selectedPhaseIndex: number;
   allRuns: import('../types/meta.js').RunMeta[];
+  isPaused: boolean;
 }): React.ReactElement {
   if (!selectedRun) {
     return (
@@ -56,11 +60,24 @@ function StatusLine({
   const posStr = position === 1 ? '1st' : position === 2 ? '2nd' : position === 3 ? '3rd' : position + 'th';
   const diskSize = estimateDiskSize(selectedRun.worktree_path);
 
+  const remainingPhases = selectedRun
+    ? selectedRun.phases.filter(
+        p => p.status !== 'complete' && p.status !== 'pr-created' && p.status !== 'failed',
+      ).length
+    : 0;
+  const etaMin = remainingPhases * 5;
+  const etaStr = remainingPhases > 0
+    ? (etaMin >= 60
+      ? `~${Math.floor(etaMin / 60)}h ${etaMin % 60}m`
+      : `~${etaMin}m`)
+    : '—';
+
   return (
     <Box flexDirection="column" width={columns}>
       <Text>
         <Text color={dim}>{'selected  '}</Text>
-        <Text color={fg}>{repoName + '/' + selectedRun.plan_folder + ' · ' + selectedRun.status + ' · ' + posStr}</Text>
+        <Text color={fg}>{repoName + '/' + selectedRun.plan_folder + ' · ' + selectedRun.status + ' · ' + posStr + ' · eta ' + etaStr}</Text>
+        {isPaused && <Text color={yellow}>{'  ‖ paused'}</Text>}
       </Text>
       <Text>
         <Text color={dim}>{'          worktree '}</Text>
@@ -405,6 +422,7 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
         selectedRun={selectedRun}
         selectedPhaseIndex={selectedPhaseIndex}
         allRuns={allRuns}
+        isPaused={qs.isPaused}
       />
 
       {/* Command bar */}
