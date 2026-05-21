@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { StateChip } from './StateChip.js';
-import { border, cyan, bgHi, dim, yellow } from '../theme.js';
+import { border, cyan, bgFloat, dim, yellow } from '../theme.js';
 import type { RunMeta, PhaseEntry } from '../../types/meta.js';
 
 interface Props {
@@ -30,11 +30,11 @@ export function PhasesPane({ phases, selectedRun, selectedIndex, focused, isPaus
       )}
       {phases.map((phase, i) => {
         const selected = i === selectedIndex;
-        const label = phaseLabel(phase.prompt_file);
+        const label = phase.title ?? phaseLabel(phase.prompt_file);
         const costStr = phase.cost_usd != null ? '  $' + phase.cost_usd.toFixed(3) : '';
 
         return (
-          <Box key={phase.number} backgroundColor={selected ? bgHi : undefined}>
+          <Box key={phase.number} backgroundColor={selected ? bgFloat : undefined}>
             <StateChip status={phase.status} showLabel={false} />
             <Text>{' ' + String(phase.number).padStart(2, '0') + ' ' + label + costStr}</Text>
           </Box>

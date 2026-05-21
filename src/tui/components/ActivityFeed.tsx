@@ -118,9 +118,9 @@ export function ActivityFeed({ events, availableRows, activeSessionId }: Props):
     <Box flexDirection="column">
       {/* Header */}
       <Box>
-        <Text> </Text>
         {isActive ? (
           <>
+            <Text color={dim} bold>LIVE ACTIVITY </Text>
             <Text color={green}>●</Text>
             <Text color={dim}> streaming session </Text>
             <Text color={green2}>{activeSessionId!.slice(0, 6)}…</Text>

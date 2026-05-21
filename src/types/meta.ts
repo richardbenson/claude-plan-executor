@@ -16,6 +16,7 @@ export interface TokenUsage {
 export interface PhaseEntry {
   number: number;
   prompt_file: string;
+  title?: string;
   status: PhaseStatus;
   retry_count: number;
   head_before?: string;

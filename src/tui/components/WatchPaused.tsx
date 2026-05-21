@@ -5,6 +5,27 @@ import figlet from 'figlet';
 import { StateChip } from './StateChip.js';
 import { yellow, magenta, dim, dim2, fg, fgDark } from '../theme.js';
 import type { QueueState } from '../hooks/useQueueState.js';
+import { activityBus } from '../../events/bus.js';
+
+function formatAgo(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m ago`;
+  if (m > 0) return `${m}m ago`;
+  return 'just now';
+}
+
+function getPausedAgo(): string | null {
+  const buf = activityBus.getBuffer();
+  for (let i = buf.length - 1; i >= 0; i--) {
+    const ev = buf[i];
+    if (ev?.kind === 'pause') {
+      return formatAgo(Date.now() - ev.timestamp.getTime());
+    }
+  }
+  return null;
+}
 
 interface Props {
   variant: 'user' | 'limit';
@@ -35,7 +56,7 @@ function UserPausedHero({ queueState }: { queueState: QueueState }): React.React
   return (
     <Box borderStyle="round" borderColor={yellow} flexDirection="row">
       <Box flexDirection="column" flexGrow={1} paddingLeft={1}>
-        <Text color={yellow} bold>‖ QUEUE PAUSED · by user</Text>
+        <Text color={yellow} bold>{'‖ QUEUE PAUSED · by user' + (getPausedAgo() ? ' · ' + getPausedAgo() : '')}</Text>
         <Text color={fgDark}>FINISHING THIS PHASE, THEN STOPPING</Text>
         <Text> </Text>
         <Text color={dim}>the current phase will complete normally</Text>
@@ -122,6 +143,16 @@ function LimitPausedFull({ queueState, columns }: { queueState: QueueState; colu
               </Box>
             );
           })
+        )}
+      </Box>
+
+      {/* While you wait */}
+      <Box flexDirection="column" paddingLeft={1} marginTop={1}>
+        <Text color={dim} bold>WHILE YOU WAIT</Text>
+        <Text color={dim2}>{'· cpe will auto-resume when the window resets'}</Text>
+        <Text color={dim2}>{'· the current phase (if any) has been stopped and will retry'}</Text>
+        {queueState.limitResumeAt && (
+          <Text color={dim2}>{'· check back at ' + queueState.limitResumeAt.toLocaleTimeString()}</Text>
         )}
       </Box>
     </Box>

@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
-import { blue, borderHi, teal, orange, fgDark, dim } from '../theme.js';
+import { blue, borderHi, teal, orange, fgDark, dim, green } from '../theme.js';
 
 interface Props {
   mode: 'WATCH' | 'MANAGE';
   statusText: string;
-  elapsed?: number;
+  sessionActive?: boolean;
+  startedAt?: Date;
+  compact?: boolean;
 }
 
 function formatDatetime(): string {
@@ -30,8 +32,20 @@ function formatDatetime(): string {
   return `${weekday} ${day} ${month} · ${time} ${tz}`;
 }
 
-export function Header({ mode, statusText }: Props): React.ReactElement {
+function formatElapsed(startedAt: Date): string {
+  const ms = Date.now() - startedAt.getTime();
+  const totalMin = Math.floor(ms / 60_000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h > 0) return `active ${h}h ${m}m`;
+  return `active ${m}m`;
+}
+
+export function Header({ mode, statusText, sessionActive, startedAt, compact }: Props): React.ReactElement {
   const [datetime, setDatetime] = useState(formatDatetime());
+  const [elapsedStr, setElapsedStr] = useState(() =>
+    startedAt ? formatElapsed(startedAt) : '',
+  );
 
   useEffect(() => {
     // Tick every minute — second-precision updates cause Ink to repaint the full
@@ -39,6 +53,13 @@ export function Header({ mode, statusText }: Props): React.ReactElement {
     const id = setInterval(() => setDatetime(formatDatetime()), 60_000);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    if (!startedAt) return;
+    setElapsedStr(formatElapsed(startedAt));
+    const id = setInterval(() => setElapsedStr(formatElapsed(startedAt)), 60_000);
+    return () => clearInterval(id);
+  }, [startedAt]);
 
   const modeColor = mode === 'WATCH' ? teal : orange;
 
@@ -49,9 +70,15 @@ export function Header({ mode, statusText }: Props): React.ReactElement {
         <Text color={borderHi}> · </Text>
         <Text color={modeColor} bold>{mode}</Text>
         <Text color={borderHi}> · </Text>
+        {sessionActive && <Text color={green}>● </Text>}
         <Text color={fgDark}>{statusText}</Text>
       </Box>
-      <Text color={dim}>{datetime}</Text>
+      {!compact && (
+        <Box>
+          {elapsedStr && <Text color={dim}>today · {elapsedStr}  </Text>}
+          <Text color={dim}>{datetime}</Text>
+        </Box>
+      )}
     </Box>
   );
 }

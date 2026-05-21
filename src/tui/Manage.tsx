@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import * as fs from 'fs';
 import * as path from 'path';
+import { execSync } from 'child_process';
 import { QueuePane } from './components/QueuePane.js';
 import { PhasesPane } from './components/PhasesPane.js';
 import { ExecutingPane } from './components/ExecutingPane.js';
@@ -16,32 +17,36 @@ import { QueueWizard } from './components/QueueWizard.js';
 import { activityBus } from '../events/bus.js';
 import { readQueue, writeQueue } from '../storage/queue.js';
 import { updateMeta, updatePhase, getLogsDir } from '../storage/meta.js';
-import { borderHi, dim, dim2, cyan, fg } from './theme.js';
+import { borderHi, dim, dim2, cyan, fg, yellow } from './theme.js';
 import type { ActivityEvent } from '../events/types.js';
 
 interface Props {
   columns: number;
   rows: number;
+  compact?: boolean;
 }
 
 function estimateDiskSize(worktreePath: string): string {
   try {
-    const stat = fs.lstatSync(worktreePath);
-    if (!stat) return '?MB';
-    // rough estimate: just report directory exists
-    return '~?MB';
+    const result = execSync('du -sh ' + JSON.stringify(worktreePath), {
+      encoding: 'utf8',
+      timeout: 2000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return result.split('\t')[0]?.trim() ?? '?';
   } catch {
-    return '—';
+    return '?';
   }
 }
 
 function StatusLine({
-  columns, selectedRun, selectedPhaseIndex, allRuns,
+  columns, selectedRun, selectedPhaseIndex, allRuns, isPaused,
 }: {
   columns: number;
   selectedRun: import('../types/meta.js').RunMeta | null;
   selectedPhaseIndex: number;
   allRuns: import('../types/meta.js').RunMeta[];
+  isPaused: boolean;
 }): React.ReactElement {
   if (!selectedRun) {
     return (
@@ -56,11 +61,24 @@ function StatusLine({
   const posStr = position === 1 ? '1st' : position === 2 ? '2nd' : position === 3 ? '3rd' : position + 'th';
   const diskSize = estimateDiskSize(selectedRun.worktree_path);
 
+  const remainingPhases = selectedRun
+    ? selectedRun.phases.filter(
+        p => p.status !== 'complete' && p.status !== 'pr-created' && p.status !== 'failed',
+      ).length
+    : 0;
+  const etaMin = remainingPhases * 5;
+  const etaStr = remainingPhases > 0
+    ? (etaMin >= 60
+      ? `~${Math.floor(etaMin / 60)}h ${etaMin % 60}m`
+      : `~${etaMin}m`)
+    : '—';
+
   return (
     <Box flexDirection="column" width={columns}>
       <Text>
         <Text color={dim}>{'selected  '}</Text>
-        <Text color={fg}>{repoName + '/' + selectedRun.plan_folder + ' · ' + selectedRun.status + ' · ' + posStr}</Text>
+        <Text color={fg}>{repoName + '/' + selectedRun.plan_folder + ' · ' + selectedRun.status + ' · ' + posStr + ' · eta ' + etaStr}</Text>
+        {isPaused && <Text color={yellow}>{'  ‖ paused'}</Text>}
       </Text>
       <Text>
         <Text color={dim}>{'          worktree '}</Text>
@@ -70,7 +88,7 @@ function StatusLine({
   );
 }
 
-export function Manage({ columns, rows }: Props): React.ReactElement {
+export function Manage({ columns, rows, compact }: Props): React.ReactElement {
   const qs = useQueueState();
   const [focusedPane, setFocusedPane] = useState<'queue' | 'phases' | 'executing'>('queue');
   const [selectedRunIndex, setSelectedRunIndex] = useState(0);
@@ -371,8 +389,80 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
     ? Date.now() - new Date(qs.activePhase.started_at).getTime()
     : 0;
 
+  if (compact) {
+    const paneHeight = rows - 3;
+    let activePane: React.ReactElement;
+    if (focusedPane === 'queue') {
+      activePane = (
+        <QueuePane
+          runs={allRuns}
+          selectedIndex={selectedRunIndex}
+          focused={true}
+          onSelect={setSelectedRunIndex}
+        />
+      );
+    } else if (focusedPane === 'phases') {
+      activePane = (
+        <PhasesPane
+          phases={phasesForSelectedRun}
+          selectedRun={selectedRun}
+          selectedIndex={selectedPhaseIndex}
+          focused={true}
+          onSelect={setSelectedPhaseIndex}
+          isPaused={qs.isPaused}
+        />
+      );
+    } else {
+      activePane = (
+        <ExecutingPane
+          runMeta={qs.activeRun}
+          activePhase={qs.activePhase}
+          events={events}
+          focused={true}
+          isPaused={qs.isPaused}
+        />
+      );
+    }
+
+    return (
+      <Box flexDirection="column" width={columns} height={rows - 1} overflow="hidden">
+        <Box flexGrow={1} height={paneHeight}>
+          {activePane}
+        </Box>
+        <Text color={dim}>
+          {'selected  ' + (selectedRun ? selectedRun.plan_folder + ' · ' + selectedRun.status : '—')}
+        </Text>
+        <Text color={dim}>{'Tab pane  ↑↓ select  ↵ open  p pause  K kill  q quit'}</Text>
+        {showPalette && (
+          <CommandPalette
+            visible={showPalette}
+            onClose={() => setShowPalette(false)}
+            onRun={handlePaletteCommand}
+            columns={columns}
+          />
+        )}
+        {killConfirm && qs.activeRun && qs.activePhase && (
+          <KillConfirmModal
+            runMeta={qs.activeRun}
+            phaseEntry={qs.activePhase}
+            elapsedMs={elapsedMs}
+            onConfirm={handleKill}
+            onCancel={() => setKillConfirm(false)}
+            columns={columns}
+          />
+        )}
+      </Box>
+    );
+  }
+
   return (
-    <Box flexDirection="column" width={columns} height={rows - 2} overflow="hidden">
+    <Box flexDirection="column" width={columns} height={rows - (qs.isPaused ? 3 : 2)} overflow="hidden">
+      {/* Paused banner */}
+      {qs.isPaused && (
+        <Text color={yellow} dimColor>
+          {'‖‖ QUEUE PAUSED · currently-executing phase finishes, then waits · press p to resume'}
+        </Text>
+      )}
       {/* Triptych */}
       <Box flexDirection="row" flexGrow={1} overflow="hidden">
         <QueuePane
@@ -396,6 +486,7 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
           activePhase={qs.activePhase}
           events={events}
           focused={focusedPane === 'executing'}
+          isPaused={qs.isPaused}
         />
       </Box>
 
@@ -405,6 +496,7 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
         selectedRun={selectedRun}
         selectedPhaseIndex={selectedPhaseIndex}
         allRuns={allRuns}
+        isPaused={qs.isPaused}
       />
 
       {/* Command bar */}
@@ -416,13 +508,12 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
 
       {/* Modals */}
       {showPalette && (
-        <Box position="absolute" marginTop={2} marginLeft={10}>
-          <CommandPalette
-            visible={showPalette}
-            onClose={() => setShowPalette(false)}
-            onRun={handlePaletteCommand}
-          />
-        </Box>
+        <CommandPalette
+          visible={showPalette}
+          onClose={() => setShowPalette(false)}
+          onRun={handlePaletteCommand}
+          columns={columns}
+        />
       )}
       {killConfirm && qs.activeRun && qs.activePhase && (
         <KillConfirmModal
@@ -431,6 +522,7 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
           elapsedMs={elapsedMs}
           onConfirm={handleKill}
           onCancel={() => setKillConfirm(false)}
+          columns={columns}
         />
       )}
       {showQueueWizard && (

@@ -9,18 +9,19 @@ import { WatchPaused, UserPausedFooter } from './components/WatchPaused.js';
 import { CommandPalette } from './components/CommandPalette.js';
 import { readQueue, writeQueue } from '../storage/queue.js';
 import { updateMeta, updatePhase } from '../storage/meta.js';
-import { dim2 } from './theme.js';
+import { dim2, cyan, dim } from './theme.js';
 import type { ActivityEvent } from '../events/types.js';
 
 interface Props {
   columns: number;
   rows: number;
+  compact?: boolean;
 }
 
 // Approximate fixed heights: header(1) + hero border+content(~8) + feed header(2) + strip(~7) + footer(1)
 const FIXED_ROWS = 20;
 
-export function Watch({ columns, rows }: Props): React.ReactElement {
+export function Watch({ columns, rows, compact }: Props): React.ReactElement {
   const queueState = useQueueState();
   const [events, setEvents] = useState<ActivityEvent[]>(() => [...activityBus.getBuffer()]);
   const [showPalette, setShowPalette] = useState(false);
@@ -73,6 +74,41 @@ export function Watch({ columns, rows }: Props): React.ReactElement {
   const feedRows = Math.max(2, rows - FIXED_ROWS);
   const activeSessionId = queueState.activeRun?.id;
 
+  if (compact) {
+    const { activeRun, activePhase } = queueState;
+    const compactFeedRows = Math.max(2, rows - 6);
+    return (
+      <Box flexDirection="column" width={columns} height={rows - 1}>
+        <Box flexDirection="row">
+          {activeRun ? (
+            <>
+              <Text color={cyan}>{activeRun.plan_folder}</Text>
+              <Text color={dim}>{' phase ' + (activePhase?.number ?? '?') + '/' + activeRun.phases.length}</Text>
+            </>
+          ) : (
+            <Text color={dim}>idle — no active run</Text>
+          )}
+        </Box>
+        <Box flexDirection="column" flexGrow={1}>
+          <ActivityFeed
+            events={events}
+            availableRows={compactFeedRows}
+            activeSessionId={activeSessionId}
+          />
+        </Box>
+        <Text color={dim2}> v manage  q quit</Text>
+        {showPalette && (
+          <CommandPalette
+            visible={showPalette}
+            onClose={() => setShowPalette(false)}
+            onRun={action => { handlePaletteCommand(action); setShowPalette(false); }}
+            columns={columns}
+          />
+        )}
+      </Box>
+    );
+  }
+
   // Limit-paused is full-screen replacement
   if (queueState.isLimitPaused) {
     return (
@@ -112,13 +148,12 @@ export function Watch({ columns, rows }: Props): React.ReactElement {
       {footer}
 
       {showPalette && (
-        <Box position="absolute" marginTop={2} marginLeft={10}>
-          <CommandPalette
-            visible={showPalette}
-            onClose={() => setShowPalette(false)}
-            onRun={action => { handlePaletteCommand(action); setShowPalette(false); }}
-          />
-        </Box>
+        <CommandPalette
+          visible={showPalette}
+          onClose={() => setShowPalette(false)}
+          onRun={action => { handlePaletteCommand(action); setShowPalette(false); }}
+          columns={columns}
+        />
       )}
     </Box>
   );
