@@ -50,4 +50,16 @@ describe('parseResetTime', () => {
     expect(result).not.toBeNull();
     expect(result).toBeInstanceOf(Date);
   });
+
+  it('parses ISO format timestamp', () => {
+    const result = parseResetTime("You've hit your limit · resets 2026-05-21T16:24:57.711Z");
+    expect(result).not.toBeNull();
+    expect(result!.toISOString()).toBe('2026-05-21T16:24:57.711Z');
+  });
+
+  it('parses ISO format timestamp without milliseconds', () => {
+    const result = parseResetTime("You've hit your limit · resets 2026-05-21T16:24:57Z");
+    expect(result).not.toBeNull();
+    expect(result!.toISOString()).toBe('2026-05-21T16:24:57.000Z');
+  });
 });

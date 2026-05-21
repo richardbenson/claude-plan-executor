@@ -71,8 +71,14 @@ export async function startJsonlTail(
   }
 
   if (!filePath) {
-    process.stderr.write(`[jsonl-tail] warning: jsonl file for session ${uuid} not found after 10s\n`);
-    return () => {};
+    bus.emit({
+      kind: 'error',
+      timestamp: new Date(),
+      runId,
+      phaseNumber,
+      message: `jsonl file for session ${uuid} not found after 10s`,
+    });
+    return () => { };
   }
 
   const resolvedPath = filePath;

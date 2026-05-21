@@ -1,5 +1,6 @@
 const LIMIT_REGEX = /You've hit your limit · resets (?<reset>.+?)$/;
 const TIME_REGEX = /^(\d{1,2})(?::(\d{2}))?(am|pm)\s+\(([^)]+)\)$/i;
+const ISO_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 
 // Returns ms such that: local_clock_as_utc - actual_utc = offset
 // Positive for timezones ahead of UTC (e.g. UTC+1 → 3600000)
@@ -26,6 +27,17 @@ export function parseResetTime(limitMessage: string, now?: Date): Date | null {
   if (!limitMatch?.groups?.['reset']) return null;
 
   const resetStr = limitMatch.groups['reset'].trim();
+
+  // Try ISO format first (e.g., "2026-05-21T16:24:57.711Z")
+  if (ISO_REGEX.test(resetStr)) {
+    try {
+      return new Date(resetStr);
+    } catch {
+      // If ISO parsing fails, fall through to time format
+    }
+  }
+
+  // Try time format (e.g., "6:50pm (Europe/London)")
   const timeMatch = TIME_REGEX.exec(resetStr);
   if (!timeMatch) return null;
 

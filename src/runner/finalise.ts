@@ -45,7 +45,13 @@ export async function finaliseRun(runId: string, bus: ActivityBus): Promise<Fina
   const exitCode = await proc.exited;
   try { fs.closeSync(logFd); } catch { /* ignore */ }
   if (exitCode !== 0) {
-    process.stderr.write(`[finalise] claude -p exited ${exitCode} — see ${logPath}\n`);
+    bus.emit({
+      kind: 'error',
+      timestamp: new Date(),
+      runId,
+      phaseNumber: -1,
+      message: `claude -p exited ${exitCode} — see ${logPath}`,
+    });
   }
 
   // Step 4 — delete temp file
@@ -55,23 +61,47 @@ export async function finaliseRun(runId: string, bus: ActivityBus): Promise<Fina
   const summaryFile = path.join(worktreePath, 'docs', planFolder + '.md');
   const planDir = path.join(worktreePath, 'docs', planFolder);
   if (!fs.existsSync(summaryFile)) {
-    process.stderr.write(`[finalise] warning: expected summary ${summaryFile} not found\n`);
+    bus.emit({
+      kind: 'error',
+      timestamp: new Date(),
+      runId,
+      phaseNumber: -1,
+      message: `expected summary ${summaryFile} not found`,
+    });
   }
   if (fs.existsSync(planDir)) {
-    process.stderr.write(`[finalise] warning: plan folder ${planDir} still exists\n`);
+    bus.emit({
+      kind: 'error',
+      timestamp: new Date(),
+      runId,
+      phaseNumber: -1,
+      message: `plan folder ${planDir} still exists`,
+    });
   }
 
   // Step 6 — commit
   const addProc = Bun.spawnSync(['git', 'add', '-A'], { cwd: worktreePath });
   if (addProc.exitCode !== 0) {
-    process.stderr.write(`[finalise] git add failed: ${addProc.stderr.toString().trim()}\n`);
+    bus.emit({
+      kind: 'error',
+      timestamp: new Date(),
+      runId,
+      phaseNumber: -1,
+      message: `git add failed: ${addProc.stderr.toString().trim()}`,
+    });
   }
   const commitProc = Bun.spawnSync(
     ['git', 'commit', '-m', `docs: summarise ${planFolder}`],
     { cwd: worktreePath },
   );
   if (commitProc.exitCode !== 0) {
-    process.stderr.write(`[finalise] git commit failed: ${commitProc.stderr.toString().trim()}\n`);
+    bus.emit({
+      kind: 'error',
+      timestamp: new Date(),
+      runId,
+      phaseNumber: -1,
+      message: `git commit failed: ${commitProc.stderr.toString().trim()}`,
+    });
   }
 
   // Step 7 — push + PR (skip gracefully if no remote configured)

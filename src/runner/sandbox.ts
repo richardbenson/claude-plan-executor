@@ -48,9 +48,6 @@ export function buildSandboxSettings(
   if (!enabled) return null;
 
   if (process.platform === 'linux' && !isBubblewrapAvailable()) {
-    process.stderr.write(
-      '[cpe] WARNING: bubblewrap (bwrap) not found — running without sandbox. Install with: sudo apt-get install bubblewrap socat\n',
-    );
     return null;
   }
 

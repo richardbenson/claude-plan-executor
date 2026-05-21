@@ -77,7 +77,6 @@ export async function runQueueProcessor(config: AppConfig, bus: ActivityBus): Pr
         await finaliseRun(runId, bus);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        process.stderr.write(`[queue] finalise failed for ${runId.slice(0, 8)}: ${msg}\n`);
         updateMeta(runId, { status: 'failed' });
         bus.emit({ kind: 'error', timestamp: new Date(), runId, phaseNumber: -1, message: 'finalise: ' + msg });
       }
@@ -97,7 +96,7 @@ export async function startCommand(): Promise<void> {
   }
 
   // Queue processor runs independently; TUI can restart around it
-  runQueueProcessor(config, activityBus).catch(() => {});
+  runQueueProcessor(config, activityBus).catch(() => { });
 
   while (true) {
     let interactiveCmd: string[] | null = null;

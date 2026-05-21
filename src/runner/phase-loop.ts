@@ -163,7 +163,13 @@ export async function runPhase(
     const fresh = readMeta(runId);
     const entry = fresh.phases.find(p => p.number === phaseNumber)!;
     const retryCount = entry.retry_count + 1;
-    process.stderr.write(`[phase-loop] HEAD unchanged despite committed:true for phase ${phaseNumber}\n`);
+    bus.emit({
+      kind: 'error',
+      timestamp: new Date(),
+      runId,
+      phaseNumber,
+      message: `HEAD unchanged despite committed:true for phase ${phaseNumber}`,
+    });
     if (retryCount > appConfig.max_retries) {
       await markPhaseFailed(runId, phaseNumber, 'committed:true but HEAD unchanged', bus);
       return { outcome: 'failed', reason: 'committed:true but HEAD unchanged' };
@@ -214,6 +220,11 @@ export async function resumeOrRestart(
   const entry = meta.phases.find(p => p.number === phaseNumber);
   if (!entry) {
     throw new Error(`Phase ${phaseNumber} not found in run ${runId}`);
+  }
+
+  // Clear paused-limit status since we're past the limit window
+  if (meta.status === 'paused-limit') {
+    updateMeta(runId, { status: 'executing' });
   }
 
   const hadWork = (entry.tokens?.input_tokens ?? 0) > 0 || (entry.cost_usd ?? 0) > 0;
@@ -371,3 +382,7 @@ export async function resumeOrRestart(
 
   return { outcome: 'complete', result: phaseResult };
 }
+
+// Fix for issue #23: resumeOrRestart now clears paused-limit status before attempting
+// to run the phase. This ensures that when a run resumes after the rate limit window
+// opens, it doesn't fail with "runPhase called while run is paused-limit".
