@@ -33,7 +33,7 @@ export async function finaliseRun(runId: string, bus: ActivityBus): Promise<Fina
   fs.writeFileSync(tmpFile, prompt);
 
   // Step 3 — spawn headless claude -p
-  const proc = Bun.spawn(['claude', '-p'], {
+  const proc = Bun.spawn(['claude', '-p', '--dangerously-skip-permissions'], {
     cwd: worktreePath,
     stdin: fs.openSync(tmpFile, 'r'),
     stdout: 'inherit',
