@@ -8,6 +8,7 @@ import { runPhase, resumeOrRestart } from '../runner/phase-loop.js';
 import { finaliseRun } from '../runner/finalise.js';
 import { waitUntil } from '../runner/limit.js';
 import { activityBus, ActivityBus } from '../events/bus.js';
+import { seedBusFromHistory } from '../events/seed.js';
 import { App } from '../tui/App.js';
 import type { AppConfig } from '../types/meta.js';
 
@@ -65,6 +66,8 @@ export async function runQueueProcessor(config: AppConfig, bus: ActivityBus): Pr
 
 export async function startCommand(): Promise<void> {
   const config = readConfig();
+
+  seedBusFromHistory();
 
   const queue = readQueue();
   if (!queue.paused) {
