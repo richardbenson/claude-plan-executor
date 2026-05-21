@@ -74,7 +74,20 @@ export async function finaliseRun(runId: string, bus: ActivityBus): Promise<Fina
     process.stderr.write(`[finalise] git commit failed: ${commitProc.stderr.toString().trim()}\n`);
   }
 
-  // Step 7 — push
+  // Step 7 — push + PR (skip gracefully if no remote configured)
+  if (!meta.remote) {
+    updateMeta(runId, { status: 'complete' });
+    bus.emit({
+      kind: 'ok',
+      timestamp: new Date(),
+      runId,
+      phaseNumber: -1,
+      summary: 'run complete (no remote — skipped push/PR)',
+      costUsd: meta.total_cost_usd,
+    });
+    return { prUrl: '' };
+  }
+
   const pushProc = Bun.spawnSync(
     ['git', 'push', '-u', 'origin', meta.feature_branch],
     { cwd: worktreePath },
@@ -84,10 +97,6 @@ export async function finaliseRun(runId: string, bus: ActivityBus): Promise<Fina
   }
 
   // Step 8 — detect VCS and create PR
-  if (!meta.remote) {
-    throw new Error('No remote configured on run meta');
-  }
-
   let prResult: { url: string };
   if (isGitHub(meta.remote)) {
     prResult = await createGitHubPr(worktreePath, meta.feature_branch, meta.target_branch);
@@ -100,7 +109,7 @@ export async function finaliseRun(runId: string, bus: ActivityBus): Promise<Fina
   // Step 9 — mark pr-created
   updateMeta(runId, { status: 'pr-created' });
 
-  // Step 10 — emit events
+  // Step 10 — emit event
   bus.emit({
     kind: 'ok',
     timestamp: new Date(),

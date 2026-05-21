@@ -1,7 +1,7 @@
 import React from 'react';
 import { render } from 'ink';
 import { readConfig } from '../storage/config.js';
-import { readMeta, updateMeta } from '../storage/meta.js';
+import { readMeta, updateMeta, getLogsDir } from '../storage/meta.js';
 import { isQueuePaused, dequeue, readQueue, writeQueue } from '../storage/queue.js';
 import { reconcileWorktrees } from '../git/worktree.js';
 import { runPhase, resumeOrRestart } from '../runner/phase-loop.js';
@@ -59,7 +59,14 @@ export async function runQueueProcessor(config: AppConfig, bus: ActivityBus): Pr
 
     const finalMeta = readMeta(runId);
     if (finalMeta.phases.every(p => p.status === 'complete')) {
-      await finaliseRun(runId, bus);
+      try {
+        await finaliseRun(runId, bus);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`[queue] finalise failed for ${runId.slice(0, 8)}: ${msg}\n`);
+        updateMeta(runId, { status: 'failed' });
+        bus.emit({ kind: 'error', timestamp: new Date(), runId, phaseNumber: -1, message: 'finalise: ' + msg });
+      }
     }
   }
 }
