@@ -61,6 +61,12 @@ function UpNext({ queueState, colWidth }: { queueState: QueueState; colWidth: nu
   );
 }
 
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000) return Math.round(n / 1_000) + 'k';
+  return String(n);
+}
+
 function LimitWindow({ queueState, colWidth }: { queueState: QueueState; colWidth: number }): React.ReactElement {
   // Only tick when there is an active countdown — avoids re-renders when idle.
   const [now, setNow] = useState(() => new Date());
@@ -82,11 +88,18 @@ function LimitWindow({ queueState, colWidth }: { queueState: QueueState; colWidt
     ? 'resets ' + queueState.limitResumeAt.toLocaleTimeString()
     : '';
 
+  const BAR_LEN = 14;
+  const currentTokens = queueState.hourlyTokenData[7] ?? 0;
+  const peakTokens = Math.max(...queueState.hourlyTokenData, 1);
+  const filled = currentTokens > 0 ? Math.max(1, Math.round((currentTokens / peakTokens) * BAR_LEN)) : 0;
+  const bar = '▰'.repeat(filled) + '▱'.repeat(BAR_LEN - filled);
+  const tokenLabel = currentTokens > 0 ? formatTokens(currentTokens) + ' this hr' : '—';
+
   return (
     <Box flexDirection="column" width={colWidth}>
       <Text color={dim} bold>LIMIT WINDOW</Text>
       <Text color={magenta}>{countdownStr}</Text>
-      <Text color={dim}>{'▰▰▰▰▰▱▱▱▱▱▱▱▱▱'}<Text color={dim2}> 0% used</Text></Text>
+      <Text color={dim}>{bar}<Text color={dim2}> {tokenLabel}</Text></Text>
       {resetStr ? <Text color={dim}>{resetStr}</Text> : <Text color={dim}>no limit active</Text>}
       <Box>
         <Text color={dim}>tokens/hour  </Text>
