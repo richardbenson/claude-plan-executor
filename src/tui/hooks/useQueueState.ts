@@ -18,6 +18,8 @@ export interface QueueState {
   prsToday: number;
   retriesToday: number;
   failuresToday: number;
+  /** Total (input+output) tokens per hour for the last 8 hours, oldest→newest */
+  hourlyTokenData: number[];
 }
 
 function isToday(dateStr: string | undefined): boolean {
@@ -90,13 +92,15 @@ function deriveState(): QueueState {
     }
   }
 
-  // Today's stats across all runs
+  // Today's stats + hourly token data across all runs
   let phasesCompleteToday = 0;
   let budgetToday = 0;
   let commitsToday = 0;
   let prsToday = 0;
   let retriesToday = 0;
   let failuresToday = 0;
+  const hourlyTokenData = new Array<number>(8).fill(0);
+  const nowMs = Date.now();
 
   for (const run of allRuns) {
     for (const phase of run.phases) {
@@ -108,6 +112,13 @@ function deriveState(): QueueState {
         if (phase.retry_count > 0) retriesToday += phase.retry_count;
         if (phase.status === 'failed') failuresToday++;
         if (phase.commit_sha) commitsToday++;
+      }
+      if (phase.completed_at && phase.tokens) {
+        const hoursAgo = (nowMs - new Date(phase.completed_at).getTime()) / 3_600_000;
+        const slot = Math.floor(hoursAgo);
+        if (slot >= 0 && slot < 8) {
+          hourlyTokenData[7 - slot]! += (phase.tokens.input_tokens ?? 0) + (phase.tokens.output_tokens ?? 0);
+        }
       }
     }
     if (isToday(run.phases[run.phases.length - 1]?.completed_at)) {
@@ -129,6 +140,7 @@ function deriveState(): QueueState {
     prsToday,
     retriesToday,
     failuresToday,
+    hourlyTokenData,
   };
 }
 
@@ -146,6 +158,7 @@ const EMPTY_STATE: QueueState = {
   prsToday: 0,
   retriesToday: 0,
   failuresToday: 0,
+  hourlyTokenData: new Array<number>(8).fill(0),
 };
 
 export function useQueueState(): QueueState {
@@ -177,7 +190,8 @@ export function useQueueState(): QueueState {
             prev.commitsToday === next.commitsToday &&
             prev.prsToday === next.prsToday &&
             prev.retriesToday === next.retriesToday &&
-            prev.failuresToday === next.failuresToday
+            prev.failuresToday === next.failuresToday &&
+            prev.hourlyTokenData.reduce((s, v) => s + v, 0) === next.hourlyTokenData.reduce((s, v) => s + v, 0)
           ) {
             return prev;
           }

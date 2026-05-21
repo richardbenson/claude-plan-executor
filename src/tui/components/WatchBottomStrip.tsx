@@ -89,8 +89,8 @@ function LimitWindow({ queueState, colWidth }: { queueState: QueueState; colWidt
       <Text color={dim}>{'▰▰▰▰▰▱▱▱▱▱▱▱▱▱'}<Text color={dim2}> 0% used</Text></Text>
       {resetStr ? <Text color={dim}>{resetStr}</Text> : <Text color={dim}>no limit active</Text>}
       <Box>
-        <Text color={dim}>tokens this window  </Text>
-        <Sparkline data={[0]} width={8} color={dim2} />
+        <Text color={dim}>tokens/hour  </Text>
+        <Sparkline data={queueState.hourlyTokenData} width={8} color={dim2} />
       </Box>
     </Box>
   );
