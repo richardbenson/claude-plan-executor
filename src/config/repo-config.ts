@@ -106,7 +106,10 @@ function openInEditor(filePath: string): void {
 }
 
 const STUB_CONTENT = `{
-  "bootstrap": []
+  "bootstrap": [],
+  "sandbox": {
+    "allowedDomains": []
+  }
 }
 `;
 
