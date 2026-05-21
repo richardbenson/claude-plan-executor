@@ -70,7 +70,7 @@ export function buildSandboxSettings(
   return result;
 }
 
-export function injectSandboxSettings(worktreePath: string, sandbox: ClaudeSettingsSandbox): void {
+export function injectSandboxSettings(worktreePath: string, sandbox: ClaudeSettingsSandbox, extraWritePaths: string[] = []): void {
   const dir = path.join(worktreePath, '.claude');
   fs.mkdirSync(dir, { recursive: true });
 
@@ -86,6 +86,14 @@ export function injectSandboxSettings(worktreePath: string, sandbox: ClaudeSetti
     // absent or invalid — start fresh
   }
 
-  existing['sandbox'] = { ...(existing['sandbox'] as object | undefined), ...sandbox };
+  // Always include the worktree itself plus any extras in allowWrite so bwrap
+  // doesn't block Claude's Edit/Write tools on Linux
+  const allWrites = [...new Set([worktreePath, ...extraWritePaths, ...((sandbox.filesystem?.allowWrite) ?? [])])];
+  const merged: ClaudeSettingsSandbox = {
+    ...sandbox,
+    filesystem: { allowWrite: allWrites },
+  };
+
+  existing['sandbox'] = { ...(existing['sandbox'] as object | undefined), ...merged };
   fs.writeFileSync(settingsPath, JSON.stringify(existing, null, 2) + '\n');
 }

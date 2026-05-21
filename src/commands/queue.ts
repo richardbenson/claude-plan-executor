@@ -171,8 +171,15 @@ export async function queueCommand(folder?: string, options?: { disableSandbox?:
   }
 
   const runId = ulid();
-  const featureBranch = 'feature/' + folder;
   const targetBranch = config.target_branch ?? 'main';
+
+  const branchExists = (name: string): boolean => {
+    const r = Bun.spawnSync(['git', 'branch', '--list', name], { cwd: repoPath });
+    return r.stdout.toString().trim().length > 0;
+  };
+
+  const baseBranch = 'feature/' + folder;
+  const featureBranch = branchExists(baseBranch) ? `${baseBranch}-${runId.slice(0, 8).toLowerCase()}` : baseBranch;
 
   let worktreePath: string;
   try {

@@ -82,13 +82,11 @@ export async function runPhase(
   const uuid = crypto.randomUUID();
   updatePhase(runId, phaseNumber, { session_id: uuid });
 
-  // STEP 5 — start JSONL tail
-  const stopTail = await startJsonlTail(uuid, meta.worktree_path, runId, phaseNumber, bus);
-
-  // STEP 6 — spawn session
+  // STEP 5 — spawn session and start JSONL tail concurrently so the tail
+  // finds the file shortly after Claude creates it, not before
   const promptFile = path.join(meta.worktree_path, 'docs', meta.plan_folder, phaseEntry.prompt_file);
   const logPath = path.join(getLogsDir(runId), 'phase-' + String(phaseNumber).padStart(2, '0') + '.log');
-  const result = await runSession({
+  const sessionPromise = runSession({
     worktreePath: meta.worktree_path,
     promptFile,
     sessionId: uuid,
@@ -97,7 +95,11 @@ export async function runPhase(
     dangerouslySkipPermissions: appConfig.dangerously_skip_permissions,
   });
 
-  // STEP 7 — stop JSONL tail
+  // STEP 6 — start JSONL tail (Claude is already starting; file appears within seconds)
+  const stopTail = await startJsonlTail(uuid, meta.worktree_path, runId, phaseNumber, bus);
+
+  // STEP 7 — await session completion then stop tail
+  const result = await sessionPromise;
   stopTail();
 
   // STEP 8 — classify envelope
