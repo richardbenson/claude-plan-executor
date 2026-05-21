@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { Spinner } from './Spinner.js';
-import { border, cyan, dim, dim2 } from '../theme.js';
+import { border, cyan, dim, dim2, yellow } from '../theme.js';
 import type { RunMeta, PhaseEntry } from '../../types/meta.js';
 import type { ActivityEvent } from '../../events/types.js';
 
@@ -10,6 +10,7 @@ interface Props {
   activePhase: PhaseEntry | null;
   events: ActivityEvent[];
   focused: boolean;
+  isPaused?: boolean;
 }
 
 function formatTokens(n: number): string {
@@ -22,7 +23,7 @@ function phaseLabel(promptFile: string): string {
   return m ? m[1] ?? promptFile : promptFile;
 }
 
-export function ExecutingPane({ runMeta, activePhase, events, focused }: Props): React.ReactElement {
+export function ExecutingPane({ runMeta, activePhase, events, focused, isPaused }: Props): React.ReactElement {
   const repoName = runMeta?.primary_repo_path.split('/').pop() ?? '';
   const title = 'EXECUTING' + (runMeta ? ' · ' + repoName : '');
 
@@ -48,6 +49,9 @@ export function ExecutingPane({ runMeta, activePhase, events, focused }: Props):
         <>
           <Text>{phaseLabel(activePhase.prompt_file)}</Text>
           <Text color={dim2}>{'session ' + (activePhase.session_id?.slice(0, 8) ?? '—') + '…'}</Text>
+          {isPaused && (
+            <Text color={yellow}>{'‖ this phase will finish · queue won\'t advance'}</Text>
+          )}
           <Text color={dim}>{'····················'}</Text>
           <Text>{'TOOL CALLS '}<Text color={cyan}>{String(toolCallCount)}</Text></Text>
           {[...phaseEvents].reverse().slice(0, 6).map((ev, i) => {

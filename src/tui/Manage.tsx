@@ -389,7 +389,13 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
     : 0;
 
   return (
-    <Box flexDirection="column" width={columns} height={rows - 2} overflow="hidden">
+    <Box flexDirection="column" width={columns} height={rows - (qs.isPaused ? 3 : 2)} overflow="hidden">
+      {/* Paused banner */}
+      {qs.isPaused && (
+        <Text color={yellow} dimColor>
+          {'‖‖ QUEUE PAUSED · currently-executing phase finishes, then waits · press p to resume'}
+        </Text>
+      )}
       {/* Triptych */}
       <Box flexDirection="row" flexGrow={1}>
         <QueuePane
@@ -413,6 +419,7 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
           activePhase={qs.activePhase}
           events={events}
           focused={focusedPane === 'executing'}
+          isPaused={qs.isPaused}
         />
       </Box>
 
