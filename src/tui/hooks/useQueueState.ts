@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { readQueue } from '../../storage/queue.js';
-import { readMeta } from '../../storage/meta.js';
+import { readMeta, listAllRunIds } from '../../storage/meta.js';
 import { activityBus } from '../../events/bus.js';
 import type { RunMeta, PhaseEntry } from '../../types/meta.js';
 
@@ -31,18 +31,42 @@ function isToday(dateStr: string | undefined): boolean {
   );
 }
 
+const ACTIVE_STATUSES = new Set(['executing', 'finalising', 'retrying', 'paused', 'paused-limit']);
+const TERMINAL_STATUSES = new Set(['complete', 'pr-created', 'failed']);
+
+function latestCompletedAt(run: RunMeta): number {
+  return run.phases.reduce((max, p) =>
+    p.completed_at ? Math.max(max, new Date(p.completed_at).getTime()) : max, 0);
+}
+
 function deriveState(): QueueState {
   const queue = readQueue();
-  const allRuns: RunMeta[] = [];
 
-  for (const entry of queue.entries) {
+  // Build a map of all non-archived runs
+  const runMap = new Map<string, RunMeta>();
+  for (const id of listAllRunIds()) {
     try {
-      const meta = readMeta(entry.run_id);
-      allRuns.push(meta);
+      const meta = readMeta(id);
+      if (meta.status !== 'archived') runMap.set(id, meta);
     } catch {
-      // skip runs whose meta can't be read
+      // skip unreadable
     }
   }
+
+  // active: executing/retrying/paused/finalising (usually at most 1)
+  const activeList = [...runMap.values()].filter(r => ACTIVE_STATUSES.has(r.status));
+
+  // queued: maintain queue.entries order
+  const queuedList = queue.entries
+    .filter(e => runMap.has(e.run_id) && runMap.get(e.run_id)!.status === 'queued')
+    .map(e => runMap.get(e.run_id)!);
+
+  // finished: complete / pr-created / failed — most recent first
+  const finishedList = [...runMap.values()]
+    .filter(r => TERMINAL_STATUSES.has(r.status))
+    .sort((a, b) => latestCompletedAt(b) - latestCompletedAt(a));
+
+  const allRuns: RunMeta[] = [...activeList, ...queuedList, ...finishedList];
 
   const activeRun =
     allRuns.find(r => r.status === 'executing' || r.status === 'finalising') ?? null;
@@ -51,7 +75,7 @@ function deriveState(): QueueState {
     ? (activeRun.phases.find(p => p.status === 'executing') ?? null)
     : null;
 
-  const queuedRuns = allRuns.filter(r => r.status === 'queued');
+  const queuedRuns = queuedList;
 
   const isLimitPaused = activeRun?.status === 'paused-limit';
 

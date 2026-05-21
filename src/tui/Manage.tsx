@@ -112,13 +112,15 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
   function handlePaletteCommand(action: string) {
     switch (action) {
       case 'queue-up': {
+        if (!selectedRun) break;
         const q = readQueue();
-        if (selectedRunIndex > 0) {
-          const tmp = q.entries[selectedRunIndex - 1];
-          const cur = q.entries[selectedRunIndex];
+        const qi = q.entries.findIndex(e => e.run_id === selectedRun.id);
+        if (qi > 0) {
+          const tmp = q.entries[qi - 1];
+          const cur = q.entries[qi];
           if (tmp && cur) {
-            q.entries[selectedRunIndex - 1] = cur;
-            q.entries[selectedRunIndex] = tmp;
+            q.entries[qi - 1] = cur;
+            q.entries[qi] = tmp;
             writeQueue(q);
             setSelectedRunIndex(i => i - 1);
           }
@@ -126,13 +128,15 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
         break;
       }
       case 'queue-down': {
+        if (!selectedRun) break;
         const q = readQueue();
-        if (selectedRunIndex < q.entries.length - 1) {
-          const tmp = q.entries[selectedRunIndex + 1];
-          const cur = q.entries[selectedRunIndex];
+        const qi = q.entries.findIndex(e => e.run_id === selectedRun.id);
+        if (qi !== -1 && qi < q.entries.length - 1) {
+          const tmp = q.entries[qi + 1];
+          const cur = q.entries[qi];
           if (tmp && cur) {
-            q.entries[selectedRunIndex + 1] = cur;
-            q.entries[selectedRunIndex] = tmp;
+            q.entries[qi + 1] = cur;
+            q.entries[qi] = tmp;
             writeQueue(q);
             setSelectedRunIndex(i => i + 1);
           }
@@ -202,15 +206,18 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
 
     // Option+ArrowUp reorder up
     if (key.upArrow && key.meta) {
-      const q = readQueue();
-      if (selectedRunIndex > 0) {
-        const tmp = q.entries[selectedRunIndex - 1];
-        const cur = q.entries[selectedRunIndex];
-        if (tmp && cur) {
-          q.entries[selectedRunIndex - 1] = cur;
-          q.entries[selectedRunIndex] = tmp;
-          writeQueue(q);
-          setSelectedRunIndex(i => i - 1);
+      if (selectedRun) {
+        const q = readQueue();
+        const qi = q.entries.findIndex(e => e.run_id === selectedRun.id);
+        if (qi > 0) {
+          const tmp = q.entries[qi - 1];
+          const cur = q.entries[qi];
+          if (tmp && cur) {
+            q.entries[qi - 1] = cur;
+            q.entries[qi] = tmp;
+            writeQueue(q);
+            setSelectedRunIndex(i => i - 1);
+          }
         }
       }
       return;
@@ -218,15 +225,18 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
 
     // Option+ArrowDown reorder down
     if (key.downArrow && key.meta) {
-      const q = readQueue();
-      if (selectedRunIndex < q.entries.length - 1) {
-        const tmp = q.entries[selectedRunIndex + 1];
-        const cur = q.entries[selectedRunIndex];
-        if (tmp && cur) {
-          q.entries[selectedRunIndex + 1] = cur;
-          q.entries[selectedRunIndex] = tmp;
-          writeQueue(q);
-          setSelectedRunIndex(i => i + 1);
+      if (selectedRun) {
+        const q = readQueue();
+        const qi = q.entries.findIndex(e => e.run_id === selectedRun.id);
+        if (qi !== -1 && qi < q.entries.length - 1) {
+          const tmp = q.entries[qi + 1];
+          const cur = q.entries[qi];
+          if (tmp && cur) {
+            q.entries[qi + 1] = cur;
+            q.entries[qi] = tmp;
+            writeQueue(q);
+            setSelectedRunIndex(i => i + 1);
+          }
         }
       }
       return;

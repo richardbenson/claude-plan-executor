@@ -34,6 +34,17 @@ export function updateMeta(runId: string, partial: Partial<RunMeta>, base?: stri
   return updated;
 }
 
+export function listAllRunIds(base?: string): string[] {
+  const dir = runsBase(base);
+  try {
+    return fs.readdirSync(dir).filter(name =>
+      fs.existsSync(path.join(dir, name, 'meta.json')),
+    );
+  } catch {
+    return [];
+  }
+}
+
 export function updatePhase(
   runId: string,
   phaseNumber: number,

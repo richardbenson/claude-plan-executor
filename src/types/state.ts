@@ -8,7 +8,8 @@ export type RunStatus =
   | 'complete'
   | 'pr-created'
   | 'failed'
-  | 'pending';
+  | 'pending'
+  | 'archived';
 
 export type PhaseStatus =
   | 'queued'
@@ -20,7 +21,8 @@ export type PhaseStatus =
   | 'complete'
   | 'pr-created'
   | 'failed'
-  | 'pending';
+  | 'pending'
+  | 'archived';
 
 export interface StateInfo {
   glyph: string;
@@ -39,6 +41,7 @@ export const STATE_TABLE: Record<RunStatus | PhaseStatus, StateInfo> = {
   'pr-created': { glyph: '✓', color: '#9ece6a', label: 'PR opened' },
   failed:       { glyph: '✕', color: '#f7768e', label: 'failed' },
   pending:      { glyph: '·', color: '#565f89', label: 'pending' },
+  archived:     { glyph: '⊘', color: '#414868', label: 'archived' },
 };
 
 export function getStateInfo(status: RunStatus | PhaseStatus): StateInfo {
