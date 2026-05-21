@@ -153,6 +153,17 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
         setShowQueueWizard(true);
         break;
       }
+      case 'archive': {
+        if (!selectedRun) break;
+        const CANNOT_ARCHIVE = new Set(['executing', 'finalising', 'retrying', 'paused-limit']);
+        if (CANNOT_ARCHIVE.has(selectedRun.status)) break;
+        const qa = readQueue();
+        qa.entries = qa.entries.filter(e => e.run_id !== selectedRun.id);
+        writeQueue(qa);
+        updateMeta(selectedRun.id, { status: 'archived' });
+        setSelectedRunIndex(i => Math.max(0, i - 1));
+        break;
+      }
       case 'remove': {
         if (selectedRun) {
           const q = readQueue();
@@ -256,6 +267,20 @@ export function Manage({ columns, rows }: Props): React.ReactElement {
       const q = readQueue();
       writeQueue({ ...q, paused: !q.paused });
       activityBus.emit({ kind: 'pause', timestamp: new Date(), runId: selectedRun?.id ?? '', phaseNumber: 0 });
+      return;
+    }
+
+    if (input === 'd') {
+      if (selectedRun) {
+        const CANNOT_ARCHIVE = new Set(['executing', 'finalising', 'retrying', 'paused-limit']);
+        if (!CANNOT_ARCHIVE.has(selectedRun.status)) {
+          const q = readQueue();
+          q.entries = q.entries.filter(e => e.run_id !== selectedRun.id);
+          writeQueue(q);
+          updateMeta(selectedRun.id, { status: 'archived' });
+          setSelectedRunIndex(i => Math.max(0, i - 1));
+        }
+      }
       return;
     }
 

@@ -15,6 +15,7 @@ const COMMANDS: PaletteCommand[] = [
   { category: 'queue', name: 'move down',           description: 'Move selected run later in queue',       action: 'queue-down' },
   { category: 'queue', name: 'pause/resume',         description: 'Toggle queue pause',                    action: 'pause' },
   { category: 'queue', name: 'add plan',             description: 'Interactively add a new plan to queue', action: 'add' },
+  { category: 'queue', name: 'archive run',            description: 'Hide run from all views (mark archived)', action: 'archive' },
   { category: 'queue', name: 'remove run',           description: 'Remove selected run (keep worktree)',   action: 'remove' },
   { category: 'queue', name: 'remove run + worktree', description: 'Remove run and delete worktree',       action: 'remove-worktree' },
   { category: 'run',   name: 'retry phase',          description: 'Kill session and restart current phase', action: 'retry' },
