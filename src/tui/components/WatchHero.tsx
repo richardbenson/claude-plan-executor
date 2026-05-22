@@ -8,6 +8,11 @@ import {
   dim, fg, fgDark,
 } from '../theme.js';
 import type { QueueState } from '../hooks/useQueueState.js';
+import type { RunMeta } from '../../types/meta.js';
+
+function isSinglePromptRun(run: RunMeta): boolean {
+  return !run.plan_folder && !!run.prompt;
+}
 
 interface Props {
   queueState: QueueState;
@@ -44,9 +49,9 @@ export function WatchHero({ queueState, columns }: Props): React.ReactElement {
   const rightColWidth = 28;
   const barWidth = Math.max(10, Math.min(40, columns - rightColWidth - 14));
 
-  const totalPhases = activeRun?.phases.length ?? 0;
+  const totalPhases = activeRun?.phases?.length ?? 0;
   const completedPhases = activeRun
-    ? activeRun.phases.filter(
+    ? (activeRun.phases ?? []).filter(
         p => p.status === 'complete' || p.status === 'pr-created',
       ).length
     : 0;
@@ -70,18 +75,28 @@ export function WatchHero({ queueState, columns }: Props): React.ReactElement {
       {/* Left column */}
       <Box flexDirection="column" flexGrow={1} paddingLeft={1}>
         {activeRun ? (
-          <>
-            <Text color={cyan} bold>NOW EXECUTING</Text>
-            <Text color={fgDark}>{repoBasename} / {activeRun.plan_folder}</Text>
-            <Text> </Text>
-            <Text color={fg}>
-              phase {activePhase?.number ?? '?'} / {totalPhases}
-              {activePhase
-                ? ` — ${activePhase.title ?? path.basename(activePhase.prompt_file, '.prompt.md').replace('PHASE_', 'phase ')}`
-                : ''}
-            </Text>
-            <Text>{'plan '}<Text color={cyan}>{progressBar}</Text></Text>
-          </>
+          isSinglePromptRun(activeRun) ? (
+            <>
+              <Text color={cyan} bold>NOW EXECUTING</Text>
+              <Text color={fgDark}>{repoBasename} / ★ single-prompt</Text>
+              <Text> </Text>
+              <Text color={fg}>{activeRun.prompt?.slice(0, 60) ?? 'prompt'}</Text>
+              <Text color={dim}>{'running… '}</Text>
+            </>
+          ) : (
+            <>
+              <Text color={cyan} bold>NOW EXECUTING</Text>
+              <Text color={fgDark}>{repoBasename} / {activeRun.plan_folder ?? ''}</Text>
+              <Text> </Text>
+              <Text color={fg}>
+                phase {activePhase?.number ?? '?'} / {totalPhases}
+                {activePhase
+                  ? ` — ${activePhase.title ?? path.basename(activePhase.prompt_file, '.prompt.md').replace('PHASE_', 'phase ')}`
+                  : ''}
+              </Text>
+              <Text>{'plan '}<Text color={cyan}>{progressBar}</Text></Text>
+            </>
+          )
         ) : (
           <>
             <Text color={dim} bold>IDLE</Text>

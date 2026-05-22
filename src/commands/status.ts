@@ -27,7 +27,7 @@ export async function statusCommand(): Promise<void> {
     else if (meta.status === 'queued') queued++;
     else if (meta.status === 'paused') paused++;
 
-    for (const phase of meta.phases) {
+    for (const phase of meta.phases ?? []) {
       totalPhases++;
       if (phase.status === 'complete') completedPhases++;
       else if (phase.status === 'pending') pendingPhases++;

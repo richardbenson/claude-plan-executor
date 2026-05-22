@@ -62,9 +62,9 @@ function StatusLine({
   const diskSize = estimateDiskSize(selectedRun.worktree_path);
 
   const remainingPhases = selectedRun
-    ? selectedRun.phases.filter(
-      p => p.status !== 'complete' && p.status !== 'pr-created' && p.status !== 'failed',
-    ).length
+    ? (selectedRun.phases ?? []).filter(
+        p => p.status !== 'complete' && p.status !== 'pr-created' && p.status !== 'failed',
+      ).length
     : 0;
   const etaMin = remainingPhases * 5;
   const etaStr = remainingPhases > 0
@@ -77,7 +77,7 @@ function StatusLine({
     <Box flexDirection="column" width={columns}>
       <Text>
         <Text color={dim}>{'selected  '}</Text>
-        <Text color={fg}>{repoName + '/' + selectedRun.plan_folder + ' · ' + selectedRun.status + ' · ' + posStr + ' · eta ' + etaStr}</Text>
+        <Text color={fg}>{repoName + '/' + (selectedRun.plan_folder ?? '') + ' · ' + selectedRun.status + ' · ' + posStr + ' · eta ' + etaStr}</Text>
         {isPaused && <Text color={yellow}>{'  ‖ paused'}</Text>}
       </Text>
       <Text>
@@ -321,7 +321,7 @@ export function Manage({ columns, rows, compact }: Props): React.ReactElement {
       const phase = qs.activePhase;
       if (!run || !phase) return;
       updatePhase(run.id, phase.number, { status: 'failed', summary: 'skipped by user' });
-      const nextPhase = run.phases.find(p => p.number > phase.number);
+      const nextPhase = (run.phases ?? []).find(p => p.number > phase.number);
       if (nextPhase) {
         updatePhase(run.id, nextPhase.number, { status: 'pending' });
       }
@@ -432,7 +432,7 @@ export function Manage({ columns, rows, compact }: Props): React.ReactElement {
           {activePane}
         </Box>
         <Text color={dim}>
-          {'selected  ' + (selectedRun ? selectedRun.plan_folder + ' · ' + selectedRun.status : '—')}
+          {'selected  ' + (selectedRun ? (selectedRun.plan_folder ?? '') + ' · ' + selectedRun.status : '—')}
         </Text>
         <Text color={dim}>{'Tab pane  ↑↓ select  ↵ open  p pause  K kill  q quit'}</Text>
         {showPalette && (

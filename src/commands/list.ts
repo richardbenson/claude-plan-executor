@@ -12,7 +12,7 @@ function pad(s: string, len: number): string {
 }
 
 function latestCompletedAt(run: RunMeta): number {
-  return run.phases.reduce((max, p) =>
+  return (run.phases ?? []).reduce((max, p) =>
     p.completed_at ? Math.max(max, new Date(p.completed_at).getTime()) : max, 0);
 }
 
@@ -46,24 +46,24 @@ export async function listCommand(): Promise<void> {
   for (const meta of activeList) {
     const shortId = meta.id.slice(0, 8) + '…';
     const repoName = path.basename(meta.primary_repo_path);
-    const completedPhases = meta.phases.filter(p => p.status === 'complete').length;
-    rows.push(['-', shortId, repoName, meta.plan_folder, meta.status, `${completedPhases}/${meta.phases.length}`]);
+    const completedPhases = (meta.phases ?? []).filter(p => p.status === 'complete').length;
+    rows.push(['-', shortId, repoName, meta.plan_folder ?? '', meta.status, `${completedPhases}/${(meta.phases ?? []).length}`]);
   }
 
   let pos = 1;
   for (const meta of queuedList) {
     const shortId = meta.id.slice(0, 8) + '…';
     const repoName = path.basename(meta.primary_repo_path);
-    const completedPhases = meta.phases.filter(p => p.status === 'complete').length;
-    rows.push([String(pos++), shortId, repoName, meta.plan_folder, meta.status, `${completedPhases}/${meta.phases.length}`]);
+    const completedPhases = (meta.phases ?? []).filter(p => p.status === 'complete').length;
+    rows.push([String(pos++), shortId, repoName, meta.plan_folder ?? '', meta.status, `${completedPhases}/${(meta.phases ?? []).length}`]);
   }
 
   for (const meta of finishedList) {
     const shortId = meta.id.slice(0, 8) + '…';
     const repoName = path.basename(meta.primary_repo_path);
-    const completedPhases = meta.phases.filter(p => p.status === 'complete').length;
+    const completedPhases = (meta.phases ?? []).filter(p => p.status === 'complete').length;
     const glyph = meta.status === 'failed' ? '✕' : '✓';
-    rows.push([glyph, shortId, repoName, meta.plan_folder, meta.status, `${completedPhases}/${meta.phases.length}`]);
+    rows.push([glyph, shortId, repoName, meta.plan_folder ?? '', meta.status, `${completedPhases}/${(meta.phases ?? []).length}`]);
   }
 
   const headers: Row = ['#', 'ID', 'REPO', 'PLAN', 'STATUS', 'PHASES'];

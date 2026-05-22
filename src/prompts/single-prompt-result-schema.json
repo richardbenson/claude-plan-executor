@@ -1,0 +1,37 @@
+{
+  "type": "object",
+  "required": ["completed", "committed", "summary", "pr_created"],
+  "additionalProperties": false,
+  "properties": {
+    "completed": {
+      "type": "boolean",
+      "description": "True if the task's stated goal was fully achieved. False if any part was skipped, deferred, or blocked."
+    },
+    "committed": {
+      "type": "boolean",
+      "description": "True if a git commit was made as part of this task."
+    },
+    "commit_message": {
+      "type": ["string", "null"],
+      "description": "The commit message used, or null if no commit was made."
+    },
+    "summary": {
+      "type": "string",
+      "description": "One-to-two sentence human-readable description of what changed.",
+      "maxLength": 500
+    },
+    "pr_created": {
+      "type": "boolean",
+      "description": "True if a pull request was created."
+    },
+    "pr_url": {
+      "type": ["string", "null"],
+      "description": "The URL of the created pull request, or null if none was created."
+    },
+    "blockers": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Anything that prevented full completion. Empty if completed cleanly."
+    }
+  }
+}

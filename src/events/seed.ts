@@ -12,7 +12,7 @@ export function seedBusFromHistory(): void {
   for (const id of listAllRunIds()) {
     try {
       const meta = readMeta(id);
-      for (const phase of meta.phases) {
+      for (const phase of meta.phases ?? []) {
         if (!phase.completed_at) continue;
         const ts = new Date(phase.completed_at).getTime();
         if (ts < cutoff) continue;

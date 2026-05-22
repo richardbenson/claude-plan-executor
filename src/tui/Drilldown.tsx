@@ -65,7 +65,7 @@ export function Drilldown({ runId, phaseNumber, onClose, columns, rows }: Props)
 
   const [selectedPhaseNumber, setSelectedPhaseNumber] = useState(phaseNumber);
   const runInteractive = useInteractiveSubprocess();
-  const phases = meta.phases;
+  const phases = meta.phases ?? [];
   const selectedIdx = phases.findIndex(p => p.number === selectedPhaseNumber);
   const phase: PhaseEntry | undefined = phases[selectedIdx < 0 ? 0 : selectedIdx];
 
@@ -107,7 +107,7 @@ export function Drilldown({ runId, phaseNumber, onClose, columns, rows }: Props)
     }
     if (input === 's' && phase) {
       updatePhase(runId, phase.number, { status: 'failed', summary: 'skipped by user' });
-      const nextPhase = meta.phases.find(p => p.number > phase.number);
+      const nextPhase = (meta.phases ?? []).find(p => p.number > phase.number);
       if (nextPhase) {
         updatePhase(runId, nextPhase.number, { status: 'pending' });
       }
@@ -134,7 +134,7 @@ export function Drilldown({ runId, phaseNumber, onClose, columns, rows }: Props)
       <Box flexDirection="row" flexGrow={1}>
         {/* Left pane: phase list */}
         <Box flexDirection="column" width={leftWidth} borderStyle="round" borderColor={border}>
-          <Text color={dim}>{'PHASES · ' + meta.plan_folder}</Text>
+          <Text color={dim}>{'PHASES · ' + (meta.plan_folder ?? '')}</Text>
           {phases.map((p) => {
             const sel = p.number === selectedPhaseNumber;
             const label = p.title ?? phaseLabel(p.prompt_file);

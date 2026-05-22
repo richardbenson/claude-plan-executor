@@ -7,7 +7,14 @@ import {
   dim, dim2, fg, green, green2, teal, orange, red, yellow, magenta, borderHi,
 } from '../theme.js';
 import type { QueueState } from '../hooks/useQueueState.js';
+import type { RunMeta } from '../../types/meta.js';
 import { activityBus } from '../../events/bus.js';
+
+function runLabel(run: RunMeta): string {
+  const repo = path.basename(run.primary_repo_path);
+  if (!run.plan_folder && run.prompt) return ('★' + repo).slice(0, 12);
+  return `${repo}/${run.plan_folder ?? ''}`.slice(0, 12);
+}
 
 function buildHourlyWindow(): number[] {
   // 18 hourly buckets covering the last 18 hours (same as WatchHero sparkline)
@@ -45,7 +52,7 @@ function UpNext({ queueState, colWidth }: { queueState: QueueState; colWidth: nu
   // estimate ETA: each remaining phase ≈ 5 minutes
   let etaMin = 0;
   for (const run of queueState.queuedRuns) {
-    const remaining = run.phases.filter(p =>
+    const remaining = (run.phases ?? []).filter(p =>
       p.status !== 'complete' && p.status !== 'pr-created' && p.status !== 'failed',
     ).length;
     etaMin += remaining * 5;
@@ -61,8 +68,7 @@ function UpNext({ queueState, colWidth }: { queueState: QueueState; colWidth: nu
         <Text color={dim}>(queue empty)</Text>
       ) : (
         next3.map((run, i) => {
-          const repo = path.basename(run.primary_repo_path);
-          const label = `${repo}/${run.plan_folder}`.slice(0, 12);
+          const label = runLabel(run);
           return (
             <Box key={run.id}>
               <Text color={dim2}>{String(i + 1).padStart(2)} </Text>
