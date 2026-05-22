@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { readMeta, updateMeta, updatePhase, getLogsDir } from '../storage/meta.js';
 import { runSession } from './session.js';
@@ -87,9 +89,25 @@ export async function runPhase(
   // finds the file shortly after Claude creates it, not before
   const promptFile = path.join(meta.worktree_path, 'docs', meta.plan_folder ?? '', phaseEntry.prompt_file);
   const logPath = path.join(getLogsDir(runId), 'phase-' + String(phaseNumber).padStart(2, '0') + '.log');
+
+  // Prepend notes from the previous phase if present
+  const prevPhase = phaseNumber > 1
+    ? (meta.phases ?? []).find(p => p.number === phaseNumber - 1)
+    : undefined;
+  const prevNotes = prevPhase?.notes_for_next_phase?.trim();
+  let effectivePromptFile = promptFile;
+  if (prevNotes) {
+    const tmpDir = path.join(os.tmpdir(), 'cpe-phase-prompts');
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const tmpPath = path.join(tmpDir, `${runId}-phase-${phaseNumber}.md`);
+    const originalContent = fs.readFileSync(promptFile, 'utf-8');
+    fs.writeFileSync(tmpPath, `## Notes from the previous phase\n\n${prevNotes}\n\n---\n\n${originalContent}`);
+    effectivePromptFile = tmpPath;
+  }
+
   const sessionPromise = runSession({
     worktreePath: meta.worktree_path,
-    promptFile,
+    promptFile: effectivePromptFile,
     sessionId: uuid,
     logPath,
     schema: PHASE_RESULT_SCHEMA,
@@ -102,6 +120,9 @@ export async function runPhase(
   // STEP 7 — await session completion then stop tail
   const result = await sessionPromise;
   stopTail();
+  if (effectivePromptFile !== promptFile) {
+    try { fs.unlinkSync(effectivePromptFile); } catch { /* ignore */ }
+  }
 
   // STEP 8 — classify envelope
   const classified = classifyEnvelope(result.envelope);
