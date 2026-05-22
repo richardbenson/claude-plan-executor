@@ -1,7 +1,10 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { type AppQueue } from '../types/meta.js';
+import { type AppQueue, type QueueEntry } from '../types/meta.js';
+
+type RawQueueEntry = Omit<QueueEntry, 'type'> & { type?: QueueEntry['type'] };
+type RawAppQueue = { entries: RawQueueEntry[]; paused: boolean };
 
 const STATE_BASE = path.join(os.homedir(), '.local', 'state', 'cpe');
 export const QUEUE_PATH = path.join(STATE_BASE, 'queue.json');
@@ -12,7 +15,11 @@ function resolveQueuePath(base?: string): string {
 
 export function readQueue(base?: string): AppQueue {
   try {
-    return JSON.parse(fs.readFileSync(resolveQueuePath(base), 'utf8')) as AppQueue;
+    const raw = JSON.parse(fs.readFileSync(resolveQueuePath(base), 'utf8')) as RawAppQueue;
+    return {
+      ...raw,
+      entries: raw.entries.map(e => ({ ...e, type: e.type ?? 'plan' })),
+    };
   } catch {
     return { entries: [], paused: false };
   }
@@ -24,15 +31,15 @@ export function writeQueue(queue: AppQueue, base?: string): void {
   fs.writeFileSync(p, JSON.stringify(queue, null, 2) + '\n');
 }
 
-export function enqueue(runId: string, base?: string): void {
+export function enqueue(runId: string, base?: string, type: QueueEntry['type'] = 'plan'): void {
   const queue = readQueue(base);
-  queue.entries.push({ run_id: runId, added_at: new Date().toISOString() });
+  queue.entries.push({ run_id: runId, added_at: new Date().toISOString(), type });
   writeQueue(queue, base);
 }
 
-export function enqueueFront(runId: string, base?: string): void {
+export function enqueueFront(runId: string, base?: string, type: QueueEntry['type'] = 'plan'): void {
   const queue = readQueue(base);
-  queue.entries.unshift({ run_id: runId, added_at: new Date().toISOString() });
+  queue.entries.unshift({ run_id: runId, added_at: new Date().toISOString(), type });
   writeQueue(queue, base);
 }
 

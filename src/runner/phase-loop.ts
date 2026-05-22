@@ -61,7 +61,7 @@ export async function runPhase(
   }
 
   // STEP 2 — set phase + run executing
-  const phaseEntry = meta.phases.find(p => p.number === phaseNumber);
+  const phaseEntry = (meta.phases ?? []).find(p => p.number === phaseNumber);
   if (!phaseEntry) {
     throw new Error(`Phase ${phaseNumber} not found in run ${runId}`);
   }
@@ -85,7 +85,7 @@ export async function runPhase(
 
   // STEP 5 — spawn session and start JSONL tail concurrently so the tail
   // finds the file shortly after Claude creates it, not before
-  const promptFile = path.join(meta.worktree_path, 'docs', meta.plan_folder, phaseEntry.prompt_file);
+  const promptFile = path.join(meta.worktree_path, 'docs', meta.plan_folder ?? '', phaseEntry.prompt_file);
   const logPath = path.join(getLogsDir(runId), 'phase-' + String(phaseNumber).padStart(2, '0') + '.log');
   const sessionPromise = runSession({
     worktreePath: meta.worktree_path,
@@ -113,7 +113,7 @@ export async function runPhase(
 
   if (classified.type === 'transient-error') {
     const fresh = readMeta(runId);
-    const entry = fresh.phases.find(p => p.number === phaseNumber)!;
+    const entry = (fresh.phases ?? []).find(p => p.number === phaseNumber)!;
     const retryCount = entry.retry_count + 1;
     if (retryCount > appConfig.max_retries) {
       await markPhaseFailed(runId, phaseNumber, 'transient API error', bus);
@@ -131,7 +131,7 @@ export async function runPhase(
 
   if (classified.type === 'phase-failure') {
     const fresh = readMeta(runId);
-    const entry = fresh.phases.find(p => p.number === phaseNumber)!;
+    const entry = (fresh.phases ?? []).find(p => p.number === phaseNumber)!;
     const retryCount = entry.retry_count + 1;
     if (retryCount > appConfig.max_retries) {
       await markPhaseFailed(runId, phaseNumber, classified.reason, bus);
@@ -147,7 +147,7 @@ export async function runPhase(
 
   if (!isPhaseResult(phaseResult)) {
     const fresh = readMeta(runId);
-    const entry = fresh.phases.find(p => p.number === phaseNumber)!;
+    const entry = (fresh.phases ?? []).find(p => p.number === phaseNumber)!;
     const retryCount = entry.retry_count + 1;
     if (retryCount > appConfig.max_retries) {
       await markPhaseFailed(runId, phaseNumber, 'invalid structured_output shape', bus);
@@ -161,7 +161,7 @@ export async function runPhase(
   if (phaseResult.committed && headAfter === headBefore) {
     // Claude misreported committed:true but HEAD didn't change
     const fresh = readMeta(runId);
-    const entry = fresh.phases.find(p => p.number === phaseNumber)!;
+    const entry = (fresh.phases ?? []).find(p => p.number === phaseNumber)!;
     const retryCount = entry.retry_count + 1;
     bus.emit({
       kind: 'error',
@@ -195,7 +195,7 @@ export async function runPhase(
   });
 
   const freshMeta = readMeta(runId);
-  const totalCost = freshMeta.phases.reduce((sum, p) => sum + (p.cost_usd ?? 0), 0);
+  const totalCost = (freshMeta.phases ?? []).reduce((sum, p) => sum + (p.cost_usd ?? 0), 0);
   await updateMeta(runId, { total_cost_usd: totalCost });
 
   bus.emit({
@@ -217,7 +217,7 @@ export async function resumeOrRestart(
   bus: ActivityBus,
 ): Promise<PhaseOutcome> {
   const meta = readMeta(runId);
-  const entry = meta.phases.find(p => p.number === phaseNumber);
+  const entry = (meta.phases ?? []).find(p => p.number === phaseNumber);
   if (!entry) {
     throw new Error(`Phase ${phaseNumber} not found in run ${runId}`);
   }
@@ -324,7 +324,7 @@ export async function resumeOrRestart(
 
   if (classified.type === 'transient-error' || classified.type === 'phase-failure') {
     const freshMeta = readMeta(runId);
-    const freshEntry = freshMeta.phases.find(p => p.number === phaseNumber)!;
+    const freshEntry = (freshMeta.phases ?? []).find(p => p.number === phaseNumber)!;
     const retryCount = freshEntry.retry_count + 1;
     const reason = classified.type === 'phase-failure' ? classified.reason : 'transient API error';
     if (retryCount > appConfig.max_retries) {
@@ -337,7 +337,7 @@ export async function resumeOrRestart(
   }
 
   // success — process same as runPhase step 9-10
-  const headBefore = (readMeta(runId).phases.find(p => p.number === phaseNumber)?.head_before) ?? '';
+  const headBefore = ((readMeta(runId).phases ?? []).find(p => p.number === phaseNumber)?.head_before) ?? '';
   const headAfter = getHead(meta.worktree_path);
   const phaseResult = envelope.structured_output;
 
@@ -368,7 +368,7 @@ export async function resumeOrRestart(
   });
 
   const freshMetaFinal = readMeta(runId);
-  const totalCost = freshMetaFinal.phases.reduce((s, p) => s + (p.cost_usd ?? 0), 0);
+  const totalCost = (freshMetaFinal.phases ?? []).reduce((s, p) => s + (p.cost_usd ?? 0), 0);
   await updateMeta(runId, { total_cost_usd: totalCost });
 
   bus.emit({

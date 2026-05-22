@@ -37,7 +37,7 @@ const ACTIVE_STATUSES = new Set(['executing', 'finalising', 'retrying', 'paused'
 const TERMINAL_STATUSES = new Set(['complete', 'pr-created', 'failed']);
 
 function latestCompletedAt(run: RunMeta): number {
-  return run.phases.reduce((max, p) =>
+  return (run.phases ?? []).reduce((max, p) =>
     p.completed_at ? Math.max(max, new Date(p.completed_at).getTime()) : max, 0);
 }
 
@@ -74,7 +74,7 @@ function deriveState(): QueueState {
     allRuns.find(r => r.status === 'executing' || r.status === 'finalising') ?? null;
 
   const activePhase = activeRun
-    ? (activeRun.phases.find(p => p.status === 'executing') ?? null)
+    ? ((activeRun.phases ?? []).find(p => p.status === 'executing') ?? null)
     : null;
 
   const queuedRuns = queuedList;
@@ -103,7 +103,7 @@ function deriveState(): QueueState {
   const nowMs = Date.now();
 
   for (const run of allRuns) {
-    for (const phase of run.phases) {
+    for (const phase of run.phases ?? []) {
       if (isToday(phase.completed_at)) {
         if (phase.status === 'complete' || phase.status === 'pr-created') {
           phasesCompleteToday++;
@@ -121,7 +121,7 @@ function deriveState(): QueueState {
         }
       }
     }
-    if (isToday(run.phases[run.phases.length - 1]?.completed_at)) {
+    if (isToday(run.phases?.at(-1)?.completed_at)) {
       if (run.status === 'pr-created') prsToday++;
     }
   }

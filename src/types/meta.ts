@@ -43,7 +43,7 @@ export interface RunMeta {
   id: string;
   primary_repo_path: string;
   worktree_path: string;
-  plan_folder: string;
+  plan_folder?: string;
   feature_branch: string;
   target_branch: string;
   remote?: RunRemote;
@@ -52,12 +52,17 @@ export interface RunMeta {
   bootstrapped?: boolean;
   sandboxed?: boolean;
   claude_pid?: number;
-  phases: PhaseEntry[];
+  phases?: PhaseEntry[];
+  prompt?: string;
+  prompt_source?: 'free-text' | 'github-issue' | 'clipboard';
+  github_issue_number?: number;
+  pr_url?: string;
 }
 
 export interface QueueEntry {
   run_id: string;
   added_at: string;
+  type: 'plan' | 'single-prompt';
 }
 
 export interface AppQueue {

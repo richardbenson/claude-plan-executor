@@ -47,7 +47,7 @@ function formatCountdownLabel(ms: number): string {
 function UserPausedHero({ queueState }: { queueState: QueueState }): React.ReactElement {
   const queuedCount = queueState.queuedRuns.length;
   const phasesWaiting = queueState.queuedRuns.reduce(
-    (acc, r) => acc + r.phases.filter(p =>
+    (acc, r) => acc + (r.phases ?? []).filter(p =>
       p.status !== 'complete' && p.status !== 'pr-created' && p.status !== 'failed',
     ).length,
     0,
@@ -131,14 +131,14 @@ function LimitPausedFull({ queueState, columns }: { queueState: QueueState; colu
           <Text color={dim}>(nothing queued)</Text>
         ) : (
           allWaiting.map(run => {
-            const remaining = run.phases.filter(p =>
+            const remaining = (run.phases ?? []).filter(p =>
               p.status !== 'complete' && p.status !== 'pr-created' && p.status !== 'failed',
             ).length;
             const repo = path.basename(run.primary_repo_path);
             return (
               <Box key={run.id}>
                 <StateChip status={run.status} showLabel={true} />
-                <Text color={fgDark}> {repo}/{run.plan_folder}</Text>
+                <Text color={fgDark}> {repo}/{run.plan_folder ?? ''}</Text>
                 <Text color={dim}> · {remaining} phases remaining</Text>
               </Box>
             );

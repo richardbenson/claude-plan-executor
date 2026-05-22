@@ -124,7 +124,7 @@ export function Watch({ columns, rows, compact }: Props): React.ReactElement {
         const phase = queueState.activePhase;
         if (!run || !phase) break;
         updatePhase(run.id, phase.number, { status: 'failed', summary: 'skipped by user' });
-        const nextPhase = run.phases.find(p => p.number > phase.number);
+        const nextPhase = (run.phases ?? []).find(p => p.number > phase.number);
         if (nextPhase) {
           updatePhase(run.id, nextPhase.number, { status: 'pending' });
         }
@@ -177,8 +177,8 @@ export function Watch({ columns, rows, compact }: Props): React.ReactElement {
         <Box flexDirection="row">
           {activeRun ? (
             <>
-              <Text color={cyan}>{activeRun.plan_folder}</Text>
-              <Text color={dim}>{' phase ' + (activePhase?.number ?? '?') + '/' + activeRun.phases.length}</Text>
+              <Text color={cyan}>{activeRun.plan_folder ?? ''}</Text>
+              <Text color={dim}>{' phase ' + (activePhase?.number ?? '?') + '/' + (activeRun.phases ?? []).length}</Text>
             </>
           ) : (
             <Text color={dim}>idle — no active run</Text>

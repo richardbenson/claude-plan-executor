@@ -40,7 +40,7 @@ export async function removeCommand(runId: string): Promise<void> {
   }
 
   const shortId = entry.run_id.slice(0, 8);
-  process.stdout.write(`Remove run ${shortId} (${meta.plan_folder}) from the queue? [y/N] `);
+  process.stdout.write(`Remove run ${shortId} (${meta.plan_folder ?? ''}) from the queue? [y/N] `);
   const answer = readLine();
 
   if (answer.toLowerCase() !== 'y') {

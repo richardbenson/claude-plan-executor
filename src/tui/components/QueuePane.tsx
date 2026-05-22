@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { StateChip } from './StateChip.js';
-import { border, cyan, bgFloat, dim } from '../theme.js';
+import { border, cyan, magenta, bgFloat, dim } from '../theme.js';
 import type { RunMeta } from '../../types/meta.js';
 
 interface Props {
@@ -17,6 +17,20 @@ function progressBar(complete: number, total: number, width: number): string {
   return '━'.repeat(filled) + '░'.repeat(width - filled);
 }
 
+const isSinglePrompt = (run: RunMeta): boolean => {
+  return !run.plan_folder && !!run.prompt;
+};
+
+const getSourceLabel = (run: RunMeta): string => {
+  if (!isSinglePrompt(run)) return '';
+  switch (run.prompt_source) {
+    case 'github-issue': return 'GH';
+    case 'clipboard': return 'CLIP';
+    case 'free-text':
+    default: return 'TXT';
+  }
+};
+
 export function QueuePane({ runs, selectedIndex, focused }: Props): React.ReactElement {
   return (
     <Box
@@ -29,25 +43,33 @@ export function QueuePane({ runs, selectedIndex, focused }: Props): React.ReactE
       {runs.map((run, i) => {
         const selected = i === selectedIndex;
         const repoName = run.primary_repo_path.split('/').pop() ?? run.primary_repo_path;
-        const completePhases = run.phases.filter(p => p.status === 'complete' || p.status === 'pr-created').length;
-        const totalPhases = run.phases.length;
+        const single = isSinglePrompt(run);
+        const completePhases = (run.phases ?? []).filter(p => p.status === 'complete' || p.status === 'pr-created').length;
+        const totalPhases = (run.phases ?? []).length;
         const isExecuting = run.status === 'executing' || run.status === 'retrying';
+
+        const barStr = single
+          ? progressBar(isExecuting ? 1 : 0, 1, 8)
+          : progressBar(completePhases, totalPhases, 8);
 
         return (
           <Box key={run.id} flexDirection="column" backgroundColor={selected ? bgFloat : undefined}>
             <Text>
               <Text color={selected ? cyan : undefined}>{'┃'}</Text>
-              <Text>{(selected ? '▶ ' : '  ') + repoName.slice(0, 9)}</Text>
+              <Text>{(selected ? '▶ ' : '  ') + (single ? '★' : '') + repoName.slice(0, single ? 8 : 9)}</Text>
             </Text>
             <Text>
               <Text color={selected ? cyan : undefined}>{'┃'}</Text>
-              <Text>{'  /' + run.plan_folder.slice(0, 10)}</Text>
+              {single
+                ? <Text color={magenta}>{'  ' + getSourceLabel(run)}</Text>
+                : <Text>{'  /' + (run.plan_folder ?? '').slice(0, 10)}</Text>
+              }
             </Text>
             <Box flexDirection="row">
               <Text color={selected ? cyan : undefined}>{'┃'}</Text>
               <Text>{'  '}</Text>
               <StateChip status={run.status} showLabel={false} />
-              <Text>{' ' + completePhases + '/' + totalPhases}</Text>
+              {!single && <Text>{' ' + completePhases + '/' + totalPhases}</Text>}
               {run.sandboxed && (
                 <Box marginLeft={1} flexShrink={0}>
                   <Text color={dim}>{'⊡'}</Text>
@@ -57,7 +79,7 @@ export function QueuePane({ runs, selectedIndex, focused }: Props): React.ReactE
             <Text>
               <Text color={selected ? cyan : undefined}>{'┃'}</Text>
               {isExecuting
-                ? <Text color={cyan}>{'  ' + progressBar(completePhases, totalPhases, 8)}</Text>
+                ? <Text color={single ? magenta : cyan}>{'  ' + barStr}</Text>
                 : <Text>{'        '}</Text>
               }
             </Text>

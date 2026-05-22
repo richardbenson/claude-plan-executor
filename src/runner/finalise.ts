@@ -25,7 +25,7 @@ export async function finaliseRun(runId: string, bus: ActivityBus): Promise<Fina
     phaseName: 'finalise',
   });
 
-  const { plan_folder: planFolder, worktree_path: worktreePath } = meta;
+  const { plan_folder: planFolder = '', worktree_path: worktreePath } = meta;
 
   // Step 2 — inject plan folder into summarise prompt and write to temp file
   const prompt = SUMMARISE_PROMPT.replace(/PLAN_FOLDER/g, planFolder);

@@ -3,13 +3,13 @@ import { classifyJsonlEntry, encodeWorktreePath } from './jsonl-tail.js';
 import type { BashEvent, EditEvent, LimitEvent } from '../events/types.js';
 
 describe('encodeWorktreePath', () => {
-  test('strips leading slash', () => {
-    expect(encodeWorktreePath('/home/ubuntu/Code/x')).toBe('home-ubuntu-Code-x');
+  test('produces leading dash (matches Claude Code path encoding)', () => {
+    expect(encodeWorktreePath('/home/ubuntu/Code/x')).toBe('-home-ubuntu-Code-x');
   });
 
-  test('retains trailing dash from trailing slash', () => {
+  test('replaces dots and slashes with dashes', () => {
     expect(encodeWorktreePath('/home/ubuntu/.local/state/cpe/worktrees/01JXYZ/')).toBe(
-      'home-ubuntu-.local-state-cpe-worktrees-01JXYZ-',
+      '-home-ubuntu--local-state-cpe-worktrees-01JXYZ-',
     );
   });
 });
@@ -33,9 +33,9 @@ describe('classifyJsonlEntry', () => {
         ],
       },
     };
-    const event = classifyJsonlEntry(entry, runId, phaseNumber, pendingEdits);
-    expect(event).not.toBeNull();
-    const ev = event as EditEvent;
+    const events = classifyJsonlEntry(entry, runId, phaseNumber, pendingEdits);
+    expect(events.length).toBeGreaterThan(0);
+    const ev = events[0] as EditEvent;
     expect(ev.kind).toBe('edit');
     expect(ev.file).toBe('src/foo.ts');
     expect(ev.inProgress).toBe(true);
@@ -58,8 +58,8 @@ describe('classifyJsonlEntry', () => {
         ],
       },
     };
-    const event = classifyJsonlEntry(entry, runId, phaseNumber, pendingEdits);
-    const ev = event as EditEvent;
+    const events = classifyJsonlEntry(entry, runId, phaseNumber, pendingEdits);
+    const ev = events[0] as EditEvent;
     expect(ev.kind).toBe('edit');
     expect(ev.inProgress).toBe(true);
   });
@@ -79,9 +79,9 @@ describe('classifyJsonlEntry', () => {
         ],
       },
     };
-    const event = classifyJsonlEntry(entry, runId, phaseNumber, pendingEdits);
-    expect(event).not.toBeNull();
-    const ev = event as BashEvent;
+    const events = classifyJsonlEntry(entry, runId, phaseNumber, pendingEdits);
+    expect(events.length).toBeGreaterThan(0);
+    const ev = events[0] as BashEvent;
     expect(ev.kind).toBe('bash');
     expect(ev.command).toBe('bun test');
     expect(ev.toolUseId).toBe('tu-3');
@@ -98,32 +98,34 @@ describe('classifyJsonlEntry', () => {
     };
     classifyJsonlEntry(toolUseEntry, runId, phaseNumber, pendingEdits);
 
-    // Then the tool_result
+    // Tool results arrive as user messages in the JSONL format
     const resultEntry = {
-      type: 'tool',
-      content: [{ type: 'tool_result', tool_use_id: 'tu-4', content: 'ok' }],
+      type: 'user',
+      message: {
+        content: [{ type: 'tool_result', tool_use_id: 'tu-4', content: 'ok' }],
+      },
     };
-    const event = classifyJsonlEntry(resultEntry, runId, phaseNumber, pendingEdits);
-    expect(event).not.toBeNull();
-    const ev = event as EditEvent;
+    const events = classifyJsonlEntry(resultEntry, runId, phaseNumber, pendingEdits);
+    expect(events.length).toBeGreaterThan(0);
+    const ev = events[0] as EditEvent;
     expect(ev.kind).toBe('edit');
     expect(ev.inProgress).toBe(false);
     expect(pendingEdits.has('tu-4')).toBe(false);
   });
 
-  test('unrecognised entry → null', () => {
+  test('unrecognised entry → empty array', () => {
     const pendingEdits = new Map();
-    expect(classifyJsonlEntry({ type: 'text', content: 'hello' }, runId, phaseNumber, pendingEdits)).toBeNull();
-    expect(classifyJsonlEntry(null, runId, phaseNumber, pendingEdits)).toBeNull();
-    expect(classifyJsonlEntry(42, runId, phaseNumber, pendingEdits)).toBeNull();
+    expect(classifyJsonlEntry({ type: 'text', content: 'hello' }, runId, phaseNumber, pendingEdits)).toHaveLength(0);
+    expect(classifyJsonlEntry(null, runId, phaseNumber, pendingEdits)).toHaveLength(0);
+    expect(classifyJsonlEntry(42, runId, phaseNumber, pendingEdits)).toHaveLength(0);
   });
 
   test('rate-limit entry → LimitEvent', () => {
     const pendingEdits = new Map();
     const entry = { isApiErrorMessage: true, apiErrorStatus: 429 };
-    const event = classifyJsonlEntry(entry, runId, phaseNumber, pendingEdits);
-    expect(event).not.toBeNull();
-    const ev = event as LimitEvent;
+    const events = classifyJsonlEntry(entry, runId, phaseNumber, pendingEdits);
+    expect(events.length).toBeGreaterThan(0);
+    const ev = events[0] as LimitEvent;
     expect(ev.kind).toBe('limit');
     expect(ev.resumeAt).toBeInstanceOf(Date);
   });

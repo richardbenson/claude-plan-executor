@@ -9,7 +9,7 @@ import type { RunMeta } from '../types/meta.js';
 
 const ALL_STATES = [
   'queued', 'executing', 'retrying', 'paused', 'paused-limit',
-  'finalising', 'complete', 'pr-created', 'failed', 'pending',
+  'finalising', 'complete', 'pr-created', 'failed', 'pending', 'archived',
 ] as const;
 
 let tmpDir: string;
@@ -37,8 +37,8 @@ function makeMinimalMeta(overrides?: Partial<RunMeta>): RunMeta {
   };
 }
 
-test('STATE_TABLE covers all 10 states', () => {
-  expect(Object.keys(STATE_TABLE)).toHaveLength(10);
+test('STATE_TABLE covers all 11 states', () => {
+  expect(Object.keys(STATE_TABLE)).toHaveLength(11);
   for (const state of ALL_STATES) {
     const info = STATE_TABLE[state];
     expect(info.glyph.length).toBeGreaterThan(0);
@@ -75,8 +75,8 @@ test('updatePhase updates the correct phase entry', () => {
   });
   writeMeta(meta.id, meta, tmpDir);
   const updated = updatePhase(meta.id, 2, { status: 'executing' }, tmpDir);
-  expect(updated.phases[0]?.status).toBe('complete');
-  expect(updated.phases[1]?.status).toBe('executing');
+  expect(updated.phases?.[0]?.status).toBe('complete');
+  expect(updated.phases?.[1]?.status).toBe('executing');
 });
 
 test('enqueue / dequeue FIFO ordering', () => {

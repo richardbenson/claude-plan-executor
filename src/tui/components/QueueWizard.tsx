@@ -14,7 +14,9 @@ import { createWorktree } from '../../git/worktree.js';
 import { getPrimaryRepo, getRemote } from '../../git/repo.js';
 import { findPlanFolders, countPhaseFiles, sortedPhaseFiles } from '../../commands/queue.js';
 import { BOOTSTRAP_DETECT_PROMPT, BOOTSTRAP_DETECT_SCHEMA } from '../../prompts/index.js';
+import { fetchGitHubIssues, type GitHubIssue } from '../../vcs/github.js';
 import type { RepoConfig, BootstrapDetectResult } from '../../config/repo-config.js';
+import type { RunMeta } from '../../types/meta.js';
 
 interface PlanInfo { folder: string; phaseCount: number }
 
@@ -23,11 +25,17 @@ type WizardStep =
   | { kind: 'bootstrap-choice'; repoPath: string; existing: RepoConfig | null; sel: number }
   | { kind: 'bootstrap-detecting'; repoPath: string }
   | { kind: 'bootstrap-review'; repoPath: string; result: BootstrapDetectResult; sel: number }
-  | { kind: 'plan-select'; repoPath: string; repoConfig: RepoConfig; plans: PlanInfo[]; sel: number }
+  | { kind: 'entry-type-choice'; repoPath: string; repoConfig: RepoConfig; sel: number }
+  | { kind: 'prompt-source-choice'; repoPath: string; repoConfig: RepoConfig; sel: number; error?: string }
+  | { kind: 'github-issue-select'; repoPath: string; repoConfig: RepoConfig; issues: GitHubIssue[]; sel: number; loading?: boolean; error?: string }
+  | { kind: 'free-text-input'; repoPath: string; repoConfig: RepoConfig; value: string; error?: string }
+  | { kind: 'single-prompt-confirm'; repoPath: string; repoConfig: RepoConfig; prompt: string; source: string; githubIssueNumber?: number; runId: string; worktreePath: string; featureBranch: string }
+  | { kind: 'running-single'; repoPath: string; repoConfig: RepoConfig; prompt: string; source: string; githubIssueNumber?: number; runId: string; worktreePath: string; featureBranch: string }
+  | { kind: 'plan-select'; repoPath: string; repoConfig: RepoConfig; plans: PlanInfo[]; sel: number; error?: string }
   | { kind: 'plan-input'; repoPath: string; repoConfig: RepoConfig; value: string; error?: string }
   | { kind: 'confirm'; repoPath: string; repoConfig: RepoConfig; folder: string; phaseCount: number; runId: string; worktreePath: string }
   | { kind: 'running'; repoPath: string; repoConfig: RepoConfig; folder: string; runId: string; worktreePath: string }
-  | { kind: 'done'; runId: string; folder: string; phaseCount: number }
+  | { kind: 'done'; runId: string; folder?: string; phaseCount?: number; prompt?: string }
   | { kind: 'error'; message: string };
 
 interface Props {
@@ -52,6 +60,14 @@ function goToPlanStep(repoPath: string, repoConfig: RepoConfig): WizardStep {
   return plans.length > 0
     ? { kind: 'plan-select', repoPath, repoConfig, plans, sel: 0 }
     : { kind: 'plan-input', repoPath, repoConfig, value: '' };
+}
+
+function goToEntryTypeChoice(repoPath: string, repoConfig: RepoConfig): WizardStep {
+  return { kind: 'entry-type-choice', repoPath, repoConfig, sel: 0 };
+}
+
+function makeFeatureBranch(runId: string): string {
+  return 'feature/sp-' + runId.slice(0, 8).toLowerCase();
 }
 
 export function QueueWizard({ onClose, columns, rows }: Props): React.ReactElement {
@@ -153,7 +169,26 @@ export function QueueWizard({ onClose, columns, rows }: Props): React.ReactEleme
     return () => { active = false; try { proc.kill(); } catch {} };
   }, [step.kind]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Queue execution
+  // GitHub issues fetch
+  useEffect(() => {
+    if (step.kind !== 'github-issue-select' || !step.loading) return;
+    const { repoPath, repoConfig } = step;
+    (async () => {
+      await Promise.resolve(); // yield to let loading state render
+      try {
+        const issues = fetchGitHubIssues(repoPath);
+        setStep({ kind: 'github-issue-select', repoPath, repoConfig, issues, sel: 0, loading: false });
+      } catch (err) {
+        setStep(prev =>
+          prev.kind === 'github-issue-select'
+            ? { ...prev, loading: false, error: String(err) }
+            : prev,
+        );
+      }
+    })();
+  }, [step.kind]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Queue execution — plan
   useEffect(() => {
     if (step.kind !== 'running') return;
     const { repoPath, repoConfig, folder, runId, worktreePath } = step;
@@ -209,6 +244,52 @@ export function QueueWizard({ onClose, columns, rows }: Props): React.ReactEleme
     })();
   }, [step.kind]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Queue execution — single-prompt
+  useEffect(() => {
+    if (step.kind !== 'running-single') return;
+    const { repoPath, repoConfig, prompt, source, githubIssueNumber, runId, worktreePath, featureBranch } = step;
+    (async () => {
+      try {
+        if (repoConfig.bootstrap.length > 0) {
+          setRunningMsg('Running ' + repoConfig.bootstrap.length + ' bootstrap command(s)…');
+          const logPath = path.join(getLogsDir(runId), 'bootstrap.log');
+          fs.mkdirSync(path.dirname(logPath), { recursive: true });
+          const result = await runBootstrap(worktreePath, repoConfig.bootstrap, logPath);
+          if (!result.success) {
+            setStep({ kind: 'error', message: 'Bootstrap failed: ' + result.failedCommand + '\nLog: ' + logPath });
+            return;
+          }
+        }
+
+        setRunningMsg('Writing metadata…');
+        const config = readConfig();
+        let remote;
+        try { remote = getRemote(repoPath, config.gitea_host); } catch { remote = undefined; }
+
+        const meta: RunMeta = {
+          id: runId,
+          primary_repo_path: repoPath,
+          worktree_path: worktreePath,
+          feature_branch: featureBranch,
+          target_branch: config.target_branch ?? 'main',
+          remote,
+          status: 'queued',
+          total_cost_usd: 0,
+          bootstrapped: repoConfig.bootstrap.length > 0,
+          prompt,
+          prompt_source: source as RunMeta['prompt_source'],
+        };
+        if (githubIssueNumber !== undefined) meta.github_issue_number = githubIssueNumber;
+        writeMeta(runId, meta);
+
+        enqueue(runId, undefined, 'single-prompt');
+        setStep({ kind: 'done', runId, prompt });
+      } catch (err) {
+        setStep({ kind: 'error', message: String(err) });
+      }
+    })();
+  }, [step.kind]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useInput((input, key) => {
     switch (step.kind) {
 
@@ -231,16 +312,13 @@ export function QueueWizard({ onClose, columns, rows }: Props): React.ReactEleme
         if (key.return) {
           if (step.existing) {
             if (step.sel === 0) {
-              // Keep existing
-              setStep(goToPlanStep(step.repoPath, step.existing));
+              setStep(goToEntryTypeChoice(step.repoPath, step.existing));
             } else if (step.sel === 1) {
-              // Detect again
               setStep({ kind: 'bootstrap-detecting', repoPath: step.repoPath });
             } else {
-              // Skip (empty)
               const cfg: RepoConfig = { bootstrap: [] };
               writeRepoConfig(step.repoPath, cfg);
-              setStep(goToPlanStep(step.repoPath, cfg));
+              setStep(goToEntryTypeChoice(step.repoPath, cfg));
             }
           } else {
             if (step.sel === 0) {
@@ -248,11 +326,11 @@ export function QueueWizard({ onClose, columns, rows }: Props): React.ReactEleme
             } else if (step.sel === 1) {
               const cfg: RepoConfig = { bootstrap: [] };
               writeRepoConfig(step.repoPath, cfg);
-              setStep(goToPlanStep(step.repoPath, cfg));
+              setStep(goToEntryTypeChoice(step.repoPath, cfg));
             } else {
               const cfg: RepoConfig = { bootstrap: [] };
               writeRepoConfig(step.repoPath, cfg);
-              setStep(goToPlanStep(step.repoPath, cfg));
+              setStep(goToEntryTypeChoice(step.repoPath, cfg));
             }
           }
         }
@@ -272,14 +350,118 @@ export function QueueWizard({ onClose, columns, rows }: Props): React.ReactEleme
           if (step.sel === 0) {
             const cfg: RepoConfig = { bootstrap: step.result.commands };
             writeRepoConfig(step.repoPath, cfg);
-            setStep(goToPlanStep(step.repoPath, cfg));
+            setStep(goToEntryTypeChoice(step.repoPath, cfg));
           } else {
             const cfg: RepoConfig = { bootstrap: [] };
             writeRepoConfig(step.repoPath, cfg);
-            setStep(goToPlanStep(step.repoPath, cfg));
+            setStep(goToEntryTypeChoice(step.repoPath, cfg));
           }
         }
         if (key.escape) setStep({ kind: 'bootstrap-choice', repoPath: step.repoPath, existing: readRepoConfig(step.repoPath), sel: 0 });
+        break;
+      }
+
+      case 'entry-type-choice': {
+        if (key.upArrow)   setStep({ ...step, sel: Math.max(0, step.sel - 1) });
+        if (key.downArrow) setStep({ ...step, sel: Math.min(1, step.sel + 1) });
+        if (key.return) {
+          if (step.sel === 0) {
+            setStep(goToPlanStep(step.repoPath, step.repoConfig));
+          } else {
+            setStep({ kind: 'prompt-source-choice', repoPath: step.repoPath, repoConfig: step.repoConfig, sel: 0 });
+          }
+        }
+        if (key.escape) setStep({ kind: 'bootstrap-choice', repoPath: step.repoPath, existing: step.repoConfig, sel: 0 });
+        break;
+      }
+
+      case 'prompt-source-choice': {
+        if (key.upArrow)   setStep({ ...step, sel: Math.max(0, step.sel - 1), error: undefined });
+        if (key.downArrow) setStep({ ...step, sel: Math.min(2, step.sel + 1), error: undefined });
+        if (key.return) {
+          if (step.sel === 0) {
+            setStep({ kind: 'free-text-input', repoPath: step.repoPath, repoConfig: step.repoConfig, value: '' });
+          } else if (step.sel === 1) {
+            setStep({ kind: 'github-issue-select', repoPath: step.repoPath, repoConfig: step.repoConfig, issues: [], sel: 0, loading: true });
+          } else {
+            // Clipboard
+            try {
+              let clipText = '';
+              const xclip = Bun.spawnSync(['xclip', '-o', '-selection', 'clipboard']);
+              if (xclip.exitCode === 0) {
+                clipText = xclip.stdout.toString().trim();
+              } else {
+                const pbpaste = Bun.spawnSync(['pbpaste']);
+                if (pbpaste.exitCode === 0) clipText = pbpaste.stdout.toString().trim();
+              }
+              if (!clipText) { setStep({ ...step, error: 'Clipboard is empty or unavailable' }); return; }
+              const runId = ulid();
+              const featureBranch = makeFeatureBranch(runId);
+              const config = readConfig();
+              const worktreePath = createWorktree(step.repoPath, runId, featureBranch, config.target_branch ?? 'main');
+              setStep({ kind: 'single-prompt-confirm', repoPath: step.repoPath, repoConfig: step.repoConfig, prompt: clipText, source: 'clipboard', runId, worktreePath, featureBranch });
+            } catch (err) {
+              setStep({ ...step, error: String(err) });
+            }
+          }
+        }
+        if (key.escape) setStep({ kind: 'entry-type-choice', repoPath: step.repoPath, repoConfig: step.repoConfig, sel: 1 });
+        break;
+      }
+
+      case 'github-issue-select': {
+        if (step.loading) break;
+        if (step.error) {
+          // Allow retry with Enter
+          if (key.return) setStep({ ...step, error: undefined, loading: true });
+          if (key.escape) setStep({ kind: 'prompt-source-choice', repoPath: step.repoPath, repoConfig: step.repoConfig, sel: 1 });
+          break;
+        }
+        if (step.issues.length === 0) {
+          if (key.escape) setStep({ kind: 'prompt-source-choice', repoPath: step.repoPath, repoConfig: step.repoConfig, sel: 1 });
+          break;
+        }
+        if (key.upArrow)   setStep({ ...step, sel: Math.max(0, step.sel - 1) });
+        if (key.downArrow) setStep({ ...step, sel: Math.min(step.issues.length - 1, step.sel + 1) });
+        if (key.return) {
+          const issue = step.issues[step.sel];
+          if (!issue) return;
+          const prompt = `#${issue.number}: ${issue.title}\n\n${issue.body}`.trim();
+          try {
+            const runId = ulid();
+            const featureBranch = makeFeatureBranch(runId);
+            const config = readConfig();
+            const worktreePath = createWorktree(step.repoPath, runId, featureBranch, config.target_branch ?? 'main');
+            setStep({ kind: 'single-prompt-confirm', repoPath: step.repoPath, repoConfig: step.repoConfig, prompt, source: 'github-issue', githubIssueNumber: issue.number, runId, worktreePath, featureBranch });
+          } catch (err) {
+            setStep({ ...step, error: String(err) });
+          }
+        }
+        if (key.escape) setStep({ kind: 'prompt-source-choice', repoPath: step.repoPath, repoConfig: step.repoConfig, sel: 1 });
+        break;
+      }
+
+      case 'free-text-input': {
+        if (key.return) {
+          const prompt = step.value.trim();
+          if (!prompt) { setStep({ ...step, error: 'Prompt cannot be empty' }); return; }
+          try {
+            const runId = ulid();
+            const featureBranch = makeFeatureBranch(runId);
+            const config = readConfig();
+            const worktreePath = createWorktree(step.repoPath, runId, featureBranch, config.target_branch ?? 'main');
+            setStep({ kind: 'single-prompt-confirm', repoPath: step.repoPath, repoConfig: step.repoConfig, prompt, source: 'free-text', runId, worktreePath, featureBranch });
+          } catch (err) {
+            setStep({ ...step, error: String(err) });
+          }
+        }
+        if (key.escape) setStep({ kind: 'prompt-source-choice', repoPath: step.repoPath, repoConfig: step.repoConfig, sel: 0 });
+        break;
+      }
+
+      case 'single-prompt-confirm': {
+        if (key.return) setStep({ kind: 'running-single', repoPath: step.repoPath, repoConfig: step.repoConfig, prompt: step.prompt, source: step.source, githubIssueNumber: step.githubIssueNumber, runId: step.runId, worktreePath: step.worktreePath, featureBranch: step.featureBranch });
+        if (key.escape) setStep({ kind: 'prompt-source-choice', repoPath: step.repoPath, repoConfig: step.repoConfig, sel: 0 });
         break;
       }
 
@@ -298,7 +480,7 @@ export function QueueWizard({ onClose, columns, rows }: Props): React.ReactEleme
             setStep({ ...step, error: String(err) } as WizardStep);
           }
         }
-        if (key.escape) setStep({ kind: 'bootstrap-choice', repoPath: step.repoPath, existing: step.repoConfig, sel: 0 });
+        if (key.escape) setStep({ kind: 'entry-type-choice', repoPath: step.repoPath, repoConfig: step.repoConfig, sel: 0 });
         break;
       }
 
@@ -318,7 +500,7 @@ export function QueueWizard({ onClose, columns, rows }: Props): React.ReactEleme
             setStep({ ...step, error: String(err) });
           }
         }
-        if (key.escape) setStep({ kind: 'bootstrap-choice', repoPath: step.repoPath, existing: step.repoConfig, sel: 0 });
+        if (key.escape) setStep({ kind: 'entry-type-choice', repoPath: step.repoPath, repoConfig: step.repoConfig, sel: 0 });
         break;
       }
 
@@ -411,10 +593,122 @@ export function QueueWizard({ onClose, columns, rows }: Props): React.ReactEleme
       );
     }
 
+    if (step.kind === 'entry-type-choice') {
+      const opts = [
+        { label: 'Plan', desc: 'Execute a multi-phase plan from docs/' },
+        { label: 'Single Prompt', desc: 'Run a single AI prompt on this repo' },
+      ];
+      return (
+        <>
+          <Text color={dim}>{'What would you like to queue?'}</Text>
+          <Text>{''}</Text>
+          {opts.map((o, i) => (
+            <Box key={i} backgroundColor={step.sel === i ? bgHi : undefined}>
+              <Text color={step.sel === i ? cyan : dim}>{step.sel === i ? '▶ ' : '  '}</Text>
+              <Text color={fg}>{(o.label + '  ').padEnd(20)}</Text>
+              <Text color={dim2}>{o.desc}</Text>
+            </Box>
+          ))}
+          <Text color={dim}>{'\n↑↓ select  ↵ confirm  Esc back'}</Text>
+        </>
+      );
+    }
+
+    if (step.kind === 'prompt-source-choice') {
+      const opts = [
+        { label: 'Free text', desc: 'Type a prompt directly' },
+        { label: 'GitHub issue', desc: 'Pick an open issue from this repo' },
+        { label: 'Clipboard', desc: 'Use text currently in clipboard' },
+      ];
+      return (
+        <>
+          <Text color={dim}>{'Choose prompt source:'}</Text>
+          <Text>{''}</Text>
+          {opts.map((o, i) => (
+            <Box key={i} backgroundColor={step.sel === i ? bgHi : undefined}>
+              <Text color={step.sel === i ? cyan : dim}>{step.sel === i ? '▶ ' : '  '}</Text>
+              <Text color={fg}>{(o.label + '  ').padEnd(20)}</Text>
+              <Text color={dim2}>{o.desc}</Text>
+            </Box>
+          ))}
+          {step.error && <><Text>{''}</Text><Text color={red}>{step.error}</Text></>}
+          <Text color={dim}>{'\n↑↓ select  ↵ confirm  Esc back'}</Text>
+        </>
+      );
+    }
+
+    if (step.kind === 'github-issue-select') {
+      if (step.loading) return (
+        <>
+          <Box><Spinner /><Text color={dim}>{' Fetching GitHub issues…'}</Text></Box>
+        </>
+      );
+      if (step.error) return (
+        <>
+          <Text>{''}</Text>
+          <Text color={red} wrap="wrap">{step.error}</Text>
+          <Text color={dim}>{'\n↵ retry  Esc back'}</Text>
+        </>
+      );
+      if (step.issues.length === 0) return (
+        <>
+          <Text>{''}</Text>
+          <Text color={dim2}>No open issues found.</Text>
+          <Text color={dim}>{'\nEsc back'}</Text>
+        </>
+      );
+      return (
+        <>
+          <Text color={dim}>{'Select a GitHub issue:'}</Text>
+          {step.issues.slice(0, 12).map((issue, i) => (
+            <Box key={issue.number} backgroundColor={step.sel === i ? bgHi : undefined}>
+              <Text color={step.sel === i ? cyan : dim}>{step.sel === i ? '▶ ' : '  '}</Text>
+              <Text color={dim2}>{('#' + String(issue.number)).padEnd(6)}</Text>
+              <Text color={fg} wrap="truncate">{issue.title}</Text>
+            </Box>
+          ))}
+          <Text color={dim}>{'\n↑↓ select  ↵ confirm  Esc back'}</Text>
+        </>
+      );
+    }
+
+    if (step.kind === 'free-text-input') return (
+      <>
+        <Text color={dim}>Enter your prompt:</Text>
+        <Box><Text color={cyan}>{`> `}</Text><TextInput value={step.value} onChange={v => setStep({ ...step, value: v, error: undefined })} /></Box>
+        {step.error && <Text color={red}>{step.error}</Text>}
+        <Text color={dim}>{'\n↵ confirm  Esc back'}</Text>
+      </>
+    );
+
+    if (step.kind === 'single-prompt-confirm') {
+      const preview = step.prompt.length > 120 ? step.prompt.slice(0, 120) + '…' : step.prompt;
+      return (
+        <>
+          <Text>{''}</Text>
+          <Text><Text color={dim}>{'source    '}</Text><Text color={fg}>{step.source}</Text></Text>
+          {step.githubIssueNumber !== undefined && (
+            <Text><Text color={dim}>{'issue     '}</Text><Text color={fg}>{'#' + step.githubIssueNumber}</Text></Text>
+          )}
+          <Text><Text color={dim}>{'branch    '}</Text><Text color={fg}>{step.featureBranch}</Text></Text>
+          <Text><Text color={dim}>{'bootstrap '}</Text><Text color={dim2}>{step.repoConfig.bootstrap.length === 0 ? 'none' : step.repoConfig.bootstrap.join(', ')}</Text></Text>
+          <Text><Text color={dim}>{'run id    '}</Text><Text color={dim2}>{step.runId.slice(0, 8) + '…'}</Text></Text>
+          <Text>{''}</Text>
+          <Text color={dim}>{'prompt:'}</Text>
+          <Text color={dim2} wrap="wrap">{preview}</Text>
+          <Text color={dim}>{'\n↵ queue  Esc back'}</Text>
+        </>
+      );
+    }
+
+    if (step.kind === 'running' || step.kind === 'running-single') return (
+      <Box><Spinner /><Text color={dim}>{' ' + (runningMsg || 'Starting…')}</Text></Box>
+    );
+
     if (step.kind === 'plan-select') return (
       <>
         <Text color={dim}>{'Plans in ' + path.basename(step.repoPath) + '/docs:'}</Text>
-        {'error' in step && step.error && <Text color={red}>{String(step.error)}</Text>}
+        {step.error && <Text color={red}>{step.error}</Text>}
         {step.plans.map((p, i) => (
           <Box key={p.folder} backgroundColor={step.sel === i ? bgHi : undefined}>
             <Text color={step.sel === i ? cyan : dim}>{step.sel === i ? '▶ ' : '  '}</Text>
@@ -448,14 +742,14 @@ export function QueueWizard({ onClose, columns, rows }: Props): React.ReactEleme
       </>
     );
 
-    if (step.kind === 'running') return (
-      <Box><Spinner /><Text color={dim}>{' ' + (runningMsg || 'Starting…')}</Text></Box>
-    );
-
     if (step.kind === 'done') return (
       <>
         <Text>{''}</Text>
-        <Text color={green}>{'✓ Queued: ' + step.folder + ' (' + step.phaseCount + ' phases)'}</Text>
+        {step.folder
+          ? <Text color={green}>{'✓ Queued: ' + step.folder + ' (' + String(step.phaseCount) + ' phases)'}</Text>
+          : <Text color={green}>{'✓ Queued single-prompt run'}</Text>
+        }
+        {step.prompt && <Text color={dim2} wrap="truncate">{'  prompt  ' + step.prompt.slice(0, 48)}</Text>}
         <Text color={dim2}>{'  run id  ' + step.runId.slice(0, 8) + '…'}</Text>
         <Text color={dim}>{'\nany key to close'}</Text>
       </>
@@ -472,10 +766,22 @@ export function QueueWizard({ onClose, columns, rows }: Props): React.ReactEleme
   }
 
   const stepTitle: Record<WizardStep['kind'], string> = {
-    repo: 'repo', 'bootstrap-choice': 'bootstrap', 'bootstrap-detecting': 'detecting',
-    'bootstrap-review': 'bootstrap detected', 'plan-select': 'select plan',
-    'plan-input': 'plan folder', confirm: 'confirm', running: 'queuing',
-    done: 'done', error: 'error',
+    repo: 'repo',
+    'bootstrap-choice': 'bootstrap',
+    'bootstrap-detecting': 'detecting',
+    'bootstrap-review': 'bootstrap detected',
+    'entry-type-choice': 'entry type',
+    'prompt-source-choice': 'prompt source',
+    'github-issue-select': 'select issue',
+    'free-text-input': 'enter prompt',
+    'single-prompt-confirm': 'confirm',
+    'running-single': 'queuing',
+    'plan-select': 'select plan',
+    'plan-input': 'plan folder',
+    confirm: 'confirm',
+    running: 'queuing',
+    done: 'done',
+    error: 'error',
   };
 
   return (
@@ -489,7 +795,7 @@ export function QueueWizard({ onClose, columns, rows }: Props): React.ReactEleme
         height={CARD_H}
       >
         <Text color={step.kind === 'error' ? red : cyan}>
-          {'ADD PLAN — ' + stepTitle[step.kind]}
+          {'ADD TO QUEUE — ' + stepTitle[step.kind]}
         </Text>
         <Text color={dim}>{'─'.repeat(cardW - 2)}</Text>
         {cardContent()}

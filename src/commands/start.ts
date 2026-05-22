@@ -6,6 +6,7 @@ import { isQueuePaused, dequeue, enqueueFront, readQueue, writeQueue } from '../
 import { reconcileWorktrees } from '../git/worktree.js';
 import { runPhase, resumeOrRestart } from '../runner/phase-loop.js';
 import { finaliseRun } from '../runner/finalise.js';
+import { runSinglePrompt } from '../runner/single-prompt.js';
 import { waitUntil } from '../runner/limit.js';
 import { activityBus, ActivityBus } from '../events/bus.js';
 import { seedBusFromHistory } from '../events/seed.js';
@@ -47,38 +48,51 @@ export async function runQueueProcessor(config: AppConfig, bus: ActivityBus): Pr
       }
     }
 
-    const pendingPhases = meta.phases.filter(p => p.status !== 'complete');
+    const isSinglePrompt = !meta.plan_folder && meta.prompt;
 
-    for (const phase of pendingPhases) {
-      // Check pause before starting each phase so a mid-run pause takes effect
-      // between phases rather than running the entire plan to completion.
-      if (isQueuePaused()) {
-        enqueueFront(runId);
-        updateMeta(runId, { status: 'queued' });
-        bus.emit({ kind: 'pause', timestamp: new Date(), runId, phaseNumber: phase.number });
-        break;
-      }
-
-      let phaseResult = await runPhase(runId, phase.number, config, bus);
-
-      while (phaseResult.outcome === 'paused') {
-        await waitUntil(phaseResult.resumeAt);
-        phaseResult = await resumeOrRestart(runId, phase.number, config, bus);
-      }
-
-      if (phaseResult.outcome === 'failed') {
-        break;
-      }
-    }
-
-    const finalMeta = readMeta(runId);
-    if (finalMeta.phases.every(p => p.status === 'complete')) {
+    if (isSinglePrompt) {
       try {
-        await finaliseRun(runId, bus);
+        await runSinglePrompt(runId, config, bus);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`[queue] single-prompt failed for ${runId.slice(0, 8)}: ${msg}\n`);
         updateMeta(runId, { status: 'failed' });
-        bus.emit({ kind: 'error', timestamp: new Date(), runId, phaseNumber: -1, message: 'finalise: ' + msg });
+        bus.emit({ kind: 'error', timestamp: new Date(), runId, phaseNumber: -1, message: 'single-prompt: ' + msg });
+      }
+    } else {
+      const pendingPhases = (meta.phases ?? []).filter(p => p.status !== 'complete');
+
+      for (const phase of pendingPhases) {
+        // Check pause before starting each phase so a mid-run pause takes effect
+        // between phases rather than running the entire plan to completion.
+        if (isQueuePaused()) {
+          enqueueFront(runId);
+          updateMeta(runId, { status: 'queued' });
+          bus.emit({ kind: 'pause', timestamp: new Date(), runId, phaseNumber: phase.number });
+          break;
+        }
+
+        let phaseResult = await runPhase(runId, phase.number, config, bus);
+
+        while (phaseResult.outcome === 'paused') {
+          await waitUntil(phaseResult.resumeAt);
+          phaseResult = await resumeOrRestart(runId, phase.number, config, bus);
+        }
+
+        if (phaseResult.outcome === 'failed') {
+          break;
+        }
+      }
+
+      const finalMeta = readMeta(runId);
+      if ((finalMeta.phases ?? []).every(p => p.status === 'complete')) {
+        try {
+          await finaliseRun(runId, bus);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          updateMeta(runId, { status: 'failed' });
+          bus.emit({ kind: 'error', timestamp: new Date(), runId, phaseNumber: -1, message: 'finalise: ' + msg });
+        }
       }
     }
   }

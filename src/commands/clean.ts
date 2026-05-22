@@ -53,7 +53,7 @@ export async function cleanCommand(options: { all?: boolean }): Promise<void> {
     let shouldClean = options.all;
     if (!options.all) {
       process.stdout.write(
-        `Remove worktree for ${meta.plan_folder} (run ${shortId})? [y/N] `,
+        `Remove worktree for ${meta.plan_folder ?? ''} (run ${shortId})? [y/N] `,
       );
       const answer = readLine();
       shouldClean = answer.toLowerCase() === 'y';
@@ -67,7 +67,7 @@ export async function cleanCommand(options: { all?: boolean }): Promise<void> {
       }
       fs.rmSync(runDir, { recursive: true });
       removeFromQueue(runId);
-      console.log(`Cleaned: ${meta.plan_folder}`);
+      console.log(`Cleaned: ${meta.plan_folder ?? ''}`);
       cleaned++;
     }
   }

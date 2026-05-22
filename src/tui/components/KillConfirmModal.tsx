@@ -53,7 +53,7 @@ export function KillConfirmModal({ runMeta, phaseEntry, elapsedMs, onConfirm, on
       <Text>{''}</Text>
       <Text color={fg}>{'Force-kill the running phase?'}</Text>
       <Text>{''}</Text>
-      <Text><Text color={dim2}>{'run     '}</Text><Text>{repoName + ' · ' + runMeta.plan_folder}</Text></Text>
+      <Text><Text color={dim2}>{'run     '}</Text><Text>{repoName + ' · ' + (runMeta.plan_folder ?? '')}</Text></Text>
       <Text><Text color={dim2}>{'phase   '}</Text><Text>{phaseName}</Text></Text>
       <Text><Text color={dim2}>{'session '}</Text><Text>{sessionId + '…'}</Text></Text>
       <Text><Text color={dim2}>{'elapsed '}</Text><Text>{formatDuration(elapsedMs) + ' · $' + costSoFar + ' spent so far'}</Text></Text>

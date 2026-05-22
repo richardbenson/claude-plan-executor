@@ -52,7 +52,7 @@ export function updatePhase(
   base?: string,
 ): RunMeta {
   const meta = readMeta(runId, base);
-  const phases = meta.phases.map(p =>
+  const phases = (meta.phases ?? []).map(p =>
     p.number === phaseNumber ? { ...p, ...partial } : p,
   );
   const updated = { ...meta, phases };
