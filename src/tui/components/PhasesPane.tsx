@@ -13,10 +13,14 @@ interface Props {
   isPaused: boolean;
 }
 
-function phaseLabel(promptFile: string): string {
-  // PHASE_02.prompt.md → '02'
-  const m = promptFile.match(/PHASE_(\d+)/i);
-  return m ? m[1] ?? promptFile : promptFile;
+function phaseLabel(phase: PhaseEntry): string {
+  if (phase.title) return phase.title;
+  const text = phase.summary ?? phase.notes_for_next_phase;
+  if (text) {
+    const first = text.split('\n')[0]?.trim() ?? '';
+    return first.length > 40 ? first.slice(0, 39) + '…' : first;
+  }
+  return '';
 }
 
 function isSinglePrompt(run: RunMeta | null): boolean {
@@ -87,13 +91,13 @@ export function PhasesPane({ phases, selectedRun, selectedIndex, focused, isPaus
       )}
       {phases.map((phase, i) => {
         const selected = i === selectedIndex;
-        const label = phase.title ?? phaseLabel(phase.prompt_file);
+        const label = phaseLabel(phase);
         const costStr = phase.cost_usd != null ? '  $' + phase.cost_usd.toFixed(3) : '';
 
         return (
           <Box key={phase.number} backgroundColor={selected ? bgFloat : undefined}>
             <StateChip status={phase.status} showLabel={false} />
-            <Text>{' ' + String(phase.number).padStart(2, '0') + ' ' + label + costStr}</Text>
+            <Text>{' ' + String(phase.number).padStart(2, '0') + (label ? ' ' + label : '') + costStr}</Text>
           </Box>
         );
       })}
