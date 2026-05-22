@@ -158,7 +158,7 @@ export function Drilldown({ runId, phaseNumber, onClose, columns, rows }: Props)
               <Box flexDirection="row" flexWrap="wrap">
                 <StateChip status={phase.status} />
                 <Text color={dim}>{' · sandbox '}</Text>
-                <Text color={meta.sandboxed ? STATE_TABLE.complete.color : dim}>{meta.sandboxed ? 'enabled' : 'disabled'}</Text>
+                <Text color={meta.sandboxed !== false ? STATE_TABLE.complete.color : dim}>{meta.sandboxed !== false ? 'enabled' : 'disabled'}</Text>
                 {phase.commit_sha && <Text color={green2}>{' · ' + phase.commit_sha.slice(0, 7)}</Text>}
                 <Text color={dim}>{' · ' + phase.retry_count + ' retries'}</Text>
                 <Text color={dim}>{' · ' + formatDuration(phase.started_at, phase.completed_at)}</Text>
