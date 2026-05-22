@@ -8,6 +8,7 @@ import { removeCommand } from './commands/remove.js';
 import { cleanCommand } from './commands/clean.js';
 import { bootstrapCommand } from './commands/bootstrap.js';
 import { worktreeCommand } from './commands/worktree.js';
+import { promptCommand } from './commands/prompt.js';
 import { readQueue, writeQueue } from './storage/queue.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -40,6 +41,13 @@ export function setupCli(): void {
     .description('Add a plan to the queue')
     .option('--disable-sandbox', 'Skip sandbox injection for this run')
     .action(wrap(queueCommand));
+
+  program
+    .command('prompt [text...]')
+    .description('Queue a single-prompt run (pass as args, pipe via stdin, or use --github-issue)')
+    .option('--disable-sandbox', 'Skip sandbox injection for this run')
+    .option('--github-issue <number>', 'Fetch a GitHub issue by number and use it as the prompt')
+    .action(wrap(promptCommand));
 
   program
     .command('start')
