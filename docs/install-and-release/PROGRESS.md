@@ -2,18 +2,18 @@
 
 | # | Title | Status | Branch | Depends on | Started | Completed | Notes |
 |---|-------|--------|--------|------------|---------|-----------|-------|
-| 01 | Version embedding | not-started | feature/install-and-release | — | — | — | |
+| 01 | Version embedding | complete | feature/install-and-release | — | 2026-05-22 | 2026-05-22 | |
 | 02 | GitHub Actions workflows | not-started | feature/install-and-release | 01 | — | — | |
 | 03 | Install scripts | not-started | feature/install-and-release | 02 | — | — | |
 
 ## Phase Details
 
 ### Phase 01 — Version embedding
-**Status:** not-started
+**Status:** complete
 **Branch:** feature/install-and-release
 **Dependencies:** —
-**Date started:** —
-**Date completed:** —
+**Date started:** 2026-05-22
+**Date completed:** 2026-05-22
 **Notes:** —
 
 ### Phase 02 — GitHub Actions workflows

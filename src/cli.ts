@@ -1,4 +1,5 @@
 import { Command, program } from 'commander';
+import { CPE_VERSION } from './version.js';
 import { planCommand } from './commands/plan.js';
 import { queueCommand } from './commands/queue.js';
 import { startCommand } from './commands/start.js';
@@ -28,7 +29,7 @@ export function setupCli(): void {
   program
     .name('cpe')
     .description('Claude Plan Executor — automates planbot → next-phase → summarise-plan')
-    .version('0.1.0');
+    .version(CPE_VERSION);
 
   program
     .command('plan [details...]')
