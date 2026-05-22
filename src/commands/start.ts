@@ -1,7 +1,7 @@
 import React from 'react';
 import { render } from 'ink';
 import { readConfig } from '../storage/config.js';
-import { readMeta, updateMeta, getLogsDir } from '../storage/meta.js';
+import { readMeta, updateMeta, listAllRunIds, getLogsDir } from '../storage/meta.js';
 import { isQueuePaused, dequeue, enqueueFront, readQueue, writeQueue } from '../storage/queue.js';
 import { reconcileWorktrees } from '../git/worktree.js';
 import { runPhase, resumeOrRestart } from '../runner/phase-loop.js';
@@ -13,7 +13,32 @@ import { seedBusFromHistory } from '../events/seed.js';
 import { App } from '../tui/App.js';
 import type { AppConfig } from '../types/meta.js';
 
+function recoverInterruptedRuns(): void {
+  const queue = readQueue();
+  const queued = new Set(queue.entries.map(e => e.run_id));
+  const recovered: string[] = [];
+
+  for (const id of listAllRunIds()) {
+    if (queued.has(id)) continue;
+    try {
+      const meta = readMeta(id);
+      if (meta.status === 'paused-limit' || meta.status === 'executing') {
+        queue.entries.unshift({ run_id: id, added_at: new Date().toISOString() });
+        queued.add(id);
+        updateMeta(id, { status: 'queued' });
+        recovered.push(id.slice(0, 8));
+      }
+    } catch { /* skip unreadable */ }
+  }
+
+  if (recovered.length > 0) {
+    writeQueue(queue);
+    process.stderr.write(`[start] recovered interrupted runs: ${recovered.join(', ')}\n`);
+  }
+}
+
 export async function runQueueProcessor(config: AppConfig, bus: ActivityBus): Promise<void> {
+  recoverInterruptedRuns();
   const reconciledRepos = new Set<string>();
 
   while (true) {

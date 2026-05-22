@@ -15,7 +15,7 @@ import { useInteractiveSubprocess } from './SubprocessContext.js';
 import { SubprocessOverlay } from './components/SubprocessOverlay.js';
 import { QueueWizard } from './components/QueueWizard.js';
 import { activityBus } from '../events/bus.js';
-import { readQueue, writeQueue } from '../storage/queue.js';
+import { readQueue, writeQueue, enqueueFront } from '../storage/queue.js';
 import { updateMeta, updatePhase, getLogsDir } from '../storage/meta.js';
 import { borderHi, dim, dim2, cyan, fg, yellow } from './theme.js';
 import type { ActivityEvent } from '../events/types.js';
@@ -116,8 +116,8 @@ export function Manage({ columns, rows, compact }: Props): React.ReactElement {
     if (!run) { setKillConfirm(false); return; }
     const pid = run.claude_pid;
     if (pid) {
-      try { process.kill(pid, 'SIGTERM'); } catch {}
-      setTimeout(() => { try { process.kill(pid, 'SIGKILL'); } catch {} }, 5000);
+      try { process.kill(pid, 'SIGTERM'); } catch { }
+      setTimeout(() => { try { process.kill(pid, 'SIGKILL'); } catch { } }, 5000);
     }
     const phase = qs.activePhase;
     if (phase) {
@@ -308,9 +308,10 @@ export function Manage({ columns, rows, compact }: Props): React.ReactElement {
       if (!run || !phase) return;
       const pid = run.claude_pid;
       if (pid) {
-        try { process.kill(pid, 'SIGTERM'); } catch {}
+        try { process.kill(pid, 'SIGTERM'); } catch { }
       }
       updatePhase(run.id, phase.number, { status: 'pending', retry_count: 0 });
+      enqueueFront(run.id);
       updateMeta(run.id, { status: 'queued' });
       return;
     }
@@ -324,6 +325,7 @@ export function Manage({ columns, rows, compact }: Props): React.ReactElement {
       if (nextPhase) {
         updatePhase(run.id, nextPhase.number, { status: 'pending' });
       }
+      enqueueFront(run.id);
       updateMeta(run.id, { status: 'queued' });
       return;
     }

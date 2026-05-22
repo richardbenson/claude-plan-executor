@@ -20,8 +20,9 @@ interface Props {
   compact?: boolean;
 }
 
-// Approximate fixed heights: header(1) + hero border+content(~8) + feed header(2) + strip(~7) + footer(1)
-const FIXED_ROWS = 20;
+// Fixed rows consumed outside the ActivityFeed container:
+// rows-1 outer offset(1) + hero with border(7) + strip(7) + footer(1) = 16
+const FIXED_ROWS = 16;
 
 export function Watch({ columns, rows, compact }: Props): React.ReactElement {
   const queueState = useQueueState();
@@ -184,10 +185,11 @@ export function Watch({ columns, rows, compact }: Props): React.ReactElement {
             <Text color={dim}>idle — no active run</Text>
           )}
         </Box>
-        <Box flexDirection="column" flexGrow={1}>
+        <Box flexDirection="column" flexGrow={1} overflow="hidden">
           <ActivityFeed
             events={events}
             availableRows={compactFeedRows}
+            columns={columns}
             activeSessionId={activeSessionId}
           />
         </Box>
@@ -241,6 +243,7 @@ export function Watch({ columns, rows, compact }: Props): React.ReactElement {
         <ActivityFeed
           events={events}
           availableRows={feedRows}
+          columns={columns}
           activeSessionId={activeSessionId}
         />
       </Box>

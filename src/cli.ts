@@ -7,6 +7,7 @@ import { listCommand } from './commands/list.js';
 import { removeCommand } from './commands/remove.js';
 import { cleanCommand } from './commands/clean.js';
 import { bootstrapCommand } from './commands/bootstrap.js';
+import { worktreeCommand } from './commands/worktree.js';
 import { readQueue, writeQueue } from './storage/queue.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -89,6 +90,12 @@ export function setupCli(): void {
     .description('Remove worktrees for completed/merged runs')
     .option('--all', 'Clean all without prompting')
     .action(wrap(cleanCommand));
+
+  program
+    .command('worktree')
+    .description('Enter a worktree shell for the current repo')
+    .option('--all', 'Show worktrees for all repos, not just the current one')
+    .action(wrap(worktreeCommand));
 
   program
     .command('bootstrap')

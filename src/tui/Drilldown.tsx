@@ -9,6 +9,7 @@ import { STATE_TABLE } from '../types/state.js';
 import { useInteractiveSubprocess } from './SubprocessContext.js';
 import { activityBus } from '../events/bus.js';
 import { readMeta, getLogsDir, updatePhase, updateMeta } from '../storage/meta.js';
+import { enqueueFront } from '../storage/queue.js';
 import type { RunMeta, PhaseEntry } from '../types/meta.js';
 
 interface Props {
@@ -96,11 +97,12 @@ export function Drilldown({ runId, phaseNumber, onClose, columns, rows }: Props)
     if (input === 'r' && phase) {
       const pid = meta.claude_pid;
       if (pid) {
-        try { process.kill(pid, 'SIGTERM'); } catch {}
+        try { process.kill(pid, 'SIGTERM'); } catch { }
       }
       updatePhase(runId, phase.number, { status: 'pending', retry_count: 0 });
+      enqueueFront(runId);
       updateMeta(runId, { status: 'queued' });
-      try { meta = readMeta(runId); } catch {}
+      try { meta = readMeta(runId); } catch { }
       return;
     }
     if (input === 's' && phase) {
@@ -109,8 +111,9 @@ export function Drilldown({ runId, phaseNumber, onClose, columns, rows }: Props)
       if (nextPhase) {
         updatePhase(runId, nextPhase.number, { status: 'pending' });
       }
+      enqueueFront(runId);
       updateMeta(runId, { status: 'queued' });
-      try { meta = readMeta(runId); } catch {}
+      try { meta = readMeta(runId); } catch { }
       return;
     }
   });
@@ -120,8 +123,8 @@ export function Drilldown({ runId, phaseNumber, onClose, columns, rows }: Props)
 
   const phaseEvents = phase
     ? activityBus.getBuffer().filter(
-        e => e.runId === runId && e.phaseNumber === phase.number,
-      ).slice(-15)
+      e => e.runId === runId && e.phaseNumber === phase.number,
+    ).slice(-15)
     : [];
 
   const logTail = phase ? readLogTail(runId, phase.number) : [];
@@ -197,15 +200,15 @@ export function Drilldown({ runId, phaseNumber, onClose, columns, rows }: Props)
               {phaseEvents.length === 0
                 ? <Text color={dim2}>{'  (no events)'}</Text>
                 : phaseEvents.map((ev, i) => {
-                    let line = '';
-                    if (ev.kind === 'edit') line = 'edit ' + ev.file;
-                    else if (ev.kind === 'bash') line = 'bash ' + ev.command.slice(0, 40);
-                    else if (ev.kind === 'commit') line = 'commit ' + ev.sha.slice(0, 7) + ' ' + ev.message.slice(0, 30);
-                    else if (ev.kind === 'ok') line = 'ok $' + ev.costUsd.toFixed(3);
-                    else if (ev.kind === 'error') line = 'error ' + ev.message.slice(0, 40);
-                    else line = ev.kind;
-                    return <Text key={i} color={dim2}>{' ' + line}</Text>;
-                  })
+                  let line = '';
+                  if (ev.kind === 'edit') line = 'edit ' + ev.file;
+                  else if (ev.kind === 'bash') line = 'bash ' + ev.command.slice(0, 40);
+                  else if (ev.kind === 'commit') line = 'commit ' + ev.sha.slice(0, 7) + ' ' + ev.message.slice(0, 30);
+                  else if (ev.kind === 'ok') line = 'ok $' + ev.costUsd.toFixed(3);
+                  else if (ev.kind === 'error') line = 'error ' + ev.message.slice(0, 40);
+                  else line = ev.kind;
+                  return <Text key={i} color={dim2}>{' ' + line}</Text>;
+                })
               }
 
               <Text>{''}</Text>

@@ -8,6 +8,7 @@ import type { ActivityEvent } from '../../events/types.js';
 interface Props {
   events: ActivityEvent[];
   availableRows: number;
+  columns: number;
   activeSessionId?: string;
 }
 
@@ -28,48 +29,57 @@ interface RenderedEvent {
   liveEdge?: boolean;
 }
 
-function renderEvent(ev: ActivityEvent): RenderedEvent {
+// EventRow prefix: HH:MM:SS(8) + 2sp + glyph(1) + sp + kind.padEnd(6)(6) + 2sp = 20 chars
+const ROW_PREFIX = 20;
+
+function renderEvent(ev: ActivityEvent, descWidth: number): RenderedEvent {
   const key = `${ev.kind}-${ev.timestamp.getTime()}-${ev.runId}-${ev.phaseNumber}`;
   switch (ev.kind) {
     case 'phase':
       return {
         key, color: cyan, glyph: '▸', kind: 'phase',
-        description: `started phase ${ev.phaseNumber} — ${ev.phaseName}`,
+        description: `started phase ${ev.phaseNumber} — ${ev.phaseName}`.slice(0, descWidth),
         timestamp: ev.timestamp,
       };
     case 'edit':
       return {
         key, color: magenta, glyph: '✎', kind: 'edit',
-        description: ev.file + (ev.inProgress ? ' █' : (ev.additions > 0 || ev.deletions > 0 ? ` +${ev.additions} −${ev.deletions}` : '')),
+        description: (ev.file + (ev.inProgress ? ' █' : (ev.additions > 0 || ev.deletions > 0 ? ` +${ev.additions} −${ev.deletions}` : ''))).slice(0, descWidth),
         timestamp: ev.timestamp,
         liveEdge: ev.inProgress,
       };
-    case 'bash':
+    case 'bash': {
+      const full = ev.command + (ev.result ? ' → ' + ev.result : '');
       return {
         key, color: green, glyph: '$', kind: 'bash',
-        description: ev.command.slice(0, 40) + (ev.result ? ' → ' + ev.result.slice(0, 30) : ''),
+        description: full.slice(0, descWidth),
         timestamp: ev.timestamp,
       };
+    }
     case 'commit':
       return {
         key, color: green2, glyph: '◆', kind: 'commit',
-        description: ev.sha.slice(0, 7) + ' · ' + ev.message.slice(0, 50),
+        description: (ev.sha.slice(0, 7) + ' · ' + ev.message).slice(0, descWidth),
         timestamp: ev.timestamp,
       };
     case 'text': {
       const firstLine = ev.text.split('\n')[0] ?? ev.text;
       return {
         key, color: dim, glyph: '»', kind: 'text',
-        description: firstLine.slice(0, 72),
+        description: firstLine.slice(0, descWidth),
         timestamp: ev.timestamp,
       };
     }
-    case 'ok':
+    case 'ok': {
+      const suffix = ` · $${ev.costUsd.toFixed(2)}`;
+      const prefixStr = `phase ${ev.phaseNumber} complete — `;
+      const summaryWidth = Math.max(0, descWidth - prefixStr.length - suffix.length);
       return {
         key, color: green, glyph: '✓', kind: 'ok',
-        description: `phase ${ev.phaseNumber} complete — ${ev.summary.slice(0, 40)} · $${ev.costUsd.toFixed(2)}`,
+        description: prefixStr + ev.summary.slice(0, summaryWidth) + suffix,
         timestamp: ev.timestamp,
       };
+    }
     case 'pause':
       return {
         key, color: yellow, glyph: '‖', kind: 'pause',
@@ -79,13 +89,13 @@ function renderEvent(ev: ActivityEvent): RenderedEvent {
     case 'error':
       return {
         key, color: red, glyph: '✕', kind: 'error',
-        description: ev.message.slice(0, 60),
+        description: ev.message.slice(0, descWidth),
         timestamp: ev.timestamp,
       };
     case 'limit':
       return {
         key, color: magenta, glyph: '◴', kind: 'limit',
-        description: 'session limit — resumes at ' + ev.resumeAt.toLocaleTimeString(),
+        description: ('session limit — resumes at ' + ev.resumeAt.toLocaleTimeString()).slice(0, descWidth),
         timestamp: ev.timestamp,
       };
   }
@@ -105,9 +115,10 @@ function EventRow({ ev }: { ev: RenderedEvent }): React.ReactElement {
   );
 }
 
-export function ActivityFeed({ events, availableRows, activeSessionId }: Props): React.ReactElement {
+export function ActivityFeed({ events, availableRows, columns, activeSessionId }: Props): React.ReactElement {
+  const descWidth = Math.max(10, columns - ROW_PREFIX);
   // Most recent first
-  const rendered = events.map(renderEvent).reverse();
+  const rendered = events.map(ev => renderEvent(ev, descWidth)).reverse();
 
   const maxRows = Math.max(0, availableRows - 2);
   const visible = rendered.slice(0, maxRows);
@@ -115,7 +126,7 @@ export function ActivityFeed({ events, availableRows, activeSessionId }: Props):
   const isActive = !!activeSessionId;
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" height={availableRows} overflow="hidden">
       {/* Header */}
       <Box>
         {isActive ? (
