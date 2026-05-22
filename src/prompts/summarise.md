@@ -1,6 +1,9 @@
-You are summarising a completed implementation plan. The plan folder is: PLAN_FOLDER
+You are finalising a completed implementation plan.
 
-Your job is to produce a single summary document and then remove the plan folder. Work through these steps:
+Plan folder:   PLAN_FOLDER
+Feature branch: FEATURE_BRANCH
+Target branch:  TARGET_BRANCH
+Skip push/PR:   SKIP_PUSH_AND_PR
 
 ## Step 1 — Read all plan documents
 
@@ -12,34 +15,96 @@ Read the following files from docs/PLAN_FOLDER/ (use the Read tool for each that
 
 ## Step 2 — Read the git log
 
-Run: git log --oneline feature/PLAN_FOLDER
+Run: `git log --oneline FEATURE_BRANCH`
 
-This shows what was actually committed to the feature branch. Use this to verify what was built versus what was planned.
+This shows what was actually committed. Use it to verify what was built versus what was planned.
 
 ## Step 3 — Write docs/PLAN_FOLDER.md
 
-Write a single markdown file at docs/PLAN_FOLDER.md with the following sections:
+Write a single markdown file at docs/PLAN_FOLDER.md with these sections:
 
 ### Original Requirements
-A concise summary of what the user originally asked for. Pull this from README.md.
+What the user originally asked for, drawn from README.md.
 
 ### What Was Built
-A phase-by-phase description of what was implemented, drawn from the phase documents and git log. Note any deviations from the original plan — phases that were skipped, split, or changed in scope.
+Phase-by-phase description of what was implemented, from the phase documents and git log. Note any deviations — phases skipped, split, or changed in scope.
 
 ### Lessons Learned
-Key observations from the build process: what worked well, what was harder than expected, any architectural decisions that proved important, gotchas that future work should be aware of.
-
-### Final PR
-If a PR URL is visible in PROGRESS.md or any phase document, include it here. Otherwise write "PR not recorded."
+Key observations: what worked well, what was harder than expected, important architectural decisions, gotchas future work should know about.
 
 ## Step 4 — Delete the plan folder
 
-Delete the entire docs/PLAN_FOLDER/ directory using the Bash tool:
-
-```
+```bash
 rm -rf docs/PLAN_FOLDER/
 ```
 
-## Step 5 — Done
+## Step 5 — Commit
 
-You do not need to emit structured JSON. Once the summary file is written and the folder is deleted, your work is complete. Emit a brief confirmation message.
+```bash
+git add -A
+git commit -m "docs: summarise PLAN_FOLDER"
+```
+
+## Step 6 — Push and open pull request
+
+**If SKIP_PUSH_AND_PR is `true`, skip this step entirely and go to Step 7.**
+
+Push the branch:
+
+```bash
+git push -u origin FEATURE_BRANCH
+```
+
+Now compose the PR. Use everything you read in Steps 1–2 as source material.
+
+**Title**: a concise sentence under 72 characters describing the change in plain English. Do not use the branch name. Focus on what the feature does, not how it was implemented. Good example: "Add dark mode toggle with per-user preference persistence". Bad example: "feature/dark-mode".
+
+**Body** must include all four sections below. Be specific — a reviewer who has not seen the plan docs should be able to understand what changed and how to test it.
+
+```markdown
+## Summary
+
+- <bullet 1>
+- <bullet 2>
+- <bullet 3 — 2–4 bullets total>
+
+## Changes by phase
+
+- Phase 1: <what it delivered>
+- Phase 2: <what it delivered>
+- ...
+
+## Testing steps
+
+1. <concrete step — e.g. "Run `npm test` and confirm all tests pass">
+2. <step — e.g. "Start the dev server with `npm run dev`">
+3. <step — e.g. "Navigate to /settings and toggle dark mode">
+4. <expected outcome — e.g. "The page re-renders with a dark background and the preference persists on reload">
+Include enough steps that a developer unfamiliar with the codebase can verify the feature end-to-end.
+
+## Notes
+
+<Known limitations, deferred work, or anything the reviewer should watch for. Write "None." if there is nothing to flag.>
+```
+
+Write the body to a temp file to avoid shell quoting issues, then create the PR:
+
+```bash
+cat > /tmp/cpe-pr-body.md << 'PREOF'
+<your composed body here>
+PREOF
+```
+
+Try `gh` first:
+```bash
+gh pr create --base TARGET_BRANCH --head FEATURE_BRANCH --title "<your title>" --body-file /tmp/cpe-pr-body.md
+```
+
+If `gh` is not available or fails, try `tea`:
+```bash
+tea pr create --base TARGET_BRANCH --head FEATURE_BRANCH --title "<your title>" --description "$(cat /tmp/cpe-pr-body.md)"
+```
+
+## Step 7 — Done
+
+Emit a brief confirmation. If a PR was created, include the URL.
