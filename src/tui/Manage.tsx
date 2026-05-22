@@ -164,7 +164,7 @@ export function Manage({ columns, rows, compact }: Props): React.ReactElement {
       case 'pause': {
         const q = readQueue();
         writeQueue({ ...q, paused: !q.paused });
-        activityBus.emit({ kind: 'pause', timestamp: new Date(), runId: selectedRun?.id ?? '', phaseNumber: 0 });
+        activityBus.emit({ kind: q.paused ? 'resume' : 'pause', timestamp: new Date(), runId: selectedRun?.id ?? '', phaseNumber: 0 });
         break;
       }
       case 'add': {
@@ -284,7 +284,7 @@ export function Manage({ columns, rows, compact }: Props): React.ReactElement {
     if (input === 'p') {
       const q = readQueue();
       writeQueue({ ...q, paused: !q.paused });
-      activityBus.emit({ kind: 'pause', timestamp: new Date(), runId: selectedRun?.id ?? '', phaseNumber: 0 });
+      activityBus.emit({ kind: q.paused ? 'resume' : 'pause', timestamp: new Date(), runId: selectedRun?.id ?? '', phaseNumber: 0 });
       return;
     }
 

@@ -5,8 +5,10 @@ export type ActivityEventKind =
   | 'commit'
   | 'ok'
   | 'pause'
+  | 'resume'
   | 'error'
-  | 'limit';
+  | 'limit'
+  | 'text';
 
 export interface ActivityEventBase {
   kind: ActivityEventKind;
@@ -53,6 +55,10 @@ export interface PauseEvent extends ActivityEventBase {
   kind: 'pause';
 }
 
+export interface ResumeEvent extends ActivityEventBase {
+  kind: 'resume';
+}
+
 export interface ErrorEvent extends ActivityEventBase {
   kind: 'error';
   message: string;
@@ -75,6 +81,7 @@ export type ActivityEvent =
   | CommitEvent
   | OkEvent
   | PauseEvent
+  | ResumeEvent
   | ErrorEvent
   | LimitEvent
   | TextEvent;
