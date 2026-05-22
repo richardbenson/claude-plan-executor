@@ -82,6 +82,6 @@ export const DEFAULT_CONFIG: AppConfig = {
   max_retries: 1,
   sandbox: {
     enabled: true,
-    allowedDomains: ['api.anthropic.com', 'github.com', 'registry.npmjs.org', 'pypi.org'],
+    allowedDomains: ['api.anthropic.com', 'github.com', 'api.github.com', 'registry.npmjs.org', 'pypi.org'],
   },
 };

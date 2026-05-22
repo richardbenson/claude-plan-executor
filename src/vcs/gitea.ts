@@ -1,4 +1,5 @@
 import type { ParsedRemote } from '../git/repo.js';
+import type { PrOptions } from './github.js';
 
 export interface PrResult {
   url: string;
@@ -9,12 +10,13 @@ export async function createGiteaPr(
   featureBranch: string,
   targetBranch: string,
   remote: ParsedRemote,
+  opts?: PrOptions,
 ): Promise<PrResult> {
   // Try tea CLI first
-  const teaProc = Bun.spawnSync(
-    ['tea', 'pr', 'create', '--base', targetBranch, '--head', featureBranch],
-    { cwd: worktreePath },
-  );
+  const teaArgs = ['tea', 'pr', 'create', '--base', targetBranch, '--head', featureBranch];
+  if (opts?.title) teaArgs.push('--title', opts.title);
+  if (opts?.body) teaArgs.push('--description', opts.body);
+  const teaProc = Bun.spawnSync(teaArgs, { cwd: worktreePath });
 
   if (teaProc.exitCode === 0) {
     const stdout = teaProc.stdout.toString();
@@ -62,7 +64,8 @@ export async function createGiteaPr(
     body: JSON.stringify({
       head: featureBranch,
       base: targetBranch,
-      title: featureBranch,
+      title: opts?.title ?? featureBranch,
+      ...(opts?.body ? { body: opts.body } : {}),
     }),
   });
 

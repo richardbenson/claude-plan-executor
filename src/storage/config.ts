@@ -5,7 +5,7 @@ import { type AppConfig, DEFAULT_CONFIG, type SandboxConfig } from '../types/met
 
 export const DEFAULT_SANDBOX: SandboxConfig = {
   enabled: true,
-  allowedDomains: ['api.anthropic.com', 'github.com', 'registry.npmjs.org', 'pypi.org'],
+  allowedDomains: ['api.anthropic.com', 'github.com', 'api.github.com', 'registry.npmjs.org', 'pypi.org'],
 };
 
 export const CONFIG_PATH = path.join(os.homedir(), '.config', 'cpe', 'config.json');

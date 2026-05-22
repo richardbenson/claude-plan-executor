@@ -8,9 +8,6 @@ import { handleRateLimit } from './limit.js';
 import { startJsonlTail } from './jsonl-tail.js';
 import { getHead } from '../git/repo.js';
 import { SINGLE_PROMPT_TEMPLATE, SINGLE_PROMPT_RESULT_SCHEMA } from '../prompts/index.js';
-import { isGitHub, isGitea } from '../vcs/detect.js';
-import { createGitHubPr } from '../vcs/github.js';
-import { createGiteaPr } from '../vcs/gitea.js';
 import type { ActivityBus } from '../events/bus.js';
 import type { AppConfig } from '../types/meta.js';
 
@@ -64,8 +61,13 @@ export async function runSinglePrompt(
     return { outcome: 'failed', reason: 'no prompt found in metadata' };
   }
 
-  // STEP 2 — inject user prompt into template
-  const combined = SINGLE_PROMPT_TEMPLATE.replace('{{USER_PROMPT}}', meta.prompt);
+  // STEP 2 — inject user prompt and optional GitHub issue section into template
+  const githubIssueSection = meta.github_issue_number
+    ? `Include \`Closes #${meta.github_issue_number}\` in the PR body so GitHub automatically closes the issue when the PR is merged.`
+    : '';
+  const combined = SINGLE_PROMPT_TEMPLATE
+    .replace('{{USER_PROMPT}}', meta.prompt)
+    .replace('{{GITHUB_ISSUE_SECTION}}', githubIssueSection);
 
   // STEP 3 — write combined prompt to temp file
   const tmpFile = path.join(os.tmpdir(), `cpe-single-prompt-${runId}.md`);
@@ -184,74 +186,32 @@ export async function runSinglePrompt(
     commitSha = headAfter;
   }
 
-  // STEP 14 — update metadata with completion status
+  // STEP 14 — update metadata and emit result
+  const status = promptResult.pr_created ? 'pr-created' : 'complete';
   updateMeta(runId, {
-    status: 'complete',
+    status,
     total_cost_usd: result.envelope.total_cost_usd,
+    ...(promptResult.pr_url ? { pr_url: promptResult.pr_url } : {}),
   });
+
+  const okSummary = promptResult.pr_url
+    ? 'PR opened: ' + promptResult.pr_url
+    : promptResult.summary;
 
   bus.emit({
     kind: 'ok',
     timestamp: new Date(),
     runId,
     phaseNumber: -1,
-    summary: promptResult.summary,
+    summary: okSummary,
     costUsd: result.envelope.total_cost_usd,
   });
 
-  // STEP 15 — skip push/PR if no remote configured
-  if (!meta.remote) {
-    return { outcome: 'complete', result: promptResult };
+  for (const blocker of promptResult.blockers ?? []) {
+    bus.emit({ kind: 'error', timestamp: new Date(), runId, phaseNumber: -1, message: blocker });
   }
 
-  // STEP 16 — push to remote
-  const pushProc = Bun.spawnSync(
-    ['git', 'push', '-u', 'origin', meta.feature_branch],
-    { cwd: meta.worktree_path },
-  );
-  if (pushProc.exitCode !== 0) {
-    await markFailed(runId, `git push failed: ${pushProc.stderr.toString().trim()}`, bus);
-    return { outcome: 'failed', reason: 'push failed' };
-  }
-
-  // STEP 17 — create PR using existing VCS integration
-  let prResult: { url: string };
-  try {
-    if (isGitHub(meta.remote)) {
-      prResult = await createGitHubPr(meta.worktree_path, meta.feature_branch, meta.target_branch);
-    } else if (isGitea(meta.remote)) {
-      prResult = await createGiteaPr(
-        meta.worktree_path,
-        meta.feature_branch,
-        meta.target_branch,
-        meta.remote,
-      );
-    } else {
-      throw new Error('Unsupported VCS host: ' + (meta.remote.host ?? 'unknown'));
-    }
-  } catch (err) {
-    await markFailed(runId, `PR creation failed: ${String(err)}`, bus);
-    return { outcome: 'failed', reason: 'PR creation failed' };
-  }
-
-  // STEP 18 — update metadata with PR URL
-  updateMeta(runId, { status: 'pr-created', pr_url: prResult.url });
-
-  // STEP 19 — emit final ok event with PR URL
-  bus.emit({
-    kind: 'ok',
-    timestamp: new Date(),
-    runId,
-    phaseNumber: -1,
-    summary: 'PR opened: ' + prResult.url,
-    costUsd: result.envelope.total_cost_usd,
-  });
-
-  // commitSha unused for now — available for future phases to surface in TUI
   void commitSha;
 
-  return {
-    outcome: 'complete',
-    result: { ...promptResult, pr_url: prResult.url, pr_created: true },
-  };
+  return { outcome: 'complete', result: promptResult };
 }
