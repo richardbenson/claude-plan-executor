@@ -5,6 +5,10 @@ function makeMsg(time: string): string {
   return `You've hit your limit · resets ${time}`;
 }
 
+function makeSessionMsg(time: string): string {
+  return `You've hit your session limit · resets ${time}`;
+}
+
 describe('parseResetTime', () => {
   it('parses 4pm (Europe/London) with now before 4pm UK time', () => {
     // now = 3pm UTC on a summer day when London is UTC+1, so 3pm UTC = 4pm London
@@ -61,5 +65,13 @@ describe('parseResetTime', () => {
     const result = parseResetTime("You've hit your limit · resets 2026-05-21T16:24:57Z");
     expect(result).not.toBeNull();
     expect(result!.toISOString()).toBe('2026-05-21T16:24:57.000Z');
+  });
+
+  it('parses session limit format (actual Claude message)', () => {
+    const now = new Date('2026-05-21T17:00:00Z'); // 6pm London (BST = UTC+1)
+    const result = parseResetTime(makeSessionMsg('6:50pm (Europe/London)'), now);
+    expect(result).not.toBeNull();
+    // 6:50pm London BST = 17:50 UTC
+    expect(result!.toISOString()).toBe('2026-05-21T17:50:00.000Z');
   });
 });

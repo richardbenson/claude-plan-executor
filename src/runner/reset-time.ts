@@ -1,4 +1,4 @@
-const LIMIT_REGEX = /You've hit your limit · resets (?<reset>.+?)$/;
+const LIMIT_REGEX = /You've hit your (?:session )?limit · resets (?<reset>.+?)$/;
 const TIME_REGEX = /^(\d{1,2})(?::(\d{2}))?(am|pm)\s+\(([^)]+)\)$/i;
 const ISO_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 
