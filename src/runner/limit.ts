@@ -34,7 +34,6 @@ export async function waitUntil(date: Date): Promise<void> {
     const remaining = date.getTime() - Date.now();
     if (remaining <= 0) break;
 
-    const mins = Math.ceil(remaining / 60_000);
     await new Promise(resolve => setTimeout(resolve, Math.min(30_000, remaining)));
   }
 }

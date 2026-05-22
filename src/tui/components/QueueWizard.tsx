@@ -167,7 +167,7 @@ export function QueueWizard({ onClose, columns, rows }: Props): React.ReactEleme
     })();
 
     return () => { active = false; try { proc.kill(); } catch {} };
-  }, [step.kind]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [step.kind]); // eslint-disable-line -- react-hooks plugin not configured
 
   // GitHub issues fetch
   useEffect(() => {
@@ -186,7 +186,7 @@ export function QueueWizard({ onClose, columns, rows }: Props): React.ReactEleme
         );
       }
     })();
-  }, [step.kind]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [step.kind]); // eslint-disable-line -- react-hooks plugin not configured
 
   // Queue execution — plan
   useEffect(() => {
@@ -242,7 +242,7 @@ export function QueueWizard({ onClose, columns, rows }: Props): React.ReactEleme
         setStep({ kind: 'error', message: String(err) });
       }
     })();
-  }, [step.kind]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [step.kind]); // eslint-disable-line -- react-hooks plugin not configured
 
   // Queue execution — single-prompt
   useEffect(() => {
@@ -288,7 +288,7 @@ export function QueueWizard({ onClose, columns, rows }: Props): React.ReactEleme
         setStep({ kind: 'error', message: String(err) });
       }
     })();
-  }, [step.kind]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [step.kind]); // eslint-disable-line -- react-hooks plugin not configured
 
   useInput((input, key) => {
     switch (step.kind) {

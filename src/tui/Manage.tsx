@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
-import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import { QueuePane } from './components/QueuePane.js';
@@ -17,7 +16,7 @@ import { QueueWizard } from './components/QueueWizard.js';
 import { activityBus } from '../events/bus.js';
 import { readQueue, writeQueue, enqueueFront } from '../storage/queue.js';
 import { updateMeta, updatePhase, getLogsDir } from '../storage/meta.js';
-import { borderHi, dim, dim2, cyan, fg, yellow } from './theme.js';
+import { borderHi, dim, dim2, fg, yellow } from './theme.js';
 import type { ActivityEvent } from '../events/types.js';
 
 interface Props {
@@ -40,7 +39,7 @@ function estimateDiskSize(worktreePath: string): string {
 }
 
 function StatusLine({
-  columns, selectedRun, selectedPhaseIndex, allRuns, isPaused,
+  columns, selectedRun, selectedPhaseIndex: _selectedPhaseIndex, allRuns, isPaused,
 }: {
   columns: number;
   selectedRun: import('../types/meta.js').RunMeta | null;

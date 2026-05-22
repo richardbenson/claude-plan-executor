@@ -113,7 +113,7 @@ const STUB_CONTENT = `{
 }
 `;
 
-export async function ensureRepoConfig(repoPath: string, giteaHost?: string): Promise<RepoConfig> {
+export async function ensureRepoConfig(repoPath: string, _giteaHost?: string): Promise<RepoConfig> {
   const existing = readRepoConfig(repoPath);
   if (existing) return existing;
 

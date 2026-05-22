@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
-import * as path from 'path';
 import { activityBus } from '../events/bus.js';
 import { useQueueState } from './hooks/useQueueState.js';
 import { WatchHero } from './components/WatchHero.js';
@@ -10,7 +9,7 @@ import { WatchPaused, UserPausedFooter } from './components/WatchPaused.js';
 import { CommandPalette } from './components/CommandPalette.js';
 import { QueueWizard } from './components/QueueWizard.js';
 import { readQueue, writeQueue } from '../storage/queue.js';
-import { updateMeta, updatePhase, getLogsDir } from '../storage/meta.js';
+import { updateMeta, updatePhase } from '../storage/meta.js';
 import { dim2, cyan, dim } from './theme.js';
 import type { ActivityEvent } from '../events/types.js';
 
@@ -154,8 +153,7 @@ export function Watch({ columns, rows, compact }: Props): React.ReactElement {
       case 'log': {
         const phase = queueState.activePhase;
         if (run && phase) {
-          const logFile = path.join(getLogsDir(run.id), 'phase-' + String(phase.number).padStart(2, '0') + '.log');
-          // TODO: Launch pager subprocess
+          // TODO: Launch pager subprocess with phase log
         }
         break;
       }

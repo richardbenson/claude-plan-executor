@@ -48,7 +48,7 @@ test('STATE_TABLE covers all 11 states', () => {
 });
 
 test('getStateInfo throws on unknown status', () => {
-  expect(() => getStateInfo('bad-status' as any)).toThrow();
+  expect(() => getStateInfo('bad-status' as unknown as import('../types/state.js').RunStatus)).toThrow();
 });
 
 test('readMeta / writeMeta round-trip', () => {
