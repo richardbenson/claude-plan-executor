@@ -9,7 +9,7 @@ import { startJsonlTail } from './jsonl-tail.js';
 import { getHead } from '../git/repo.js';
 import { PHASE_RESULT_SCHEMA } from '../prompts/index.js';
 import type { ActivityBus } from '../events/bus.js';
-import type { AppConfig, PhaseEntry } from '../types/meta.js';
+import type { AppConfig } from '../types/meta.js';
 
 export interface PhaseResult {
   completed: boolean;
@@ -300,7 +300,7 @@ export async function resumeOrRestart(
   })();
 
   const stdoutBuffer = await new Response(proc.stdout).arrayBuffer();
-  const exitCode = await proc.exited;
+  await proc.exited;
   await stderrDone;
 
   await new Promise<void>((resolve, reject) => {

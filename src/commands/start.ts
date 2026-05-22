@@ -1,7 +1,7 @@
 import React from 'react';
 import { render } from 'ink';
 import { readConfig } from '../storage/config.js';
-import { readMeta, updateMeta, listAllRunIds, getLogsDir } from '../storage/meta.js';
+import { readMeta, updateMeta, listAllRunIds } from '../storage/meta.js';
 import { isQueuePaused, dequeue, enqueueFront, readQueue, writeQueue } from '../storage/queue.js';
 import { reconcileWorktrees } from '../git/worktree.js';
 import { runPhase, resumeOrRestart } from '../runner/phase-loop.js';
@@ -23,7 +23,7 @@ function recoverInterruptedRuns(): void {
     try {
       const meta = readMeta(id);
       if (meta.status === 'paused-limit' || meta.status === 'executing') {
-        queue.entries.unshift({ run_id: id, added_at: new Date().toISOString() });
+        queue.entries.unshift({ run_id: id, added_at: new Date().toISOString(), type: meta.plan_folder ? 'plan' : 'single-prompt' });
         queued.add(id);
         updateMeta(id, { status: 'queued' });
         recovered.push(id.slice(0, 8));

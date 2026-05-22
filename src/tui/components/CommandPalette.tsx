@@ -33,12 +33,11 @@ interface Props {
   columns: number;
 }
 
-export function CommandPalette({ onClose, onRun, visible, columns }: Props): React.ReactElement | null {
+export function CommandPalette({ onClose, onRun, visible, columns: _columns }: Props): React.ReactElement | null {
   const [query, setQuery] = useState('');
   const [selectedIdx, setSelectedIdx] = useState(0);
 
   const modalWidth = 80;
-  const marginLeft = Math.max(0, Math.floor((columns - modalWidth - 2) / 2));
 
   const filtered = COMMANDS.filter(
     c =>

@@ -46,7 +46,7 @@ export function App({ config: _config, onInteractiveSubprocess }: AppProps): Rea
   const [mode, setMode] = useState<'watch' | 'manage'>('watch');
   const [sessionActive, setSessionActive] = useState(false);
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
-  const [events, setEvents] = useState<ActivityEvent[]>([]);
+  const [, setEvents] = useState<ActivityEvent[]>([]);
   const queueState = useQueueState();
   const sessionStartedAtRef = React.useRef<Date | null>(null);
   const [sessionStartedAt, setSessionStartedAt] = useState<Date | null>(null);
@@ -67,7 +67,7 @@ export function App({ config: _config, onInteractiveSubprocess }: AppProps): Rea
     return unsub;
   }, []);
 
-  useInput((input, key) => {
+  useInput((input, _key) => {
     if (showQuitConfirm) {
       if (input === 'y') process.exit(0);
       if (input === 'n') setShowQuitConfirm(false);

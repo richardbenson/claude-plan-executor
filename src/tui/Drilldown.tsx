@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { StateChip } from './components/StateChip.js';
 import { border, cyan, bgHi, dim, dim2, fg, green2 } from './theme.js';

@@ -1,4 +1,4 @@
-import { Command, program } from 'commander';
+import { program } from 'commander';
 import { CPE_VERSION } from './version.js';
 import { planCommand } from './commands/plan.js';
 import { queueCommand } from './commands/queue.js';
