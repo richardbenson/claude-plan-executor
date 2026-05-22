@@ -86,6 +86,12 @@ function renderEvent(ev: ActivityEvent, descWidth: number): RenderedEvent {
         description: 'queue paused',
         timestamp: ev.timestamp,
       };
+    case 'resume':
+      return {
+        key, color: green, glyph: '▶', kind: 'resume',
+        description: 'queue unpaused',
+        timestamp: ev.timestamp,
+      };
     case 'error':
       return {
         key, color: red, glyph: '✕', kind: 'error',

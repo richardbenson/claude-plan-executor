@@ -78,6 +78,7 @@ export function Watch({ columns, rows, compact }: Props): React.ReactElement {
       case 'pause': {
         const q = readQueue();
         writeQueue({ ...q, paused: !q.paused });
+        activityBus.emit({ kind: q.paused ? 'resume' : 'pause', timestamp: new Date(), runId: run?.id ?? '', phaseNumber: 0 });
         break;
       }
       case 'add': {
