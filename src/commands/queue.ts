@@ -121,6 +121,8 @@ export async function queuePlan(
     injectSandboxSettings(worktreePath, sandboxSettings);
   }
 
+  const skipPermissions = !!(config.dangerously_skip_permissions || repoConfig?.dangerously_skip_permissions);
+
   writeMeta(runId, {
     id: runId,
     primary_repo_path: repoPath,
@@ -133,6 +135,7 @@ export async function queuePlan(
     total_cost_usd: 0,
     bootstrapped: true,
     sandboxed,
+    skip_permissions: skipPermissions || undefined,
     phases,
   });
 

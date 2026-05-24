@@ -9,14 +9,15 @@ export async function handleRateLimit(
   phaseNumber: number,
   bus: ActivityBus | { emit: (event: unknown) => void } = { emit: () => { } },
 ): Promise<{ resumeAt: Date; sessionId: string; hadWork: boolean }> {
-  updatePhase(runId, phaseNumber, { session_id: envelope.session_id });
-
   const resumeAt =
     parseResetTime(envelope.result) ?? new Date(Date.now() + 5 * 60 * 1000);
 
   const hadWork = envelope.usage.input_tokens > 0 || envelope.total_cost_usd > 0;
 
-  updateMeta(runId, { status: 'paused-limit' });
+  // Store resume time on the run so it survives a cpe restart
+  updateMeta(runId, { status: 'paused-limit', limit_resume_at: resumeAt.toISOString() });
+  // Mark the phase so recovery knows which phase was interrupted (no-op for phaseNumber -1)
+  updatePhase(runId, phaseNumber, { session_id: envelope.session_id, status: 'paused-limit' });
 
   bus.emit({
     kind: 'limit',

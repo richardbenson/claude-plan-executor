@@ -11,6 +11,9 @@ import { waitUntil } from '../runner/limit.js';
 import { activityBus, ActivityBus } from '../events/bus.js';
 import { seedBusFromHistory } from '../events/seed.js';
 import { App } from '../tui/App.js';
+import { readRepoConfig } from '../config/repo-config.js';
+import { isBubblewrapAvailable } from '../runner/sandbox.js';
+import { isRunningInContainer } from '../runner/container.js';
 import type { AppConfig } from '../types/meta.js';
 
 function recoverInterruptedRuns(): void {
@@ -22,10 +25,18 @@ function recoverInterruptedRuns(): void {
     if (queued.has(id)) continue;
     try {
       const meta = readMeta(id);
-      if (meta.status === 'paused-limit' || meta.status === 'executing') {
-        queue.entries.unshift({ run_id: id, added_at: new Date().toISOString(), type: meta.plan_folder ? 'plan' : 'single-prompt' });
+      const entry = { run_id: id, added_at: new Date().toISOString(), type: (meta.plan_folder ? 'plan' : 'single-prompt') as 'plan' | 'single-prompt' };
+      if (meta.status === 'executing') {
+        // Was mid-run — put at front, reset to queued
+        queue.entries.unshift(entry);
         queued.add(id);
         updateMeta(id, { status: 'queued' });
+        recovered.push(id.slice(0, 8));
+      } else if (meta.status === 'paused-limit') {
+        // Was waiting for a rate-limit window — add to back, preserve status so
+        // the processor knows to wait for limit_resume_at before starting
+        queue.entries.push(entry);
+        queued.add(id);
         recovered.push(id.slice(0, 8));
       }
     } catch { /* skip unreadable */ }
@@ -60,6 +71,11 @@ export async function runQueueProcessor(config: AppConfig, bus: ActivityBus): Pr
 
     const meta = readMeta(runId);
 
+    const repoConfig = readRepoConfig(meta.primary_repo_path);
+    const effectiveConfig: AppConfig = (repoConfig?.dangerously_skip_permissions && !config.dangerously_skip_permissions)
+      ? { ...config, dangerously_skip_permissions: true }
+      : config;
+
     if (!reconciledRepos.has(meta.primary_repo_path)) {
       reconciledRepos.add(meta.primary_repo_path);
       const { orphaned, missing } = reconcileWorktrees(meta.primary_repo_path, [{ id: runId, worktreePath: meta.worktree_path }]);
@@ -77,7 +93,15 @@ export async function runQueueProcessor(config: AppConfig, bus: ActivityBus): Pr
 
     if (isSinglePrompt) {
       try {
-        await runSinglePrompt(runId, config, bus);
+        // If recovering from a rate limit, wait for the window to clear first
+        if (meta.limit_resume_at) {
+          const resumeAt = new Date(meta.limit_resume_at);
+          if (resumeAt > new Date()) {
+            bus.emit({ kind: 'limit', timestamp: new Date(), runId, phaseNumber: -1, resumeAt });
+            await waitUntil(resumeAt);
+          }
+        }
+        await runSinglePrompt(runId, effectiveConfig, bus);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         process.stderr.write(`[queue] single-prompt failed for ${runId.slice(0, 8)}: ${msg}\n`);
@@ -97,11 +121,22 @@ export async function runQueueProcessor(config: AppConfig, bus: ActivityBus): Pr
           break;
         }
 
-        let phaseResult = await runPhase(runId, phase.number, config, bus);
+        let phaseResult;
+        if (phase.status === 'paused-limit') {
+          // Phase was interrupted by a rate limit — wait for the window, then resume
+          const resumeAt = meta.limit_resume_at ? new Date(meta.limit_resume_at) : new Date();
+          if (resumeAt > new Date()) {
+            bus.emit({ kind: 'limit', timestamp: new Date(), runId, phaseNumber: phase.number, resumeAt });
+            await waitUntil(resumeAt);
+          }
+          phaseResult = await resumeOrRestart(runId, phase.number, effectiveConfig, bus);
+        } else {
+          phaseResult = await runPhase(runId, phase.number, effectiveConfig, bus);
+        }
 
         while (phaseResult.outcome === 'paused') {
           await waitUntil(phaseResult.resumeAt);
-          phaseResult = await resumeOrRestart(runId, phase.number, config, bus);
+          phaseResult = await resumeOrRestart(runId, phase.number, effectiveConfig, bus);
         }
 
         if (phaseResult.outcome === 'failed') {
@@ -134,6 +169,8 @@ export async function startCommand(): Promise<void> {
     writeQueue(queue);
   }
 
+  const containerWarning = isRunningInContainer() && !isBubblewrapAvailable();
+
   // Queue processor runs independently; TUI can restart around it
   runQueueProcessor(config, activityBus).catch(() => { });
 
@@ -143,6 +180,7 @@ export async function startCommand(): Promise<void> {
     const { unmount, waitUntilExit } = render(
       React.createElement(App, {
         config,
+        containerWarning,
         onInteractiveSubprocess: (cmd: string[]) => {
           interactiveCmd = cmd;
           unmount();

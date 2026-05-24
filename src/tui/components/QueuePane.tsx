@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { StateChip } from './StateChip.js';
-import { border, cyan, magenta, bgFloat, dim } from '../theme.js';
+import { border, cyan, magenta, bgFloat, dim, yellow } from '../theme.js';
 import type { RunMeta } from '../../types/meta.js';
 
 interface Props {
@@ -73,6 +73,11 @@ export function QueuePane({ runs, selectedIndex, focused }: Props): React.ReactE
               {run.sandboxed && (
                 <Box marginLeft={1} flexShrink={0}>
                   <Text color={dim}>{'⊡'}</Text>
+                </Box>
+              )}
+              {run.skip_permissions && (
+                <Box marginLeft={1} flexShrink={0}>
+                  <Text color={yellow}>{'!'}</Text>
                 </Box>
               )}
             </Box>

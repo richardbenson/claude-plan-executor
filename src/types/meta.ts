@@ -51,6 +51,8 @@ export interface RunMeta {
   total_cost_usd: number;
   bootstrapped?: boolean;
   sandboxed?: boolean;
+  skip_permissions?: boolean;
+  limit_resume_at?: string;
   claude_pid?: number;
   phases?: PhaseEntry[];
   prompt?: string;

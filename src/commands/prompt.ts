@@ -118,6 +118,8 @@ export async function promptCommand(
     injectSandboxSettings(worktreePath, sandboxSettings);
   }
 
+  const skipPermissions = !!(config.dangerously_skip_permissions || repoConfig?.dangerously_skip_permissions);
+
   let remote;
   try {
     remote = getRemote(repoPath, config.gitea_host);
@@ -136,6 +138,7 @@ export async function promptCommand(
     total_cost_usd: 0,
     bootstrapped: repoConfig.bootstrap.length > 0,
     sandboxed,
+    skip_permissions: skipPermissions || undefined,
     prompt,
     prompt_source: promptSource,
   };

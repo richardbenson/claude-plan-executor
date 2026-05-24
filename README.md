@@ -152,6 +152,33 @@ string, an array, or an object.
 
 </details>
 
+### Sandbox and permission prompts in containers
+
+Standard devcontainers (and most Docker/Podman containers) do not support [bubblewrap](https://github.com/containers/bubblewrap) because bubblewrap requires Linux user namespaces (`CLONE_NEWUSER`), which Docker disables by default. Without bubblewrap, `cpe` cannot enable Claude's sandbox — and without the sandbox, Claude Code's `autoAllowBashIfSandboxed` setting does not apply, so **Claude will show interactive permission prompts** for every bash tool call.
+
+`cpe` detects this situation and shows a warning banner in the TUI when it starts inside a container without bubblewrap available.
+
+**To suppress permission prompts in a container**, set `dangerously_skip_permissions: true`. This passes `--dangerously-skip-permissions` to every Claude session, bypassing all permission checks. Only use this in environments you trust (your own devcontainer is fine; a shared or ephemeral CI environment is not).
+
+You can set it globally or per-repo:
+
+**Global** (`~/.config/cpe/config.json`):
+```json
+{
+  "dangerously_skip_permissions": true
+}
+```
+
+**Per-repo** (`cpe.config.json` in your project root):
+```json
+{
+  "bootstrap": ["pnpm install"],
+  "dangerously_skip_permissions": true
+}
+```
+
+When `dangerously_skip_permissions` is active, the TUI header shows `⚠ perms skipped` and each affected run shows a `!` badge in the queue pane.
+
 ## License
 
 MIT

@@ -12,6 +12,7 @@ import type { ActivityEvent } from '../events/types.js';
 
 interface AppProps {
   config: AppConfig;
+  containerWarning?: boolean;
   onInteractiveSubprocess?: (cmd: string[]) => void;
 }
 
@@ -40,7 +41,7 @@ function QuitConfirmBar(): React.ReactElement {
   );
 }
 
-export function App({ config: _config, onInteractiveSubprocess }: AppProps): React.ReactElement {
+export function App({ config, containerWarning, onInteractiveSubprocess }: AppProps): React.ReactElement {
   const { columns, rows } = useStdoutDimensions();
   const compact = columns < 100 || rows < 30;
   const [mode, setMode] = useState<'watch' | 'manage'>('watch');
@@ -105,7 +106,11 @@ export function App({ config: _config, onInteractiveSubprocess }: AppProps): Rea
           sessionActive={sessionActive}
           startedAt={sessionStartedAt ?? undefined}
           compact={compact}
+          skipPermissions={!!config.dangerously_skip_permissions}
         />
+        {containerWarning && !config.dangerously_skip_permissions && (
+          <Text color={yellow}> ⚠ container detected — bubblewrap unavailable, Claude will prompt for permissions. Set dangerously_skip_permissions: true in cpe.config.json or ~/.config/cpe/config.json to suppress.</Text>
+        )}
         {showQuitConfirm && <QuitConfirmBar />}
         {mode === 'watch'
           ? <Watch columns={columns} rows={rows} compact={compact} />

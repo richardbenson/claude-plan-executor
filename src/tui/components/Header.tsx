@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
-import { blue, borderHi, teal, orange, fgDark, dim, green } from '../theme.js';
+import { blue, borderHi, teal, orange, fgDark, dim, green, yellow } from '../theme.js';
 
 interface Props {
   mode: 'WATCH' | 'MANAGE';
@@ -8,6 +8,7 @@ interface Props {
   sessionActive?: boolean;
   startedAt?: Date;
   compact?: boolean;
+  skipPermissions?: boolean;
 }
 
 function formatDatetime(): string {
@@ -41,7 +42,7 @@ function formatElapsed(startedAt: Date): string {
   return `active ${m}m`;
 }
 
-export function Header({ mode, statusText, sessionActive, startedAt, compact }: Props): React.ReactElement {
+export function Header({ mode, statusText, sessionActive, startedAt, compact, skipPermissions }: Props): React.ReactElement {
   const [datetime, setDatetime] = useState(formatDatetime());
   const [elapsedStr, setElapsedStr] = useState(() =>
     startedAt ? formatElapsed(startedAt) : '',
@@ -72,6 +73,12 @@ export function Header({ mode, statusText, sessionActive, startedAt, compact }: 
         <Text color={borderHi}> · </Text>
         {sessionActive && <Text color={green}>● </Text>}
         <Text color={fgDark}>{statusText}</Text>
+        {skipPermissions && (
+          <>
+            <Text color={borderHi}> · </Text>
+            <Text color={yellow}>⚠ perms skipped</Text>
+          </>
+        )}
       </Box>
       {!compact && (
         <Box>
