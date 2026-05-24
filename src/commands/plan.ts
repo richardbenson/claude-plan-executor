@@ -68,6 +68,8 @@ export async function planCommand(details: string[], options?: { disableSandbox?
     planDetails = details.join(' ').trim();
   }
 
+  console.log('\nSetting up planning environment...');
+
   let repoPath: string;
   try {
     repoPath = getPrimaryRepo();
@@ -82,16 +84,24 @@ export async function planCommand(details: string[], options?: { disableSandbox?
   const runId = ulid();
   const tempBranch = 'cpe/planning-' + Date.now();
 
+  process.stdout.write('  creating worktree...');
   let worktreePath: string;
   try {
     worktreePath = createWorktree(repoPath, runId, tempBranch, config.target_branch ?? 'main');
+    process.stdout.write(' done\n');
   } catch (err) {
+    process.stdout.write('\n');
     console.error('Failed to create worktree: ' + (err as Error).message);
     process.exit(1);
   }
 
   const logsDir = getLogsDir(runId);
-  const bootstrapResult = await runBootstrap(worktreePath, repoConfig.bootstrap, logsDir + '/bootstrap.log');
+  const bootstrapResult = await runBootstrap(
+    worktreePath,
+    repoConfig.bootstrap,
+    logsDir + '/bootstrap.log',
+    cmd => process.stdout.write(`  bootstrap: ${cmd}\n`),
+  );
   if (!bootstrapResult.success) {
     removeWorktree(repoPath, worktreePath, true);
     deleteBranch(repoPath, tempBranch);

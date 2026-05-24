@@ -42,12 +42,14 @@ export async function runBootstrap(
   worktreePath: string,
   commands: string[],
   logPath: string,
+  onCommand?: (cmd: string) => void,
 ): Promise<BootstrapRunResult> {
   fs.mkdirSync(path.dirname(logPath), { recursive: true });
   const logFile = fs.openSync(logPath, 'w');
 
   try {
     for (const cmd of commands) {
+      onCommand?.(cmd);
       const parts = cmd.split(/\s+/);
       const proc = Bun.spawn(parts, {
         cwd: worktreePath,
