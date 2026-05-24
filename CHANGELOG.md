@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.3.0
+
+### Features
+
+- **Container detection** — `cpe start` now detects Docker/Podman environments. If bubblewrap is unavailable (standard in most containers), a warning banner appears in the TUI explaining why Claude will show permission prompts and how to fix it.
+- **`dangerously_skip_permissions` per repo** — in addition to the global `~/.config/cpe/config.json`, you can now set `dangerously_skip_permissions: true` in a repo's `cpe.config.json`. The per-repo setting is merged at run time, so each repo can opt in independently.
+- **Permission-skip indicators in UI** — when `dangerously_skip_permissions` is active, the TUI header shows `⚠ perms skipped` and each affected run shows a `!` badge in the queue pane.
+- **Rate-limit window persists across restarts** — if `cpe` is quit while waiting for a session-limit reset, it previously re-launched the session immediately on restart (hitting the limit again). The resume timestamp is now stored in run state so the processor waits for the correct window even after a restart.
+
+### Fixed
+
+- **Duplicate React keys in activity feed** — two bash events arriving within the same millisecond produced a React duplicate-key warning. Keys now include a stable index as a tiebreaker.
+
 ## v0.2.0
 
 ### Features
