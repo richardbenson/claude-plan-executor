@@ -40,18 +40,38 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
+
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          awk "/^## ${TAG} *$/{found=1; next} found && /^## /{exit} found{print}" CHANGELOG.md \
+            > release_notes.md
+          if [ ! -s release_notes.md ]; then
+            echo "See the [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details." \
+              > release_notes.md
+          fi
+
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
-      - run: |
-          gh release create ${{ github.ref_name }} \
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          PRERELEASE: ${{ contains(github.ref_name, '-') }}
+        run: |
+          FLAGS=()
+          [[ "$PRERELEASE" == "true" ]] && FLAGS+=(--prerelease)
+          gh release create "$TAG" \
             --repo ${{ github.repository }} \
-            --title "Release ${{ github.ref_name }}" \
-            --generate-notes \
+            --title "cpe $TAG" \
+            --notes-file release_notes.md \
+            "${FLAGS[@]}" \
             artifacts/cpe-linux-x64/cpe-linux-x64 \
             artifacts/cpe-linux-arm64/cpe-linux-arm64 \
             artifacts/cpe-darwin-x64/cpe-darwin-x64 \
             artifacts/cpe-darwin-arm64/cpe-darwin-arm64 \
             scripts/install.sh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
