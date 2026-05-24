@@ -39,10 +39,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v6
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
-      - uses: actions/checkout@v6
       - run: |
           gh release create ${{ github.ref_name }} \
             --repo ${{ github.repository }} \
