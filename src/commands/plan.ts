@@ -103,9 +103,20 @@ export async function planCommand(details: string[], options?: { disableSandbox?
     cmd => process.stdout.write(`  bootstrap: ${cmd}\n`),
   );
   if (!bootstrapResult.success) {
+    const logPath = logsDir + '/bootstrap.log';
+    console.error(`\nBootstrap failed: ${bootstrapResult.failedCommand} (exit ${bootstrapResult.exitCode})`);
+    try {
+      const lines = fs.readFileSync(logPath, 'utf8').trimEnd().split('\n');
+      const tail = lines.slice(-20);
+      console.error('\n--- bootstrap output (last 20 lines) ---');
+      tail.forEach(l => console.error(l));
+      console.error(`--- full log: ${logPath} ---\n`);
+    } catch {
+      console.error(`(no log output — see ${logPath})`);
+    }
     removeWorktree(repoPath, worktreePath, true);
     deleteBranch(repoPath, tempBranch);
-    console.log('Bootstrap failed. Worktree cleaned up.');
+    console.error('Worktree cleaned up.');
     process.exit(1);
   }
 
