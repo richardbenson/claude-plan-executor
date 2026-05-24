@@ -108,7 +108,7 @@ export async function runSinglePrompt(
   });
 
   // STEP 9 — start JSONL tail for activity feed
-  const stopTail = await startJsonlTail(uuid, meta.worktree_path, runId, -1, bus);
+  const stopTail = await startJsonlTail(uuid, meta.worktree_path, runId, -1, bus, logPath);
 
   // STEP 10 — await session completion then stop tail
   const result = await sessionPromise;

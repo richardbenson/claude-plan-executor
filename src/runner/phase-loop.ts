@@ -115,7 +115,7 @@ export async function runPhase(
   });
 
   // STEP 6 — start JSONL tail (Claude is already starting; file appears within seconds)
-  const stopTail = await startJsonlTail(uuid, meta.worktree_path, runId, phaseNumber, bus);
+  const stopTail = await startJsonlTail(uuid, meta.worktree_path, runId, phaseNumber, bus, logPath);
 
   // STEP 7 — await session completion then stop tail
   const result = await sessionPromise;

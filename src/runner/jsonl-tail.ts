@@ -37,6 +37,7 @@ export async function startJsonlTail(
   runId: string,
   phaseNumber: number,
   bus: ActivityBus,
+  logPath?: string,
 ): Promise<() => void> {
   const expectedPath = getExpectedJsonlPath(uuid, worktreePath);
   const start = Date.now();
@@ -84,7 +85,14 @@ export async function startJsonlTail(
   const resolvedPath = filePath;
   let offset = 0;
   const pendingEdits = new Map<string, EditEvent | BashEvent>();
+  const logPending = new Map<string, { name: string; cmd: string }>();
   let partial = '';
+
+  let logStream: fs.WriteStream | null = null;
+  if (logPath) {
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    logStream = fs.createWriteStream(logPath, { flags: 'a' });
+  }
 
   const watcher = fs.watch(resolvedPath, () => {
     let fd: number;
@@ -115,13 +123,100 @@ export async function startJsonlTail(
         for (const event of classifyJsonlEntry(entry, runId, phaseNumber, pendingEdits, worktreePath)) {
           bus.emit(event);
         }
+        if (logStream) {
+          writeEntryToLog(entry, logStream, logPending);
+        }
       }
     } finally {
       fs.closeSync(fd);
     }
   });
 
-  return () => watcher.close();
+  return () => {
+    watcher.close();
+    logStream?.end();
+  };
+}
+
+function logTs(): string {
+  return new Date().toISOString().slice(11, 19);
+}
+
+function writeEntryToLog(
+  entry: unknown,
+  stream: fs.WriteStream,
+  pending: Map<string, { name: string; cmd: string }>,
+): void {
+  if (!entry || typeof entry !== 'object') return;
+  const e = entry as Record<string, unknown>;
+  const ts = logTs();
+
+  if (e['type'] === 'assistant') {
+    const content = (e['message'] as Record<string, unknown> | undefined)?.['content'];
+    if (!Array.isArray(content)) return;
+    for (const item of content) {
+      if (!item || typeof item !== 'object') continue;
+      const i = item as Record<string, unknown>;
+      if (i['type'] === 'text') {
+        const text = String(i['text'] ?? '').trim();
+        if (text) {
+          const firstLine = text.split('\n')[0]!.slice(0, 200);
+          stream.write(`${ts} TEXT  ${firstLine}\n`);
+        }
+      } else if (i['type'] === 'tool_use') {
+        const id = String(i['id'] ?? '');
+        const name = String(i['name'] ?? '');
+        const input = (i['input'] ?? {}) as Record<string, unknown>;
+        if (name === 'Bash') {
+          const cmd = String(input['command'] ?? '');
+          pending.set(id, { name, cmd });
+          stream.write(`${ts} BASH  ${cmd.slice(0, 200)}\n`);
+        } else if (name === 'Edit' || name === 'Write') {
+          const fp = String(input['file_path'] ?? input['path'] ?? '<unknown>');
+          pending.set(id, { name, cmd: fp });
+          stream.write(`${ts} EDIT  ${fp}\n`);
+        } else if (name === 'Read') {
+          const fp = String(input['file_path'] ?? input['path'] ?? '<unknown>');
+          stream.write(`${ts} READ  ${fp}\n`);
+        }
+      }
+    }
+    return;
+  }
+
+  if (e['type'] === 'attachment') {
+    const att = e['attachment'] as Record<string, unknown> | undefined;
+    if (att?.['type'] === 'hook_success') {
+      const stdout = String(att['stdout'] ?? '');
+      try {
+        const parsed = JSON.parse(stdout) as Record<string, unknown>;
+        const hso = parsed['hookSpecificOutput'] as Record<string, unknown> | undefined;
+        const updated = hso?.['updatedInput'] as Record<string, unknown> | undefined;
+        const rewritten = updated?.['command'] as string | undefined;
+        if (rewritten) {
+          stream.write(`${ts} RTK   ${rewritten.slice(0, 200)}\n`);
+        }
+      } catch { /* not RTK output */ }
+    }
+    return;
+  }
+
+  if (e['type'] === 'user') {
+    const content = (e['message'] as Record<string, unknown> | undefined)?.['content'];
+    if (!Array.isArray(content)) return;
+    for (const item of content) {
+      if (!item || typeof item !== 'object') continue;
+      const i = item as Record<string, unknown>;
+      if (i['type'] !== 'tool_result') continue;
+      const toolUseId = String(i['tool_use_id'] ?? '');
+      pending.delete(toolUseId);
+      const resultText = extractResultText(i['content']).trim();
+      const firstLine = resultText.split('\n')[0]?.slice(0, 200) ?? '';
+      if (firstLine) {
+        stream.write(`${ts} OUT   ${firstLine}\n`);
+      }
+    }
+  }
 }
 
 // Git commit output: "[branch-or-sha] message" on the first line
