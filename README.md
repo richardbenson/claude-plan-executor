@@ -110,6 +110,48 @@ Each plan lives in a `docs/<folder>/` directory with a `PROGRESS.md` and one `PH
 3. Detects Claude Code session-limit pauses and resumes automatically when the window reopens
 4. Commits after each phase, then raises a PR and summarises the plan when all phases complete
 
+## Using cpe inside a devcontainer
+
+If your project uses a devcontainer, running `cpe` and `claude` **inside** the container is the right approach — not on the host. The container has your build toolchain, so Claude's bash commands work correctly, and all paths (worktrees, state, git registrations) stay in one consistent filesystem. The only thing that needs to come from the host is your Claude authentication and settings, via a bind mount of `~/.claude`.
+
+The exact changes needed depend on your specific devcontainer setup: whether you use a base image or a custom Dockerfile, which user the container runs as, and how your `postCreateCommand` is currently structured. Rather than a one-size-fits-all script, the most reliable way to configure this is to ask Claude to do it for you.
+
+<details>
+<summary>Prompt to configure your devcontainer for cpe</summary>
+
+Copy and paste this into Claude Code (inside your project):
+
+```
+I want to configure my devcontainer to run cpe (Claude Plan Executor) inside the
+container. Please make the following changes to my devcontainer configuration:
+
+1. Add a bind mount of `~/.claude` from the host into the container user's home
+   directory (e.g. /home/vscode/.claude or /root/.claude depending on the user
+   this container runs as). This gives Claude Code inside the container access to
+   authentication credentials and hook settings (including RTK if installed on
+   the host).
+
+2. Add install steps for the following tools if not already present:
+   - `claude` (Claude Code CLI): npm install -g @anthropic-ai/claude-code
+   - `cpe`: curl -fsSL https://github.com/richardbenson/claude-plan-executor/releases/latest/download/install.sh | bash
+   - `gh` (GitHub CLI): use the appropriate method for this container's base OS
+   - `bubblewrap` and `socat`: apt-get / dnf / pacman as appropriate for the OS
+     (needed for Claude sandbox isolation on Linux — cpe works without them but
+     sessions will be unsandboxed)
+
+   Install steps should go in `postCreateCommand` or as a `RUN` layer in the
+   Dockerfile, whichever is more appropriate given the existing setup. Prefer
+   `postCreateCommand` for user-scoped tools like `cpe` and `claude`.
+
+3. Ensure `~/.local/bin` is on PATH inside the container (cpe installs there).
+
+Please read my devcontainer.json and any referenced Dockerfile before making
+changes, and handle the postCreateCommand correctly whether it is currently a
+string, an array, or an object.
+```
+
+</details>
+
 ## License
 
 MIT
