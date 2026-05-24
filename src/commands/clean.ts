@@ -33,7 +33,7 @@ export async function cleanCommand(options: { all?: boolean }): Promise<void> {
   for (const runId of runDirs) {
     try {
       const meta = readMeta(runId);
-      if (meta.status === 'complete' || meta.status === 'pr-created') {
+      if (meta.status === 'complete' || meta.status === 'pr-created' || meta.status === 'archived' || meta.status === 'failed') {
         cleanable.push({ runId, runDir: path.join(RUNS_BASE, runId), meta });
       }
     } catch {

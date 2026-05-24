@@ -16,6 +16,7 @@ import { QueueWizard } from './components/QueueWizard.js';
 import { activityBus } from '../events/bus.js';
 import { readQueue, writeQueue, enqueueFront } from '../storage/queue.js';
 import { updateMeta, updatePhase, getLogsDir } from '../storage/meta.js';
+import { removeWorktree } from '../git/worktree.js';
 import { borderHi, dim, dim2, fg, yellow } from './theme.js';
 import type { ActivityEvent } from '../events/types.js';
 
@@ -85,6 +86,16 @@ function StatusLine({
       </Text>
     </Box>
   );
+}
+
+const CANNOT_ARCHIVE = new Set(['executing', 'finalising', 'retrying', 'paused-limit']);
+
+function doArchive(runId: string, worktreePath: string, primaryRepoPath: string): void {
+  const q = readQueue();
+  q.entries = q.entries.filter(e => e.run_id !== runId);
+  writeQueue(q);
+  updateMeta(runId, { status: 'archived' });
+  try { removeWorktree(primaryRepoPath, worktreePath, true); } catch { /* already gone */ }
 }
 
 export function Manage({ columns, rows, compact }: Props): React.ReactElement {
@@ -172,22 +183,9 @@ export function Manage({ columns, rows, compact }: Props): React.ReactElement {
       }
       case 'archive': {
         if (!selectedRun) break;
-        const CANNOT_ARCHIVE = new Set(['executing', 'finalising', 'retrying', 'paused-limit']);
         if (CANNOT_ARCHIVE.has(selectedRun.status)) break;
-        const qa = readQueue();
-        qa.entries = qa.entries.filter(e => e.run_id !== selectedRun.id);
-        writeQueue(qa);
-        updateMeta(selectedRun.id, { status: 'archived' });
+        doArchive(selectedRun.id, selectedRun.worktree_path, selectedRun.primary_repo_path);
         setSelectedRunIndex(i => Math.max(0, i - 1));
-        break;
-      }
-      case 'remove': {
-        if (selectedRun) {
-          const q = readQueue();
-          q.entries = q.entries.filter(e => e.run_id !== selectedRun.id);
-          writeQueue(q);
-          setSelectedRunIndex(i => Math.max(0, i - 1));
-        }
         break;
       }
       case 'kill': setKillConfirm(true); break;
@@ -288,15 +286,9 @@ export function Manage({ columns, rows, compact }: Props): React.ReactElement {
     }
 
     if (input === 'd') {
-      if (selectedRun) {
-        const CANNOT_ARCHIVE = new Set(['executing', 'finalising', 'retrying', 'paused-limit']);
-        if (!CANNOT_ARCHIVE.has(selectedRun.status)) {
-          const q = readQueue();
-          q.entries = q.entries.filter(e => e.run_id !== selectedRun.id);
-          writeQueue(q);
-          updateMeta(selectedRun.id, { status: 'archived' });
-          setSelectedRunIndex(i => Math.max(0, i - 1));
-        }
+      if (selectedRun && !CANNOT_ARCHIVE.has(selectedRun.status)) {
+        doArchive(selectedRun.id, selectedRun.worktree_path, selectedRun.primary_repo_path);
+        setSelectedRunIndex(i => Math.max(0, i - 1));
       }
       return;
     }

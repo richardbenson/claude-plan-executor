@@ -22,7 +22,7 @@ export function CommandBar({ focusedPane, queuePaused, sessionActive }: Props): 
         <Text color={queueLabelColor} bold={'queue' === focusedPane}>{'QUEUE  '}</Text>
         <Text color={dim}>{'↑↓ select  ⌥↑↓ reorder  ↵ phases  '}</Text>
         {pauseLabel}
-        <Text color={dim}>{'  r remove  a add plan'}</Text>
+        <Text color={dim}>{'  d archive  a add plan'}</Text>
       </Text>
       <Text>
         <Text color={runLabelColor} bold={'executing' === focusedPane}>{'RUN    '}</Text>
