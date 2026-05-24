@@ -50,8 +50,7 @@ export async function runBootstrap(
   try {
     for (const cmd of commands) {
       onCommand?.(cmd);
-      const parts = cmd.split(/\s+/);
-      const proc = Bun.spawn(parts, {
+      const proc = Bun.spawn(['sh', '-c', cmd], {
         cwd: worktreePath,
         stdout: logFile,
         stderr: logFile,
