@@ -7,6 +7,8 @@ import { readConfig } from '../storage/config.js';
 import { writeMeta, getLogsDir } from '../storage/meta.js';
 import { enqueue } from '../storage/queue.js';
 import { ensureRepoConfig, runBootstrap } from '../config/repo-config.js';
+import { openLiveBox } from '../cli/live-box.js';
+import type { LiveBox } from '../cli/live-box.js';
 import { buildSandboxSettings, injectSandboxSettings } from '../runner/sandbox.js';
 import { fetchGitHubIssue } from '../vcs/github.js';
 import type { RunMeta } from '../types/meta.js';
@@ -88,10 +90,21 @@ export async function promptCommand(
   }
 
   if (repoConfig.bootstrap.length > 0) {
-    console.log(`Running ${repoConfig.bootstrap.length} bootstrap command(s)…`);
     const logPath = path.join(getLogsDir(runId), 'bootstrap.log');
     fs.mkdirSync(path.dirname(logPath), { recursive: true });
-    const result = await runBootstrap(worktreePath, repoConfig.bootstrap, logPath);
+    let box: LiveBox | null = null;
+    const result = await runBootstrap(
+      worktreePath,
+      repoConfig.bootstrap,
+      logPath,
+      cmd => {
+        box?.close();
+        process.stdout.write(`  bootstrap: ${cmd}\n`);
+        box = openLiveBox();
+      },
+      line => box?.addLine(line),
+    );
+    (box as LiveBox | null)?.close();
     if (!result.success) {
       console.error(`Bootstrap failed: ${result.failedCommand} (exit ${result.exitCode})`);
       console.error(`Run logs at: ${logPath}`);

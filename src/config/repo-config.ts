@@ -38,30 +38,69 @@ export function writeRepoConfig(repoPath: string, config: RepoConfig): void {
   fs.writeFileSync(filePath, JSON.stringify(config, null, 2) + '\n');
 }
 
+async function drainStream(
+  stream: ReadableStream<Uint8Array>,
+  fd: number,
+  onLine?: (line: string) => void,
+): Promise<void> {
+  const dec = new TextDecoder();
+  let partial = '';
+  for await (const chunk of stream) {
+    const text = partial + dec.decode(chunk, { stream: true });
+    const lines = text.split('\n');
+    partial = lines.pop() ?? '';
+    for (const line of lines) {
+      fs.writeSync(fd, line + '\n');
+      onLine?.(line);
+    }
+  }
+  if (partial) {
+    fs.writeSync(fd, partial);
+    onLine?.(partial);
+  }
+}
+
 export async function runBootstrap(
   worktreePath: string,
   commands: string[],
   logPath: string,
   onCommand?: (cmd: string) => void,
+  onLine?: (line: string) => void,
 ): Promise<BootstrapRunResult> {
   fs.mkdirSync(path.dirname(logPath), { recursive: true });
-  const logFile = fs.openSync(logPath, 'w');
+  const fd = fs.openSync(logPath, 'w');
 
   try {
     for (const cmd of commands) {
       onCommand?.(cmd);
-      const proc = Bun.spawn(['sh', '-c', cmd], {
-        cwd: worktreePath,
-        stdout: logFile,
-        stderr: logFile,
-      });
-      const exitCode = await proc.exited;
-      if (exitCode !== 0) {
-        return { success: false, failedCommand: cmd, exitCode };
+      if (onLine) {
+        const proc = Bun.spawn(['sh', '-c', cmd], {
+          cwd: worktreePath,
+          stdout: 'pipe',
+          stderr: 'pipe',
+        });
+        const [exitCode] = await Promise.all([
+          proc.exited,
+          drainStream(proc.stdout, fd, onLine),
+          drainStream(proc.stderr, fd, onLine),
+        ]);
+        if (exitCode !== 0) {
+          return { success: false, failedCommand: cmd, exitCode };
+        }
+      } else {
+        const proc = Bun.spawn(['sh', '-c', cmd], {
+          cwd: worktreePath,
+          stdout: fd,
+          stderr: fd,
+        });
+        const exitCode = await proc.exited;
+        if (exitCode !== 0) {
+          return { success: false, failedCommand: cmd, exitCode };
+        }
       }
     }
   } finally {
-    fs.closeSync(logFile);
+    fs.closeSync(fd);
   }
 
   return { success: true };

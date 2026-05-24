@@ -7,6 +7,8 @@ import { readConfig } from '../storage/config.js';
 import { writeMeta, updateMeta, getLogsDir, extractPhaseTitle } from '../storage/meta.js';
 import { enqueue } from '../storage/queue.js';
 import { ensureRepoConfig, runBootstrap } from '../config/repo-config.js';
+import { openLiveBox } from '../cli/live-box.js';
+import type { LiveBox } from '../cli/live-box.js';
 import { buildSandboxSettings, injectSandboxSettings } from '../runner/sandbox.js';
 import type { AppConfig } from '../types/meta.js';
 import type { RepoConfig } from '../config/repo-config.js';
@@ -67,7 +69,19 @@ export async function queuePlan(
   noSandbox: boolean = false,
 ): Promise<void> {
   const logPath = path.join(getLogsDir(runId), 'bootstrap.log');
-  const bootstrapResult = await runBootstrap(worktreePath, repoConfig.bootstrap, logPath);
+  let box: LiveBox | null = null;
+  const bootstrapResult = await runBootstrap(
+    worktreePath,
+    repoConfig.bootstrap,
+    logPath,
+    cmd => {
+      box?.close();
+      process.stdout.write(`  bootstrap: ${cmd}\n`);
+      box = openLiveBox();
+    },
+    line => box?.addLine(line),
+  );
+  (box as LiveBox | null)?.close();
   if (!bootstrapResult.success) {
     console.error(
       `Bootstrap failed: ${bootstrapResult.failedCommand} (exit ${bootstrapResult.exitCode})`,

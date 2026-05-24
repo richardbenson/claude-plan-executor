@@ -16,6 +16,8 @@ import { getLogsDir } from '../storage/meta.js';
 import { ensureRepoConfig, runBootstrap } from '../config/repo-config.js';
 import { PLANBOT_PROMPT } from '../prompts/index.js';
 import { queuePlan } from './queue.js';
+import { openLiveBox } from '../cli/live-box.js';
+import type { LiveBox } from '../cli/live-box.js';
 
 async function readStdinToEof(): Promise<string> {
   const chunks: Buffer[] = [];
@@ -96,12 +98,19 @@ export async function planCommand(details: string[], options?: { disableSandbox?
   }
 
   const logsDir = getLogsDir(runId);
+  let box: LiveBox | null = null;
   const bootstrapResult = await runBootstrap(
     worktreePath,
     repoConfig.bootstrap,
     logsDir + '/bootstrap.log',
-    cmd => process.stdout.write(`  bootstrap: ${cmd}\n`),
+    cmd => {
+      box?.close();
+      process.stdout.write(`  bootstrap: ${cmd}\n`);
+      box = openLiveBox();
+    },
+    line => box?.addLine(line),
   );
+  (box as LiveBox | null)?.close();
   if (!bootstrapResult.success) {
     const logPath = logsDir + '/bootstrap.log';
     console.error(`\nBootstrap failed: ${bootstrapResult.failedCommand} (exit ${bootstrapResult.exitCode})`);
