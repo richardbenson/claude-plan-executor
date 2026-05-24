@@ -32,8 +32,8 @@ interface RenderedEvent {
 // EventRow prefix: HH:MM:SS(8) + 2sp + glyph(1) + sp + kind.padEnd(6)(6) + 2sp = 20 chars
 const ROW_PREFIX = 20;
 
-function renderEvent(ev: ActivityEvent, descWidth: number): RenderedEvent {
-  const key = `${ev.kind}-${ev.timestamp.getTime()}-${ev.runId}-${ev.phaseNumber}`;
+function renderEvent(ev: ActivityEvent, index: number, descWidth: number): RenderedEvent {
+  const key = `${ev.kind}-${ev.timestamp.getTime()}-${ev.runId}-${ev.phaseNumber}-${index}`;
   switch (ev.kind) {
     case 'phase':
       return {
@@ -124,7 +124,7 @@ function EventRow({ ev }: { ev: RenderedEvent }): React.ReactElement {
 export function ActivityFeed({ events, availableRows, columns, activeSessionId }: Props): React.ReactElement {
   const descWidth = Math.max(10, columns - ROW_PREFIX);
   // Most recent first
-  const rendered = events.map(ev => renderEvent(ev, descWidth)).reverse();
+  const rendered = events.map((ev, i) => renderEvent(ev, i, descWidth)).reverse();
 
   const maxRows = Math.max(0, availableRows - 2);
   const visible = rendered.slice(0, maxRows);
