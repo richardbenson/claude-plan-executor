@@ -10,6 +10,21 @@ Queue work across multiple repos, let it run overnight, and pick up where Claude
 - `gh` (GitHub CLI, for PR creation and release notes)
 - Linux (x64/arm64) or macOS (x64/arm64)
 
+**Linux/WSL2 — sandbox isolation** (recommended): `bubblewrap` and `socat` are required for Claude's sandbox to work. `cpe` runs without them but sessions will be unsandboxed.
+
+```bash
+sudo apt-get install bubblewrap socat   # Debian/Ubuntu/WSL2
+sudo dnf install bubblewrap socat       # Fedora/RHEL
+sudo pacman -S bubblewrap socat         # Arch
+```
+
+**Optional — [RTK](https://github.com/rtk-ai/rtk)**: reduces Claude token usage by 60–90% across all sessions. The install script will prompt you if it's not detected.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/master/install.sh | sh
+rtk init -g
+```
+
 ## Installation
 
 ### One-liner (recommended)
