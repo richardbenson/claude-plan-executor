@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.0
+
+### Features
+
+- **Live bootstrap output** — the TUI now shows a scrolling output box while bootstrap commands run, so you can see progress (and spot failures) in real time rather than waiting for the spinner to resolve.
+
+### Fixed
+
+- **Bootstrap commands now run through a shell** — commands are executed via `sh -c` instead of direct exec, so shell built-ins, pipes, and `&&` chains in your bootstrap config work correctly.
+- **Bootstrap failure details visible in TUI** — when a bootstrap command fails, the TUI now shows the error details and a tail of the log rather than a bare "setup failed" message.
+- **Progress shown after Ctrl+D during plan setup** — resuming a session after a Ctrl+D interrupt now correctly displays the plan setup progress indicator.
+
 ## v0.1.1
 
 ### Fixed
