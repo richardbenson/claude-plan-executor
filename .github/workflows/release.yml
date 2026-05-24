@@ -42,6 +42,7 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
+      - uses: actions/checkout@v6
       - run: |
           gh release create ${{ github.ref_name }} \
             --repo ${{ github.repository }} \
@@ -50,6 +51,7 @@ jobs:
             artifacts/cpe-linux-x64/cpe-linux-x64 \
             artifacts/cpe-linux-arm64/cpe-linux-arm64 \
             artifacts/cpe-darwin-x64/cpe-darwin-x64 \
-            artifacts/cpe-darwin-arm64/cpe-darwin-arm64
+            artifacts/cpe-darwin-arm64/cpe-darwin-arm64 \
+            scripts/install.sh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
