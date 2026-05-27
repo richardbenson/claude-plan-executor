@@ -86,20 +86,115 @@ cpe start
 | `cpe remove <run-id>` | Remove a run from the queue |
 | `cpe clean` | Remove worktrees for completed runs |
 | `cpe bootstrap` | Set up per-repo bootstrap config (`--detect`, `--stub`, `--edit`) |
+| `cpe provider list` | List configured providers and their assigned roles |
+| `cpe provider add` | Add a provider interactively |
+| `cpe provider remove <name>` | Remove a provider by name |
+| `cpe provider test [name]` | Test health checks for all providers, or one by name |
 
 ## Per-repo configuration
 
-On first use in a repo, `cpe` will ask how you want to set up bootstrap commands — shell commands run before each phase (e.g. `pnpm install`). The config is stored in `cpe.config.json` at the repo root:
+The file `cpe.config.json` at the repo root controls how `cpe` behaves for that specific project. On first use `cpe` will prompt you to set it up; you can also run `cpe bootstrap --edit` to open it directly.
+
+A fully annotated example:
 
 ```json
 {
   "bootstrap": [
     "pnpm install"
-  ]
+  ],
+  "sandbox": {
+    "allowedDomains": [
+      "registry.npmjs.org",
+      "my-internal-registry.example.com"
+    ]
+  },
+  "dangerously_skip_permissions": false,
+  "providers": [
+    {
+      "name": "local-ollama",
+      "model": "claude-opus-4-5",
+      "anthropic_base_url": "http://localhost:11434/v1",
+      "health_check_url": "/health"
+    }
+  ],
+  "provider_for_planning": "local-ollama",
+  "provider_for_phases": "local-ollama"
 }
 ```
 
+### All available fields
+
+| Field | Type | Description |
+|---|---|---|
+| `bootstrap` | `string[]` | Shell commands run in the worktree before each phase (e.g. dependency installs) |
+| `sandbox.allowedDomains` | `string[]` | Additional network domains Claude's sandbox may reach |
+| `sandbox.allowWrite` | `string[]` | Additional filesystem paths the sandbox may write to |
+| `dangerously_skip_permissions` | `boolean` | Pass `--dangerously-skip-permissions` to every Claude session (see below) |
+| `providers` | `ProviderEntry[]` | Alternative Claude endpoints/models for this repo (overrides global config) |
+| `provider_for_planning` | `string` | Name of the preferred provider for interactive planning sessions |
+| `provider_for_phases` | `string` | Name of the preferred provider for headless phase and single-prompt runs |
+
+When `providers` is set in `cpe.config.json` it fully replaces the global provider list for that repo. The `provider_for_planning` and `provider_for_phases` fields name the preferred provider for each role; if that provider fails its health check, `cpe` falls back through the list in order.
+
 Run `cpe bootstrap --detect` to have Claude inspect the repo and propose bootstrap commands automatically.
+
+## Providers
+
+Providers let you route `cpe` sessions through alternative Claude endpoints or models — a local Ollama proxy, an internal API gateway, or any service that speaks the Anthropic API.
+
+### Provider fields
+
+| Field | Required | Description |
+|---|---|---|
+| `name` | yes | Identifier used to reference this provider |
+| `model` | no | Passes `--model <value>` to every Claude spawn |
+| `anthropic_base_url` | no | Sets `ANTHROPIC_BASE_URL` in the session environment |
+| `anthropic_api_key` | no | Sets `ANTHROPIC_API_KEY` in the session environment |
+| `anthropic_auth_token` | no | Sets `ANTHROPIC_AUTH_TOKEN` in the session environment |
+| `health_check_url` | no | A full URL or a path relative to `anthropic_base_url`. `cpe` GETs this before each run (5 s timeout, must return 2xx). Providers without a health check are assumed always available. |
+
+### Resolution behaviour
+
+Before each Claude spawn, `cpe` picks a provider as follows:
+
+1. The preferred provider (from `provider_for_planning` or `provider_for_phases`) is tried first.
+2. If it fails its health check, `cpe` tries the remaining providers in list order.
+3. If no provider passes, `cpe` falls back silently to bare Anthropic — no extra environment variables or `--model` flag.
+
+This means you can list a fast local provider first with a health check, and it will be used when available and skipped automatically when it isn't.
+
+### Global vs per-repo config
+
+Providers can be configured globally in `~/.config/cpe/config.json`:
+
+```json
+{
+  "providers": [
+    {
+      "name": "my-proxy",
+      "anthropic_base_url": "https://proxy.example.com",
+      "anthropic_api_key": "sk-...",
+      "health_check_url": "/health"
+    }
+  ],
+  "provider_for_planning": "my-proxy",
+  "provider_for_phases": "my-proxy"
+}
+```
+
+A repo's `cpe.config.json` can override this entirely by defining its own `providers`, `provider_for_planning`, and `provider_for_phases` fields. The repo-level list fully replaces the global list — there is no merging.
+
+### Managing providers
+
+```bash
+cpe provider list             # Show all providers and their assigned roles
+cpe provider add              # Interactive wizard — name, model, URL, API key, health check
+cpe provider remove my-proxy  # Remove by name
+cpe provider test             # Run health checks for all providers
+cpe provider test my-proxy    # Run health check for one provider
+```
+
+`cpe provider list` shows a `Roles` column: **P** = used for planning, **F** = used for phases, **P+F** = both, **—** = not currently assigned to a role.
 
 ## How it works
 
