@@ -10,6 +10,8 @@ import { cleanCommand } from './commands/clean.js';
 import { bootstrapCommand } from './commands/bootstrap.js';
 import { worktreeCommand } from './commands/worktree.js';
 import { promptCommand } from './commands/prompt.js';
+import { updateCommand } from './commands/update.js';
+import { versionCommand } from './commands/version.js';
 import { readQueue, writeQueue } from './storage/queue.js';
 import {
   providerListCommand,
@@ -119,6 +121,16 @@ export function setupCli(): void {
     .option('--stub', 'Write an empty template')
     .option('--edit', 'Open cpe.config.json in $EDITOR')
     .action(wrap(bootstrapCommand));
+
+  program
+    .command('version')
+    .description('Show the current cpe version')
+    .action(wrap(versionCommand));
+
+  program
+    .command('update')
+    .description('Check for updates and optionally upgrade')
+    .action(wrap(updateCommand));
 
   const providerCmd = program
     .command('provider')

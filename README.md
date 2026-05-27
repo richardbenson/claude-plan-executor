@@ -90,6 +90,8 @@ cpe start
 | `cpe provider add` | Add a provider interactively |
 | `cpe provider remove <name>` | Remove a provider by name |
 | `cpe provider test [name]` | Test health checks for all providers, or one by name |
+| `cpe version` | Show the current cpe version |
+| `cpe update` | Check for updates and optionally upgrade |
 
 ## Per-repo configuration
 
