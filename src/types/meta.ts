@@ -72,12 +72,24 @@ export interface AppQueue {
   paused: boolean;
 }
 
+export interface ProviderEntry {
+  name: string;
+  model?: string;
+  anthropic_base_url?: string;
+  anthropic_api_key?: string;
+  anthropic_auth_token?: string;
+  health_check_url?: string;
+}
+
 export interface AppConfig {
   max_retries: number;
   gitea_host?: string;
   target_branch?: string;
   dangerously_skip_permissions?: boolean;
   sandbox?: SandboxConfig;
+  providers?: ProviderEntry[];
+  provider_for_planning?: string;
+  provider_for_phases?: string;
 }
 
 export const DEFAULT_CONFIG: AppConfig = {

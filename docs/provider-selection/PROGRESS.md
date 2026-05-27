@@ -2,18 +2,18 @@
 
 | # | Title | Status | Branch | Depends on | Started | Completed | Notes |
 |---|---|---|---|---|---|---|---|
-| 1 | Provider types & resolver | not-started | feature/provider-selection | — | — | — | — |
+| 1 | Provider types & resolver | complete | feature/provider-selection | — | 2026-05-27 | 2026-05-27 | — |
 | 2 | Wire provider into all sessions | not-started | feature/provider-selection | 1 | — | — | — |
 | 3 | `cpe provider` CLI subcommand | not-started | feature/provider-selection | 1 | — | — | — |
 
 ## Phase Details
 
 ### Phase 1 — Provider types & resolver
-**Status:** not-started
+**Status:** complete
 **Branch:** feature/provider-selection
 **Dependencies:** —
-**Date started:** —
-**Date completed:** —
+**Date started:** 2026-05-27
+**Date completed:** 2026-05-27
 **Notes:** —
 
 ### Phase 2 — Wire provider into all sessions

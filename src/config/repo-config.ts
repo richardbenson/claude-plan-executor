@@ -8,6 +8,9 @@ export interface RepoConfig {
   bootstrap: string[];
   sandbox?: import('../types/meta.js').SandboxConfig;
   dangerously_skip_permissions?: boolean;
+  providers?: import('../types/meta.js').ProviderEntry[];
+  provider_for_planning?: string;
+  provider_for_phases?: string;
 }
 
 export interface BootstrapDetectResult {
