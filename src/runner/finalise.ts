@@ -3,13 +3,15 @@ import * as os from 'os';
 import * as path from 'path';
 import { readMeta, updateMeta, getLogsDir } from '../storage/meta.js';
 import { SUMMARISE_PROMPT } from '../prompts/index.js';
+import { resolveProvider } from './provider.js';
 import type { ActivityBus } from '../events/bus.js';
+import type { AppConfig } from '../types/meta.js';
 
 export interface FinaliseResult {
   prUrl: string;
 }
 
-export async function finaliseRun(runId: string, bus: ActivityBus): Promise<FinaliseResult> {
+export async function finaliseRun(runId: string, bus: ActivityBus, appConfig?: AppConfig): Promise<FinaliseResult> {
   updateMeta(runId, { status: 'finalising' });
   const meta = readMeta(runId);
 
@@ -38,11 +40,22 @@ export async function finaliseRun(runId: string, bus: ActivityBus): Promise<Fina
   const logPath = path.join(getLogsDir(runId), 'finalise.log');
   fs.mkdirSync(path.dirname(logPath), { recursive: true });
   const logFd = fs.openSync(logPath, 'w');
-  const proc = Bun.spawn(['claude', '-p', '--dangerously-skip-permissions'], {
+
+  const provider = appConfig
+    ? await resolveProvider(appConfig.providers ?? [], 'phase', appConfig.provider_for_phases)
+    : null;
+  const providerEnv = provider?.env ?? {};
+  const spawnEnv = Object.keys(providerEnv).length > 0
+    ? { ...process.env, ...providerEnv }
+    : undefined;
+  const modelArgs = provider?.modelArgs ?? [];
+
+  const proc = Bun.spawn(['claude', '-p', '--dangerously-skip-permissions', ...modelArgs], {
     cwd: worktreePath,
     stdin: fs.openSync(tmpFile, 'r'),
     stdout: logFd,
     stderr: logFd,
+    ...(spawnEnv ? { env: spawnEnv } : {}),
   });
   const exitCode = await proc.exited;
   try { fs.closeSync(logFd); } catch { /* ignore */ }

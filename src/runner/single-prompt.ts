@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { readMeta, updateMeta, getLogsDir } from '../storage/meta.js';
 import { runSession } from './session.js';
+import { resolveProvider } from './provider.js';
 import { classifyEnvelope } from './envelope.js';
 import { handleRateLimit } from './limit.js';
 import { startJsonlTail } from './jsonl-tail.js';
@@ -98,6 +99,11 @@ export async function runSinglePrompt(
 
   // STEP 8 — spawn session with combined prompt
   const logPath = path.join(getLogsDir(runId), 'single-prompt.log');
+  const provider = await resolveProvider(
+    appConfig.providers ?? [],
+    'phase',
+    appConfig.provider_for_phases,
+  );
   const sessionPromise = runSession({
     worktreePath: meta.worktree_path,
     promptFile: tmpFile,
@@ -105,6 +111,7 @@ export async function runSinglePrompt(
     logPath,
     schema: SINGLE_PROMPT_RESULT_SCHEMA,
     dangerouslySkipPermissions: appConfig.dangerously_skip_permissions,
+    provider,
   });
 
   // STEP 9 — start JSONL tail for activity feed

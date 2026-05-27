@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { BOOTSTRAP_DETECT_SCHEMA, BOOTSTRAP_DETECT_PROMPT } from '../prompts/index.js';
+import type { ResolvedProvider } from '../runner/provider.js';
 
 export const REPO_CONFIG_FILENAME = 'cpe.config.json';
 
@@ -8,6 +9,9 @@ export interface RepoConfig {
   bootstrap: string[];
   sandbox?: import('../types/meta.js').SandboxConfig;
   dangerously_skip_permissions?: boolean;
+  providers?: import('../types/meta.js').ProviderEntry[];
+  provider_for_planning?: string;
+  provider_for_phases?: string;
 }
 
 export interface BootstrapDetectResult {
@@ -107,14 +111,21 @@ export async function runBootstrap(
   return { success: true };
 }
 
-export async function detectBootstrap(repoPath: string): Promise<BootstrapDetectResult> {
+export async function detectBootstrap(repoPath: string, provider?: ResolvedProvider | null): Promise<BootstrapDetectResult> {
+  const providerEnv = provider?.env ?? {};
+  const spawnEnv = Object.keys(providerEnv).length > 0
+    ? { ...process.env, ...providerEnv }
+    : undefined;
+  const modelArgs = provider?.modelArgs ?? [];
+
   const proc = Bun.spawn(
-    ['claude', '-p', '--output-format=json', '--json-schema', BOOTSTRAP_DETECT_SCHEMA],
+    ['claude', '-p', '--output-format=json', '--json-schema', BOOTSTRAP_DETECT_SCHEMA, ...modelArgs],
     {
       cwd: repoPath,
       stdin: new TextEncoder().encode(BOOTSTRAP_DETECT_PROMPT),
       stdout: 'pipe',
       stderr: 'pipe',
+      ...(spawnEnv ? { env: spawnEnv } : {}),
     },
   );
 
@@ -154,7 +165,7 @@ const STUB_CONTENT = `{
 }
 `;
 
-export async function ensureRepoConfig(repoPath: string, _giteaHost?: string): Promise<RepoConfig> {
+export async function ensureRepoConfig(repoPath: string, _giteaHost?: string, provider?: ResolvedProvider | null): Promise<RepoConfig> {
   const existing = readRepoConfig(repoPath);
   if (existing) return existing;
 
@@ -171,7 +182,7 @@ export async function ensureRepoConfig(repoPath: string, _giteaHost?: string): P
     process.stdout.write('\nDetecting bootstrap commands...\n');
     let result: BootstrapDetectResult;
     try {
-      result = await detectBootstrap(repoPath);
+      result = await detectBootstrap(repoPath, provider);
     } catch (err) {
       process.stderr.write(`Detection failed: ${err}\n`);
       return stubAndReturn(repoPath);

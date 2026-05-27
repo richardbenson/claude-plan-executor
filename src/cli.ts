@@ -11,6 +11,12 @@ import { bootstrapCommand } from './commands/bootstrap.js';
 import { worktreeCommand } from './commands/worktree.js';
 import { promptCommand } from './commands/prompt.js';
 import { readQueue, writeQueue } from './storage/queue.js';
+import {
+  providerListCommand,
+  providerAddCommand,
+  providerRemoveCommand,
+  providerTestCommand,
+} from './commands/provider.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function wrap(fn: (...args: any[]) => Promise<void>) {
@@ -113,4 +119,28 @@ export function setupCli(): void {
     .option('--stub', 'Write an empty template')
     .option('--edit', 'Open cpe.config.json in $EDITOR')
     .action(wrap(bootstrapCommand));
+
+  const providerCmd = program
+    .command('provider')
+    .description('Manage Claude providers (alternative models / API endpoints)');
+
+  providerCmd
+    .command('list')
+    .description('List configured providers')
+    .action(wrap(providerListCommand));
+
+  providerCmd
+    .command('add')
+    .description('Add a provider interactively')
+    .action(wrap(providerAddCommand));
+
+  providerCmd
+    .command('remove <name>')
+    .description('Remove a provider by name')
+    .action(wrap(providerRemoveCommand));
+
+  providerCmd
+    .command('test [name]')
+    .description('Test provider health checks (all providers, or one by name)')
+    .action(wrap(providerTestCommand));
 }

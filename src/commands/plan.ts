@@ -13,7 +13,8 @@ import {
 } from '../git/worktree.js';
 import { readConfig } from '../storage/config.js';
 import { getLogsDir } from '../storage/meta.js';
-import { ensureRepoConfig, runBootstrap } from '../config/repo-config.js';
+import { ensureRepoConfig, readRepoConfig, runBootstrap } from '../config/repo-config.js';
+import { resolveProvider } from '../runner/provider.js';
 import { PLANBOT_PROMPT } from '../prompts/index.js';
 import { queuePlan } from './queue.js';
 import { openLiveBox } from '../cli/live-box.js';
@@ -81,7 +82,13 @@ export async function planCommand(details: string[], options?: { disableSandbox?
   }
 
   const config = readConfig();
-  const repoConfig = await ensureRepoConfig(repoPath, config.gitea_host);
+  const existingRepoConfig = readRepoConfig(repoPath);
+
+  const effectiveProviders = existingRepoConfig?.providers ?? config.providers ?? [];
+  const effectiveProviderName = existingRepoConfig?.provider_for_planning ?? config.provider_for_planning;
+  const provider = await resolveProvider(effectiveProviders, 'planning', effectiveProviderName);
+
+  const repoConfig = await ensureRepoConfig(repoPath, config.gitea_host, provider);
 
   const runId = ulid();
   const tempBranch = 'cpe/planning-' + Date.now();
@@ -140,11 +147,18 @@ export async function planCommand(details: string[], options?: { disableSandbox?
   process.stdout.write('\nPress Enter to start...');
   readOneLine();
 
-  const proc = Bun.spawn(['claude'], {
+  const providerEnv = provider?.env ?? {};
+  const spawnEnv = Object.keys(providerEnv).length > 0
+    ? { ...process.env, ...providerEnv }
+    : undefined;
+  const modelArgs = provider?.modelArgs ?? [];
+
+  const proc = Bun.spawn(['claude', ...modelArgs], {
     cwd: worktreePath,
     stdin: Bun.file(tmpFile),
     stdout: 'inherit',
     stderr: 'inherit',
+    ...(spawnEnv ? { env: spawnEnv } : {}),
   });
   await proc.exited;
   const exitCode = proc.exitCode;
