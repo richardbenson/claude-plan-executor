@@ -72,9 +72,19 @@ export async function runQueueProcessor(config: AppConfig, bus: ActivityBus): Pr
     const meta = readMeta(runId);
 
     const repoConfig = readRepoConfig(meta.primary_repo_path);
-    const effectiveConfig: AppConfig = (repoConfig?.dangerously_skip_permissions && !config.dangerously_skip_permissions)
-      ? { ...config, dangerously_skip_permissions: true }
-      : config;
+    const effectiveConfig: AppConfig = {
+      ...config,
+      ...(repoConfig?.dangerously_skip_permissions && !config.dangerously_skip_permissions
+        ? { dangerously_skip_permissions: true }
+        : {}),
+      ...(repoConfig?.providers !== undefined
+        ? {
+            providers: repoConfig.providers,
+            provider_for_planning: repoConfig.provider_for_planning ?? config.provider_for_planning,
+            provider_for_phases: repoConfig.provider_for_phases ?? config.provider_for_phases,
+          }
+        : {}),
+    };
 
     if (!reconciledRepos.has(meta.primary_repo_path)) {
       reconciledRepos.add(meta.primary_repo_path);
@@ -147,7 +157,7 @@ export async function runQueueProcessor(config: AppConfig, bus: ActivityBus): Pr
       const finalMeta = readMeta(runId);
       if ((finalMeta.phases ?? []).every(p => p.status === 'complete')) {
         try {
-          await finaliseRun(runId, bus);
+          await finaliseRun(runId, bus, effectiveConfig);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           updateMeta(runId, { status: 'failed' });

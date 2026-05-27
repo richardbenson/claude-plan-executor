@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseEnvelope, type ClaudeEnvelope } from './envelope.js';
+import type { ResolvedProvider } from './provider.js';
 
 export interface SessionOpts {
   worktreePath: string;
@@ -9,6 +10,7 @@ export interface SessionOpts {
   logPath: string;
   schema: string;
   dangerouslySkipPermissions?: boolean;
+  provider?: ResolvedProvider | null;
 }
 
 export interface SessionResult {
@@ -27,6 +29,11 @@ export async function runSession(opts: SessionOpts): Promise<SessionResult> {
 
   const logStream = fs.createWriteStream(opts.logPath, { flags: 'a' });
 
+  const providerEnvVars: Record<string, string> = opts.provider?.env ?? {};
+  const env = Object.keys(providerEnvVars).length > 0
+    ? { ...process.env, ...providerEnvVars }
+    : undefined;
+
   const args = [
     'claude',
     '-p',
@@ -38,19 +45,19 @@ export async function runSession(opts: SessionOpts): Promise<SessionResult> {
     opts.schema,
     '--input-format',
     'text',
+    ...(opts.provider?.modelArgs ?? []),
   ];
   if (opts.dangerouslySkipPermissions) {
     args.push('--dangerously-skip-permissions');
   }
 
-  const proc = Bun.spawn(args,
-    {
-      cwd: opts.worktreePath,
-      stdin: Bun.file(opts.promptFile),
-      stdout: 'pipe',
-      stderr: 'pipe',
-    },
-  );
+  const proc = Bun.spawn(args, {
+    cwd: opts.worktreePath,
+    stdin: Bun.file(opts.promptFile),
+    stdout: 'pipe',
+    stderr: 'pipe',
+    ...(env ? { env } : {}),
+  });
 
   // Stream stderr to log file
   const stderrDone = (async () => {

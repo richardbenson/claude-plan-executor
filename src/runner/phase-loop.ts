@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { readMeta, updateMeta, updatePhase, getLogsDir } from '../storage/meta.js';
 import { runSession } from './session.js';
+import { resolveProvider } from './provider.js';
 import { classifyEnvelope } from './envelope.js';
 import { handleRateLimit } from './limit.js';
 import { startJsonlTail } from './jsonl-tail.js';
@@ -105,6 +106,12 @@ export async function runPhase(
     effectivePromptFile = tmpPath;
   }
 
+  const provider = await resolveProvider(
+    appConfig.providers ?? [],
+    'phase',
+    appConfig.provider_for_phases,
+  );
+
   const sessionPromise = runSession({
     worktreePath: meta.worktree_path,
     promptFile: effectivePromptFile,
@@ -112,6 +119,7 @@ export async function runPhase(
     logPath,
     schema: PHASE_RESULT_SCHEMA,
     dangerouslySkipPermissions: appConfig.dangerously_skip_permissions,
+    provider,
   });
 
   // STEP 6 — start JSONL tail (Claude is already starting; file appears within seconds)
@@ -274,24 +282,35 @@ export async function resumeOrRestart(
   const { createWriteStream } = await import('fs');
   const logStream = createWriteStream(logPath, { flags: 'a' });
 
-  const proc = Bun.spawn(
-    [
-      'claude',
-      '--resume',
-      entry.session_id!,
-      '-p',
-      '--output-format',
-      'json',
-      '--json-schema',
-      schema,
-    ],
-    {
-      cwd: meta.worktree_path,
-      stdin: Bun.file(tmpFile),
-      stdout: 'pipe',
-      stderr: 'pipe',
-    },
+  const provider = await resolveProvider(
+    appConfig.providers ?? [],
+    'phase',
+    appConfig.provider_for_phases,
   );
+  const providerEnv = provider?.env ?? {};
+  const spawnEnv = Object.keys(providerEnv).length > 0
+    ? { ...process.env, ...providerEnv }
+    : undefined;
+
+  const resumeArgs = [
+    'claude',
+    '--resume',
+    entry.session_id!,
+    '-p',
+    '--output-format',
+    'json',
+    '--json-schema',
+    schema,
+    ...(provider?.modelArgs ?? []),
+  ];
+
+  const proc = Bun.spawn(resumeArgs, {
+    cwd: meta.worktree_path,
+    stdin: Bun.file(tmpFile),
+    stdout: 'pipe',
+    stderr: 'pipe',
+    ...(spawnEnv ? { env: spawnEnv } : {}),
+  });
 
   const stderrDone = (async () => {
     for await (const chunk of proc.stderr) {
