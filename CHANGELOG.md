@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.4.0
+
+### Features
+
+- **Alternative provider support** — `cpe` can now route sessions through alternative Claude API providers (e.g. OpenRouter). Configure a provider globally in `~/.config/cpe/config.json` or per-repo in `cpe.config.json` using the new `provider` field.
+- **Health-checked routing** — before starting a session, `cpe` verifies the configured provider is reachable. If health check fails, it falls back to the default Anthropic endpoint automatically.
+- **`cpe provider` CLI** — new subcommand for managing providers: `cpe provider list` shows configured providers and their health status, `cpe provider set` sets the active provider globally or per-repo, and `cpe provider test` runs a health check on demand.
+
 ## v0.3.0
 
 ### Features
