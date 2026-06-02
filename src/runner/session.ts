@@ -29,6 +29,8 @@ export async function runSession(opts: SessionOpts): Promise<SessionResult> {
 
   const logStream = fs.createWriteStream(opts.logPath, { flags: 'a' });
 
+  const promptContent = fs.readFileSync(opts.promptFile, 'utf-8');
+
   const providerEnvVars: Record<string, string> = opts.provider?.env ?? {};
   const env = Object.keys(providerEnvVars).length > 0
     ? { ...process.env, ...providerEnvVars }
@@ -37,14 +39,13 @@ export async function runSession(opts: SessionOpts): Promise<SessionResult> {
   const args = [
     'claude',
     '-p',
+    promptContent,
     '--session-id',
     opts.sessionId,
     '--output-format',
     'json',
     '--json-schema',
     opts.schema,
-    '--input-format',
-    'text',
     ...(opts.provider?.modelArgs ?? []),
   ];
   if (opts.dangerouslySkipPermissions) {
@@ -53,7 +54,7 @@ export async function runSession(opts: SessionOpts): Promise<SessionResult> {
 
   const proc = Bun.spawn(args, {
     cwd: opts.worktreePath,
-    stdin: Bun.file(opts.promptFile),
+    stdin: null,
     stdout: 'pipe',
     stderr: 'pipe',
     ...(env ? { env } : {}),
