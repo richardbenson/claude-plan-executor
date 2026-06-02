@@ -31,7 +31,7 @@ export const claudeCodeHarness: Harness = {
       throw new Error('claude-code harness requires a schema (structured mode)');
     }
 
-    const modelArgs = ctx.model ? ['--model', ctx.model] : [];
+    const modelArgs = ctx.modelArgs ?? (ctx.model ? ['--model', ctx.model] : []);
     const provider: ResolvedProvider = {
       name: ctx.model ?? 'claude-code',
       env: ctx.providerEnv,
@@ -44,6 +44,7 @@ export const claudeCodeHarness: Harness = {
       sessionId: ctx.sessionId,
       logPath: ctx.logPath,
       schema: ctx.schema,
+      dangerouslySkipPermissions: ctx.dangerouslySkipPermissions,
       provider,
     });
 

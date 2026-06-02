@@ -2,8 +2,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { readMeta, updateMeta, getLogsDir } from '../storage/meta.js';
-import { runSession } from './session.js';
 import { resolveProvider } from './provider.js';
+import * as harnessRegistry from '../harness/registry.js';
 import { classifyEnvelope } from './envelope.js';
 import { handleRateLimit } from './limit.js';
 import { startJsonlTail } from './jsonl-tail.js';
@@ -62,6 +62,18 @@ export async function runSinglePrompt(
     return { outcome: 'failed', reason: 'no prompt found in metadata' };
   }
 
+  // Resolve the harness adapter up front so an unknown harness fails fast,
+  // before any execution. Defaults to claude-code, preserving current behaviour.
+  const harnessName = meta.harness ?? appConfig.harness_for_phases ?? 'claude-code';
+  let adapter;
+  try {
+    adapter = harnessRegistry.get(harnessName);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    await markFailed(runId, reason, bus);
+    return { outcome: 'failed', reason };
+  }
+
   // STEP 2 — inject user prompt and optional GitHub issue section into template
   const githubIssueSection = meta.github_issue_number
     ? `Include \`Closes #${meta.github_issue_number}\` in the PR body so GitHub automatically closes the issue when the PR is merged.`
@@ -104,23 +116,36 @@ export async function runSinglePrompt(
     'phase',
     appConfig.provider_for_phases,
   );
-  const sessionPromise = runSession({
-    worktreePath: meta.worktree_path,
+  const sessionPromise = adapter.run({
+    cwd: meta.worktree_path,
     promptFile: tmpFile,
     sessionId: uuid,
     logPath,
     schema: SINGLE_PROMPT_RESULT_SCHEMA,
     dangerouslySkipPermissions: appConfig.dangerously_skip_permissions,
-    provider,
+    providerEnv: provider?.env ?? {},
+    modelArgs: provider?.modelArgs ?? [],
   });
 
   // STEP 9 — start JSONL tail for activity feed
   const stopTail = await startJsonlTail(uuid, meta.worktree_path, runId, -1, bus, logPath);
 
   // STEP 10 — await session completion then stop tail
-  const result = await sessionPromise;
+  const harnessResult = await sessionPromise;
   stopTail();
   try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+
+  // Structured adapters (claude-code) carry the parsed envelope; the downstream
+  // classification path consumes it exactly as the SessionResult did before.
+  if (!harnessResult.envelope) {
+    await markFailed(
+      runId,
+      `harness '${adapter.name}' did not return a structured result (single-prompt requires structured mode)`,
+      bus,
+    );
+    return { outcome: 'failed', reason: 'harness returned no structured envelope' };
+  }
+  const result = { envelope: harnessResult.envelope, exitCode: harnessResult.exitCode };
 
   // STEP 11 — classify envelope
   const classified = classifyEnvelope(result.envelope);

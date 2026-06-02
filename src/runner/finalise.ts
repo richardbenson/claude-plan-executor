@@ -4,6 +4,7 @@ import * as path from 'path';
 import { readMeta, updateMeta, getLogsDir } from '../storage/meta.js';
 import { SUMMARISE_PROMPT } from '../prompts/index.js';
 import { resolveProvider } from './provider.js';
+import * as harnessRegistry from '../harness/registry.js';
 import type { ActivityBus } from '../events/bus.js';
 import type { AppConfig } from '../types/meta.js';
 
@@ -22,6 +23,26 @@ export async function finaliseRun(runId: string, bus: ActivityBus, appConfig?: A
     phaseNumber: -1,
     phaseName: 'finalise',
   });
+
+  // The summarise step is claude/planbot-specific (a schema-less `claude -p`
+  // invocation reading the prompt from stdin). Resolve the adapter and only run
+  // summarise for structured adapters; opaque harnesses skip it explicitly. We
+  // deliberately keep the existing claude summarise spawn untouched here (rather
+  // than routing it through adapter.run(), which is the structured json-schema
+  // path) so the regression gate holds byte-for-byte for claude-code.
+  const harnessName = meta.harness ?? appConfig?.harness_for_phases ?? 'claude-code';
+  const adapter = harnessRegistry.get(harnessName);
+  if (adapter.completionMode !== 'structured') {
+    bus.emit({
+      kind: 'text',
+      timestamp: new Date(),
+      runId,
+      phaseNumber: -1,
+      text: `skipping summarise: harness '${adapter.name}' is opaque (no structured summarise step)`,
+    });
+    updateMeta(runId, { status: 'complete' });
+    return { prUrl: '' };
+  }
 
   const { plan_folder: planFolder = '', worktree_path: worktreePath } = meta;
   const featureBranch = meta.feature_branch;

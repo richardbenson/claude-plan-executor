@@ -27,8 +27,17 @@ export interface HarnessContext {
   promptFile?: string;
   /** Model identifier to run, when the harness/provider supports selection. */
   model?: string;
+  /**
+   * Pre-resolved CLI model args (e.g. `['--model', 'sonnet']`) derived from the
+   * provider config. When present, structured adapters pass these through
+   * verbatim; this preserves the existing provider-driven model selection. Takes
+   * precedence over `model` for the claude-code adapter.
+   */
+  modelArgs?: string[];
   /** Provider env vars to inject into the spawned process (e.g. ANTHROPIC_BASE_URL). */
   providerEnv: Record<string, string>;
+  /** Whether to pass `--dangerously-skip-permissions` to the harness CLI. */
+  dangerouslySkipPermissions?: boolean;
   /** Stable session identifier for this invocation. */
   sessionId: string;
   /** Path the harness should append its raw output / logs to. */

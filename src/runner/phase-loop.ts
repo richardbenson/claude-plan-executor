@@ -2,8 +2,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { readMeta, updateMeta, updatePhase, getLogsDir } from '../storage/meta.js';
-import { runSession } from './session.js';
 import { resolveProvider } from './provider.js';
+import * as harnessRegistry from '../harness/registry.js';
 import { classifyEnvelope } from './envelope.js';
 import { handleRateLimit } from './limit.js';
 import { startJsonlTail } from './jsonl-tail.js';
@@ -68,6 +68,19 @@ export async function runPhase(
   if (!phaseEntry) {
     throw new Error(`Phase ${phaseNumber} not found in run ${runId}`);
   }
+
+  // Resolve the harness adapter up front so an unknown harness fails fast,
+  // before any execution. Defaults to claude-code, preserving current behaviour.
+  const harnessName = meta.harness ?? appConfig.harness_for_phases ?? 'claude-code';
+  let adapter;
+  try {
+    adapter = harnessRegistry.get(harnessName);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    await markPhaseFailed(runId, phaseNumber, reason, bus);
+    return { outcome: 'failed', reason };
+  }
+
   updateMeta(runId, { status: 'executing' });
   updatePhase(runId, phaseNumber, { status: 'executing', started_at: new Date().toISOString() });
   bus.emit({
@@ -112,25 +125,39 @@ export async function runPhase(
     appConfig.provider_for_phases,
   );
 
-  const sessionPromise = runSession({
-    worktreePath: meta.worktree_path,
+  const sessionPromise = adapter.run({
+    cwd: meta.worktree_path,
     promptFile: effectivePromptFile,
     sessionId: uuid,
     logPath,
     schema: PHASE_RESULT_SCHEMA,
     dangerouslySkipPermissions: appConfig.dangerously_skip_permissions,
-    provider,
+    providerEnv: provider?.env ?? {},
+    modelArgs: provider?.modelArgs ?? [],
   });
 
   // STEP 6 — start JSONL tail (Claude is already starting; file appears within seconds)
   const stopTail = await startJsonlTail(uuid, meta.worktree_path, runId, phaseNumber, bus, logPath);
 
   // STEP 7 — await session completion then stop tail
-  const result = await sessionPromise;
+  const harnessResult = await sessionPromise;
   stopTail();
   if (effectivePromptFile !== promptFile) {
     try { fs.unlinkSync(effectivePromptFile); } catch { /* ignore */ }
   }
+
+  // Structured adapters (claude-code) carry the parsed envelope; the downstream
+  // classification path consumes it exactly as the SessionResult did before.
+  if (!harnessResult.envelope) {
+    await markPhaseFailed(
+      runId,
+      phaseNumber,
+      `harness '${adapter.name}' did not return a structured result (phase execution requires structured mode)`,
+      bus,
+    );
+    return { outcome: 'failed', reason: 'harness returned no structured envelope' };
+  }
+  const result = { envelope: harnessResult.envelope, exitCode: harnessResult.exitCode };
 
   // STEP 8 — classify envelope
   const classified = classifyEnvelope(result.envelope);

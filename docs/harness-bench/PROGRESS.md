@@ -9,7 +9,7 @@ no per-phase branches, no per-phase PRs (we build and test locally; nobody else 
 | Phase | Title | Status | Depends on |
 |-------|-------|--------|-----------|
 | 01 | Run parameterization + Harness contract & registry | complete | - |
-| 02 | Executor dispatch refactor (single-prompt + phase-loop) | not-started | 01 |
+| 02 | Executor dispatch refactor (single-prompt + phase-loop) | complete | 01 |
 | 03 | Anthropic->Ollama proxy + local-model provider preset | not-started | 02 |
 | 04 | Clone isolation + capture + branch push + activity-timeout + pause | not-started | 02 |
 | 05 | Matrix / bench command + summary table | not-started | 04 |
@@ -41,9 +41,15 @@ full set rather than stopping at plandex.
 - Notes: Added Harness contract (src/harness/types.ts), registry + claude-code adapter, persisted {harness,model,provider} on RunMeta via --harness/--model/--provider on plan/queue/prompt. No runtime dispatch change yet (Phase 02). Registry test added; existing tests unchanged.
 
 ### Phase 02
-- Status: not-started
-- Started: - / Completed: -
-- Notes: Regression gate - existing claude tests must pass unchanged.
+- Status: complete
+- Started: 2026-06-02 / Completed: 2026-06-02
+- Notes: Regression gate passed - full suite (43 tests, incl. envelope/jsonl-tail) passes unchanged;
+  build/typecheck/lint clean. single-prompt.ts and phase-loop.ts now resolve the adapter via
+  registry.get(meta.harness ?? harness_for_phases ?? 'claude-code') and dispatch through adapter.run();
+  the claude-code adapter forwards byte-for-byte identical args to runSession (provider env + modelArgs +
+  skipPermissions), so default claude runs are unchanged. finalise.ts gates summarise to structured
+  adapters (opaque -> skip + 'text' info event). resumeOrRestart left claude-specific (rate-limit resume,
+  not part of the contract this phase). Unknown harness fails fast via existing error paths.
 
 ### Phase 03
 - Status: not-started
