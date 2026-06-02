@@ -11,6 +11,7 @@ import { openLiveBox } from '../cli/live-box.js';
 import type { LiveBox } from '../cli/live-box.js';
 import { buildSandboxSettings, injectSandboxSettings } from '../runner/sandbox.js';
 import { fetchGitHubIssue } from '../vcs/github.js';
+import { resolveRunOptions } from '../harness/run-options.js';
 import type { RunMeta } from '../types/meta.js';
 
 async function readStdin(): Promise<string> {
@@ -23,8 +24,9 @@ async function readStdin(): Promise<string> {
 
 export async function promptCommand(
   text: string[],
-  options?: { disableSandbox?: boolean; githubIssue?: string },
+  options?: { disableSandbox?: boolean; githubIssue?: string; harness?: string; model?: string; provider?: string },
 ): Promise<void> {
+  const runOptions = resolveRunOptions(options);
   let prompt: string;
   let promptSource: RunMeta['prompt_source'] = 'free-text';
   let githubIssueNumber: number | undefined;
@@ -141,6 +143,9 @@ export async function promptCommand(
     skip_permissions: skipPermissions || undefined,
     prompt,
     prompt_source: promptSource,
+    ...(runOptions.harness !== undefined ? { harness: runOptions.harness } : {}),
+    ...(runOptions.model !== undefined ? { model: runOptions.model } : {}),
+    ...(runOptions.provider !== undefined ? { provider: runOptions.provider } : {}),
   };
   if (githubIssueNumber !== undefined) meta.github_issue_number = githubIssueNumber;
   writeMeta(runId, meta);

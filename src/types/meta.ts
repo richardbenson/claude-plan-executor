@@ -59,6 +59,9 @@ export interface RunMeta {
   prompt_source?: 'free-text' | 'github-issue' | 'clipboard';
   github_issue_number?: number;
   pr_url?: string;
+  harness?: string;
+  model?: string;
+  provider?: string;
 }
 
 export interface QueueEntry {
@@ -90,10 +93,14 @@ export interface AppConfig {
   providers?: ProviderEntry[];
   provider_for_planning?: string;
   provider_for_phases?: string;
+  harness_for_planning?: string;
+  harness_for_phases?: string;
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
   max_retries: 1,
+  harness_for_planning: 'claude-code',
+  harness_for_phases: 'claude-code',
   sandbox: {
     enabled: true,
     allowedDomains: [

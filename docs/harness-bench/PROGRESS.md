@@ -8,7 +8,7 @@ no per-phase branches, no per-phase PRs (we build and test locally; nobody else 
 
 | Phase | Title | Status | Depends on |
 |-------|-------|--------|-----------|
-| 01 | Run parameterization + Harness contract & registry | not-started | - |
+| 01 | Run parameterization + Harness contract & registry | complete | - |
 | 02 | Executor dispatch refactor (single-prompt + phase-loop) | not-started | 01 |
 | 03 | Anthropic->Ollama proxy + local-model provider preset | not-started | 02 |
 | 04 | Clone isolation + capture + branch push + activity-timeout + pause | not-started | 02 |
@@ -36,9 +36,9 @@ full set rather than stopping at plandex.
 ## Per-phase notes
 
 ### Phase 01
-- Status: not-started
-- Started: - / Completed: -
-- Notes:
+- Status: complete
+- Started: 2026-06-02 / Completed: 2026-06-02
+- Notes: Added Harness contract (src/harness/types.ts), registry + claude-code adapter, persisted {harness,model,provider} on RunMeta via --harness/--model/--provider on plan/queue/prompt. No runtime dispatch change yet (Phase 02). Registry test added; existing tests unchanged.
 
 ### Phase 02
 - Status: not-started

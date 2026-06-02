@@ -12,6 +12,8 @@ import type { LiveBox } from '../cli/live-box.js';
 import { buildSandboxSettings, injectSandboxSettings } from '../runner/sandbox.js';
 import type { AppConfig } from '../types/meta.js';
 import type { RepoConfig } from '../config/repo-config.js';
+import { resolveRunOptions } from '../harness/run-options.js';
+import type { RunHarnessOptions } from '../harness/run-options.js';
 
 function readLine(): string {
   const buf = Buffer.alloc(1024);
@@ -67,6 +69,7 @@ export async function queuePlan(
   config: AppConfig,
   repoConfig: RepoConfig,
   noSandbox: boolean = false,
+  runOptions: RunHarnessOptions = {},
 ): Promise<void> {
   const logPath = path.join(getLogsDir(runId), 'bootstrap.log');
   let box: LiveBox | null = null;
@@ -137,6 +140,9 @@ export async function queuePlan(
     sandboxed,
     skip_permissions: skipPermissions || undefined,
     phases,
+    ...(runOptions.harness !== undefined ? { harness: runOptions.harness } : {}),
+    ...(runOptions.model !== undefined ? { model: runOptions.model } : {}),
+    ...(runOptions.provider !== undefined ? { provider: runOptions.provider } : {}),
   });
 
   // Commit docs folder to feature branch inside worktree
@@ -150,7 +156,11 @@ export async function queuePlan(
   console.log("Run `cpe start` to begin execution.");
 }
 
-export async function queueCommand(folder?: string, options?: { disableSandbox?: boolean }): Promise<void> {
+export async function queueCommand(
+  folder?: string,
+  options?: { disableSandbox?: boolean; harness?: string; model?: string; provider?: string },
+): Promise<void> {
+  const runOptions = resolveRunOptions(options);
   let repoPath: string;
   try {
     repoPath = getPrimaryRepo();
@@ -207,5 +217,5 @@ export async function queueCommand(folder?: string, options?: { disableSandbox?:
     process.exit(1);
   }
 
-  await queuePlan(repoPath, folder, runId, worktreePath, config, repoConfig, options?.disableSandbox ?? false);
+  await queuePlan(repoPath, folder, runId, worktreePath, config, repoConfig, options?.disableSandbox ?? false, runOptions);
 }

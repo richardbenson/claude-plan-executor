@@ -41,12 +41,18 @@ export function setupCli(): void {
     .command('plan [details...]')
     .description('Create a new plan interactively')
     .option('--disable-sandbox', 'Skip sandbox injection for this run')
+    .option('--provider <name>', 'Provider to use for this run')
+    .option('--model <model>', 'Model to use for this run')
+    .option('--harness <name>', 'Harness adapter to use for this run')
     .action(wrap(planCommand));
 
   program
     .command('queue [folder]')
     .description('Add a plan to the queue')
     .option('--disable-sandbox', 'Skip sandbox injection for this run')
+    .option('--provider <name>', 'Provider to use for this run')
+    .option('--model <model>', 'Model to use for this run')
+    .option('--harness <name>', 'Harness adapter to use for this run')
     .action(wrap(queueCommand));
 
   program
@@ -54,6 +60,9 @@ export function setupCli(): void {
     .description('Queue a single-prompt run (pass as args, pipe via stdin, or use --github-issue)')
     .option('--disable-sandbox', 'Skip sandbox injection for this run')
     .option('--github-issue <number>', 'Fetch a GitHub issue by number and use it as the prompt')
+    .option('--provider <name>', 'Provider to use for this run')
+    .option('--model <model>', 'Model to use for this run')
+    .option('--harness <name>', 'Harness adapter to use for this run')
     .action(wrap(promptCommand));
 
   program

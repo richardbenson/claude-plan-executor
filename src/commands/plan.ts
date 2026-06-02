@@ -15,6 +15,7 @@ import { readConfig } from '../storage/config.js';
 import { getLogsDir } from '../storage/meta.js';
 import { ensureRepoConfig, readRepoConfig, runBootstrap } from '../config/repo-config.js';
 import { resolveProvider } from '../runner/provider.js';
+import { resolveRunOptions } from '../harness/run-options.js';
 import { PLANBOT_PROMPT } from '../prompts/index.js';
 import { queuePlan } from './queue.js';
 import { openLiveBox } from '../cli/live-box.js';
@@ -56,7 +57,11 @@ function listDocsFolders(worktreePath: string): Set<string> {
   }
 }
 
-export async function planCommand(details: string[], options?: { disableSandbox?: boolean }): Promise<void> {
+export async function planCommand(
+  details: string[],
+  options?: { disableSandbox?: boolean; harness?: string; model?: string; provider?: string },
+): Promise<void> {
+  const runOptions = resolveRunOptions(options);
   let planDetails: string;
 
   if (details.length === 0) {
@@ -201,7 +206,7 @@ export async function planCommand(details: string[], options?: { disableSandbox?
   if (answer.toLowerCase() === 'n') {
     console.log('Run `cpe queue ' + folder + '` to queue it later.');
   } else {
-    await queuePlan(repoPath, folder, runId, worktreePath, config, repoConfig, options?.disableSandbox ?? false);
+    await queuePlan(repoPath, folder, runId, worktreePath, config, repoConfig, options?.disableSandbox ?? false, runOptions);
     console.log('Run `cpe start` to begin execution.');
   }
 }
