@@ -62,6 +62,34 @@ function formatLive(ev: ActivityEvent, descWidth: number): { color: string; text
   }
 }
 
+/**
+ * Seed the live pane from the in-memory event buffer for a run, so navigating
+ * into the bench view mid-run isn't a blank screen (it replays what already
+ * happened — including the `phase` start that anchors "last output age"). The
+ * buffer is the TUI-lifetime ring buffer the bus keeps.
+ */
+function seedFromBuffer(runId: string | null, descWidth: number): {
+  lines: LiveLine[];
+  lastOutputAt: number | null;
+  startedAt: number | null;
+} {
+  if (!runId) return { lines: [], lastOutputAt: null, startedAt: null };
+  const buf = activityBus.getBuffer().filter(e => e.runId === runId);
+  if (buf.length === 0) return { lines: [], lastOutputAt: null, startedAt: null };
+  const lines: LiveLine[] = [];
+  let lastOutputAt: number | null = null;
+  for (const ev of buf) {
+    lastOutputAt = Date.now();
+    if (ev.kind === 'phase' || ev.kind === 'pause' || ev.kind === 'resume' || ev.kind === 'limit') continue;
+    const { color, text } = formatLive(ev, descWidth);
+    if (!text.trim()) continue;
+    const at = ev.timestamp.getTime();
+    lines.push({ key: `${ev.kind}-${at}-${lines.length}`, color, text, at });
+  }
+  const startedAt = buf[0]!.timestamp.getTime();
+  return { lines: lines.slice(-MAX_LIVE_ROWS), lastOutputAt, startedAt };
+}
+
 export function Bench({ columns, rows, compact }: Props): React.ReactElement {
   const bench = useBenchState();
   const [lines, setLines] = useState<LiveLine[]>([]);
@@ -75,16 +103,20 @@ export function Bench({ columns, rows, compact }: Props): React.ReactElement {
   const activeRef = useRef<string | null>(null);
   const descWidth = Math.max(10, columns - 4);
 
-  // Reset the live pane + timers whenever the executing combo changes.
+  // Re-seed the live pane + timers whenever the executing combo changes (and on
+  // first mount). Seeding from the bus buffer means jumping into the bench view
+  // mid-run shows the run's prior activity and a correct elapsed/age instead of
+  // a frozen "waiting for output…".
   useEffect(() => {
     if (activeRunId !== activeRef.current) {
       activeRef.current = activeRunId;
-      setLines([]);
-      setLastOutputAt(null);
-      setStartedAt(activeRunId ? Date.now() : null);
+      const seeded = seedFromBuffer(activeRunId, descWidth);
+      setLines(seeded.lines);
+      setLastOutputAt(seeded.lastOutputAt);
+      setStartedAt(seeded.startedAt ?? (activeRunId ? Date.now() : null));
       setConfirmBail(false);
     }
-  }, [activeRunId]);
+  }, [activeRunId, descWidth]);
 
   // Subscribe once; keep only the active run's lines, bounded to the last N.
   useEffect(() => {

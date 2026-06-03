@@ -372,7 +372,21 @@ async function runBenchSinglePrompt(
   const stopTail = adapter.completionMode === 'structured'
     ? await startJsonlTail(
         uuid, clone.path, runId, -1, bus, logPath,
-        sig => guard.noteActivity(sig),
+        sig => {
+          guard.noteActivity(sig);
+          // Surface raw-line liveness to the TUI so the bench pane's "last output
+          // age" tracks the SAME signal the timeout watches. claude writes nothing
+          // renderable mid-turn (the assistant entry lands only when the turn
+          // completes), so during a slow first turn the structural lines
+          // (queue-operation, attachment, ai-title, …) are the only proof of life.
+          // We skip assistant/user lines — the classifier already renders those
+          // richly (text/edit/bash/commit) — to avoid duplicate pane rows.
+          let type = '';
+          try { type = (JSON.parse(sig) as { type?: string }).type ?? ''; } catch { /* non-JSON */ }
+          if (type && type !== 'assistant' && type !== 'user') {
+            bus.emit({ kind: 'output', timestamp: new Date(), runId, phaseNumber: -1, line: `· ${type}` });
+          }
+        },
       )
     : startOutputTail(logPath, runId, -1, bus);
 
