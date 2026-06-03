@@ -156,8 +156,12 @@ full set rather than stopping at plandex.
   --message` prints human-readable progress and AUTO-COMMITS; there is no machine-readable result
   envelope. Outcome from exit + change: exit0+change→completed, exit0+no-change→no-op, nonzero→error.
   New src/harness/aider.ts (registered in registry.ts): `aider --model openai/<model> --edit-format
-  <fmt> --message <prompt> --yes-always --no-gitignore --no-stream --no-pretty --no-fancy-input
-  --no-check-update --no-analytics --no-show-model-warnings`. **Model wiring:** OpenAI-compatible via
+  <fmt> --message <prompt> --yes-always --no-gitignore --no-pretty --no-fancy-input
+  --no-check-update --no-analytics --no-show-model-warnings`. **Streaming left ON** (no --no-stream) so
+  aider writes the response incrementally — the bench output tail (startOutputTail) surfaces it line-by-
+  line to the live TUI and feeds the activity timeout; `--no-pretty` keeps the stream clean/tailable.
+  (Verified: response lines arrive with progressing timestamps, not one final burst; a silent prefill
+  gap before the first token is inherent to the model.) **Model wiring:** OpenAI-compatible via
   LiteLLM — `openai/<model>` with OPENAI_API_BASE=<base>/v1 + OPENAI_API_KEY (Ollama ignores it but
   LiteLLM requires one), translated from cpe's provider env; ANTHROPIC_* stripped so aider can't inherit
   cpe creds. **Edit format** (`whole|diff|udiff`) is exposed via CPE_AIDER_EDIT_FORMAT (default `whole`)

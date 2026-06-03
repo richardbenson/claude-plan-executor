@@ -11,8 +11,14 @@ import type { Harness, HarnessContext, HarnessResult, HarnessOutcome } from './t
  *     --model openai/<model>            model selection (LiteLLM provider/model)
  *     --edit-format whole|diff|udiff    how the model returns edits (see below)
  *     --yes-always                      auto-confirm every prompt (required headless)
- *     --no-stream --no-pretty           plain, line-based output for the log/transcript
+ *     --no-pretty                       plain output (no live ANSI/markdown repaint)
  *     --no-fancy-input --no-check-update --no-analytics --no-show-model-warnings
+ *   We deliberately leave STREAMING ON (no --no-stream): aider then writes the
+ *   model response incrementally to stdout, which the bench dispatch's output
+ *   tail (startOutputTail) surfaces line-by-line to the live TUI AND feeds to the
+ *   activity-based timeout — so a slow-but-progressing run shows progress and
+ *   isn't mistaken for idle. `--no-pretty` keeps that stream as clean plain text
+ *   (pretty mode repaints with cursor/ANSI codes, which pollute the transcript).
  *   Local model wiring: aider goes through LiteLLM. The most generic route (and
  *   the one that matches the opencode adapter) is OpenAI-compatible: select
  *   `openai/<model>` and point OPENAI_API_BASE at the endpoint's /v1, with
@@ -221,6 +227,8 @@ export const aiderHarness: Harness = {
     // of truth for the captured diff / harnesstests branch. `--yes-always` makes
     // it fully non-interactive. `--no-gitignore` stops aider committing a
     // `.gitignore` housekeeping line (the local exclude above handles isolation).
+    // Streaming is left ON (no --no-stream) so the output tail can surface
+    // progress live; `--no-pretty` keeps the stream as plain, tailable text.
     const args = [
       'aider',
       '--model', modelArg,
@@ -228,7 +236,6 @@ export const aiderHarness: Harness = {
       '--message', prompt,
       '--yes-always',
       '--no-gitignore',
-      '--no-stream',
       '--no-pretty',
       '--no-fancy-input',
       '--no-check-update',
