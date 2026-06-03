@@ -322,8 +322,18 @@ async function runBenchSinglePrompt(
   const tmpFile = path.join(os.tmpdir(), `cpe-bench-${runId}.md`);
   fs.writeFileSync(tmpFile, combined);
 
-  // 3 — provider env + model args.
-  const provider = await resolveProvider(appConfig.providers ?? [], 'phase', appConfig.provider_for_phases);
+  // 3 — provider env + model args. For a bench run the matrix model (meta.model)
+  // is the authoritative selection and must override any model bundled in the
+  // provider config — otherwise the harness falls back to its built-in default
+  // model (e.g. claude-opus-4-8), which a local Ollama endpoint 404s. The
+  // provider chosen via `cpe bench --provider` (meta.provider) likewise takes
+  // precedence over the config default.
+  const provider = await resolveProvider(
+    appConfig.providers ?? [],
+    'phase',
+    meta.provider ?? appConfig.provider_for_phases,
+  );
+  const modelArgs = meta.model ? ['--model', meta.model] : (provider?.modelArgs ?? []);
 
   // 4 — activity-based timeout + bail guard; activity comes from the bus (the
   // same stream the live tail consumes), with repeat suppression in RunGuard.
@@ -351,7 +361,8 @@ async function runBenchSinglePrompt(
     schema: SINGLE_PROMPT_RESULT_SCHEMA,
     dangerouslySkipPermissions: appConfig.dangerously_skip_permissions,
     providerEnv: provider?.env ?? {},
-    modelArgs: provider?.modelArgs ?? [],
+    model: meta.model,
+    modelArgs,
     signal: guard.signal,
   });
   // Structured adapters (claude-code) expose a parseable JSONL stream we tail for
