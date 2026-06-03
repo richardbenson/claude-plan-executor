@@ -315,12 +315,18 @@ async function runBenchSinglePrompt(
   });
   bus.emit({ kind: 'phase', timestamp: new Date(), runId, phaseNumber: -1, phaseName: 'bench' });
 
-  // 2 — prompt file (reuse the single-prompt template + schema).
-  const combined = SINGLE_PROMPT_TEMPLATE
-    .replace('{{USER_PROMPT}}', meta.prompt ?? '')
-    .replace('{{GITHUB_ISSUE_SECTION}}', '');
+  // 2 — prompt file. Structured adapters (claude-code) need the single-prompt
+  // template that instructs the StructuredOutput envelope; opaque adapters
+  // (opencode, …) have no such envelope and must receive the raw user prompt —
+  // wrapping it in claude-specific structured-output instructions would just
+  // confuse them. The outcome of an opaque run comes from exit code + git diff.
+  const promptText = adapter.completionMode === 'structured'
+    ? SINGLE_PROMPT_TEMPLATE
+        .replace('{{USER_PROMPT}}', meta.prompt ?? '')
+        .replace('{{GITHUB_ISSUE_SECTION}}', '')
+    : (meta.prompt ?? '');
   const tmpFile = path.join(os.tmpdir(), `cpe-bench-${runId}.md`);
-  fs.writeFileSync(tmpFile, combined);
+  fs.writeFileSync(tmpFile, promptText);
 
   // 3 — provider env + model args. For a bench run the matrix model (meta.model)
   // is the authoritative selection and must override any model bundled in the
@@ -422,8 +428,12 @@ async function runBenchSinglePrompt(
     transcriptPath: logPath,
   });
 
+  // A 'no-op' (the harness ran cleanly to exit 0 but produced no git diff) is a
+  // legitimate, non-error result — distinct from 'error'/'failed'. Map it to a
+  // terminal 'complete' status; the run_outcome ('no-op') still carries the
+  // distinction into the captured meta + `cpe bench summary` OUTCOME column.
   const status =
-    runOutcome === 'completed' ? 'complete'
+    runOutcome === 'completed' || runOutcome === 'no-op' ? 'complete'
     : runOutcome === 'timeout' ? 'timeout'
     : runOutcome === 'bailed' ? 'bailed'
     : 'failed';
@@ -449,8 +459,9 @@ async function runBenchSinglePrompt(
     });
   }
 
-  // 6 — keep the clone on failure/timeout/bail for debugging; remove on success.
-  if (runOutcome === 'completed') {
+  // 6 — keep the clone on failure/timeout/bail for debugging; remove on a clean
+  // run (completed with changes, or a no-op that left nothing to inspect).
+  if (runOutcome === 'completed' || runOutcome === 'no-op') {
     try { removeClone(clone.path); } catch { /* ignore */ }
   }
 

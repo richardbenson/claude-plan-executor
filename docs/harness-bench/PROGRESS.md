@@ -19,7 +19,7 @@ no per-phase branches, no per-phase PRs (we build and test locally; nobody else 
 
 | Phase | Title | Status | Depends on |
 |-------|-------|--------|-----------|
-| 07 | opencode adapter (canonical template) | not-started | 05 |
+| 07 | opencode adapter (canonical template) | complete | 05 |
 | 08 | aider adapter | not-started | 07 |
 | 09 | goose adapter | not-started | 07 |
 | 10 | openhands adapter | not-started | 07 |
@@ -124,9 +124,30 @@ full set rather than stopping at plandex.
   no headless mode was built (explicitly out of scope).
 
 ### Phase 07
-- Status: not-started
-- Started: - / Completed: -
-- Notes: First non-claude adapter; opaque completion mode expected. Validates the contract end-to-end.
+- Status: complete
+- Started: 2026-06-03 / Completed: 2026-06-03
+- Notes: First non-claude adapter. **completionMode = opaque** (confirmed empirically): `opencode run
+  --format json` streams newline-delimited event objects (step_start/tool_use/step_finish/text), not a
+  single parseable result envelope; outcome derived from exit code + git diff (exit0+diff→completed,
+  exit0+no-diff→no-op, non-zero→error). opencode v1.15.13. New src/harness/opencode.ts (registered in
+  registry.ts): builds `opencode run --dir <cwd> --model <provider>/<model> --format json
+  --dangerously-skip-permissions <prompt>`; spawns with ANTHROPIC_* stripped from env; translates cpe's
+  provider env (ANTHROPIC_BASE_URL) into a temp opencode config (`@ai-sdk/openai-compatible` provider
+  `cpe-local` at <base>/v1) referenced via OPENCODE_CONFIG so it never lands in the clone's diff; parses
+  step_finish tokens/cost best-effort. Honors ctx.signal (process-group kill) like session.ts.
+  **Two bugs found + fixed during validation:** (1) the bench dispatch wrapped the prompt in the
+  claude-specific SINGLE_PROMPT_TEMPLATE for ALL harnesses — now gated on completionMode (opaque gets the
+  raw prompt). (2) **isolation breach**: opencode does NOT use the spawn cwd as its project root — for a
+  clone whose git `origin` is the local source repo it followed origin and edited the ORIGINAL working
+  tree; fixed by passing `--dir <clone>` explicitly (verified via opencode's own startup logs:
+  `service=project directory=<clone> fromDirectory`). Also: 'no-op' run_outcome now maps to status
+  'complete' (not 'failed') — it's a clean non-error result; the distinction stays in run_outcome + the
+  summary OUTCOME column. Validated end-to-end on gemma4-cpe:31b via the real runSinglePrompt bench path:
+  run_outcome=completed, results/opencode__gemma4-cpe-31b/{meta.json,diff,transcript} written, diff
+  (CHANGELOG.md | 4 ++++) matches opencode's actual change IN THE CLONE (real repo untouched), tokens
+  parsed (36464 in / 253 out), harnesstests/opencode__gemma4-cpe-31b pushed to origin. 69 tests pass
+  (4 new opencode tests: registration/opaque, base-url mapping, outcome rules, usage parsing), lint/build
+  clean. Test artifacts cleaned up afterward (by exact id/name).
 
 ### Phases 08-15
 - One adapter per phase (aider, goose, openhands, plandex, pi, crush, codex-cli, swe-agent), each a
