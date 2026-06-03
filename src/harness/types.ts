@@ -46,6 +46,11 @@ export interface HarnessContext {
   timeoutMs?: number;
   /** JSON schema string for structured-mode adapters. */
   schema?: string;
+  /**
+   * Abort signal for activity-timeout / manual bail. When it fires, the adapter
+   * must kill the whole harness process tree. Optional — non-bench runs omit it.
+   */
+  signal?: AbortSignal;
 }
 
 /**

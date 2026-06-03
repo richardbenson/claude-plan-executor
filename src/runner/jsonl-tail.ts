@@ -38,6 +38,7 @@ export async function startJsonlTail(
   phaseNumber: number,
   bus: ActivityBus,
   logPath?: string,
+  onActivity?: (signature: string) => void,
 ): Promise<() => void> {
   const expectedPath = getExpectedJsonlPath(uuid, worktreePath);
   const start = Date.now();
@@ -114,6 +115,11 @@ export async function startJsonlTail(
       partial = lines.pop() ?? '';
       for (const line of lines) {
         if (!line.trim()) continue;
+        // Every new raw line is harness activity (the same stream the live tail
+        // consumes). This is the granular signal the activity-timeout uses, so a
+        // run that is making progress — even setup/snapshot lines between model
+        // turns — is not killed. RunGuard suppresses identical repeats.
+        onActivity?.(line);
         let entry: unknown;
         try {
           entry = JSON.parse(line);

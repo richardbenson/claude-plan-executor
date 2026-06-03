@@ -11,7 +11,7 @@ no per-phase branches, no per-phase PRs (we build and test locally; nobody else 
 | 01 | Run parameterization + Harness contract & registry | complete | - |
 | 02 | Executor dispatch refactor (single-prompt + phase-loop) | complete | 01 |
 | 03 | Anthropic->Ollama proxy + local-model provider preset | complete | 02 |
-| 04 | Clone isolation + capture + branch push + activity-timeout + pause | not-started | 02 |
+| 04 | Clone isolation + capture + branch push + activity-timeout + pause | complete | 02 |
 | 05 | Matrix / bench command + summary table | not-started | 04 |
 | 06 | Bounded live TUI + manual bail | not-started | 04 |
 
@@ -67,9 +67,21 @@ full set rather than stopping at plandex.
   non-Anthropic-native backends only. Test artifacts cleaned up afterwards.
 
 ### Phase 04
-- Status: not-started
-- Started: - / Completed: -
-- Notes:
+- Status: complete
+- Started: 2026-06-03 / Completed: 2026-06-03
+- Notes: New: src/git/clone.ts (full clone per run from CWD repo+branch, agent-git-safe),
+  src/runner/proc-tree.ts (setsid process-group + killTree), src/runner/run-guard.ts (activity timeout
+  w/ repeat-suppression + bail registry), src/runner/capture.ts (diff/transcript/meta -> results/
+  <harness>__<model>/ + optional harnesstests/* push). Bench runs take a distinct path in
+  single-prompt.ts (clone cwd + guard + capture, no retry/PR ceremony); default worktree runs unchanged.
+  Activity is fed from raw JSONL line growth via startJsonlTail onActivity (the same reader the live tail
+  uses) so a slow model mid-turn isn't killed. Inter-run pause in start.ts (interruptible, injectable).
+  Added 'timeout'/'bailed' RunStatus. Validated: process-tree kill leaves 0 orphans; silent/sleeper run
+  killed as 'timeout', manual bail as 'bailed' (both 0 orphans, capture ran); capture writes real
+  non-empty diff + baseline (deterministic); harnesstests/* pushed to a bare remote; real gemma4-cpe:31b
+  clone run created+committed a file IN the clone with the baseline untouched (isolation holds); pause
+  unit-tested. 55 tests pass, lint/build clean. Note: harnesstests push validated against a throwaway
+  bare repo (not a real github/gitea remote, to avoid pushing test branches).
 
 ### Phase 05
 - Status: not-started

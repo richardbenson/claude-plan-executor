@@ -165,6 +165,28 @@ export async function runQueueProcessor(config: AppConfig, bus: ActivityBus): Pr
         }
       }
     }
+
+    // Inter-run pause: give the backend (e.g. Ollama) time to evict the previous
+    // model before the next run. Interruptible — a queue pause cuts it short.
+    await interruptiblePause((config.pause_seconds ?? 0) * 1000);
+  }
+}
+
+/**
+ * Sleep in short increments so a queue pause interrupts the wait cleanly.
+ * `isPaused` is injectable for testing; it defaults to the live queue state.
+ */
+export async function interruptiblePause(
+  totalMs: number,
+  isPaused: () => boolean = isQueuePaused,
+  stepMs = 1000,
+): Promise<void> {
+  if (totalMs <= 0) return;
+  let waited = 0;
+  while (waited < totalMs) {
+    if (isPaused()) return;
+    await Bun.sleep(Math.min(stepMs, totalMs - waited));
+    waited += stepMs;
   }
 }
 

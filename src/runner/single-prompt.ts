@@ -9,8 +9,13 @@ import { handleRateLimit } from './limit.js';
 import { startJsonlTail } from './jsonl-tail.js';
 import { getHead } from '../git/repo.js';
 import { SINGLE_PROMPT_TEMPLATE, SINGLE_PROMPT_RESULT_SCHEMA } from '../prompts/index.js';
+import { createClone, removeClone } from '../git/clone.js';
+import { captureRun } from './capture.js';
+import { RunGuard, registerGuard, unregisterGuard } from './run-guard.js';
 import type { ActivityBus } from '../events/bus.js';
-import type { AppConfig } from '../types/meta.js';
+import type { ActivityEvent } from '../events/types.js';
+import type { AppConfig, RunMeta } from '../types/meta.js';
+import type { Harness } from '../harness/types.js';
 
 export interface SinglePromptResult {
   completed: boolean;
@@ -25,7 +30,8 @@ export interface SinglePromptResult {
 export type SinglePromptOutcome =
   | { outcome: 'complete'; result: SinglePromptResult }
   | { outcome: 'paused'; resumeAt: Date; hadWork: boolean }
-  | { outcome: 'failed'; reason: string };
+  | { outcome: 'failed'; reason: string }
+  | { outcome: 'bench'; runOutcome: NonNullable<RunMeta['run_outcome']>; resultsDir: string };
 
 function isSinglePromptResult(v: unknown): v is SinglePromptResult {
   if (!v || typeof v !== 'object') return false;
@@ -72,6 +78,15 @@ export async function runSinglePrompt(
     const reason = err instanceof Error ? err.message : String(err);
     await markFailed(runId, reason, bus);
     return { outcome: 'failed', reason };
+  }
+
+  // Bench / clone-isolation runs take a distinct, simpler path: a fresh clone of
+  // the baseline as cwd, an activity-based timeout + bail guard, and post-run
+  // capture — no envelope-classification/retry/PR ceremony. Default worktree
+  // single-prompt runs fall through to the unchanged path below.
+  const isolation = meta.isolation ?? appConfig.isolation ?? 'worktree';
+  if (isolation === 'clone') {
+    return runBenchSinglePrompt(runId, meta, adapter, appConfig, bus);
   }
 
   // STEP 2 — inject user prompt and optional GitHub issue section into template
@@ -246,4 +261,165 @@ export async function runSinglePrompt(
   void commitSha;
 
   return { outcome: 'complete', result: promptResult };
+}
+
+/** Build a stable signature for an activity event so repeats can be detected. */
+function activitySignature(e: ActivityEvent): string {
+  const r = e as unknown as Record<string, unknown>;
+  const detail =
+    (r['file'] as string) ??
+    (r['command'] as string) ??
+    (r['message'] as string) ??
+    (r['text'] as string) ??
+    (r['summary'] as string) ??
+    (r['phaseName'] as string) ??
+    '';
+  return `${e.kind}:${detail}`;
+}
+
+/**
+ * Bench path: run a single prompt against a fresh clone of the baseline, under an
+ * activity-based timeout + manual-bail guard, then capture the result. No
+ * retries, no structured-output requirement, no PR — the diff and outcome are
+ * what matter. Clone is removed only on a clean completion; kept otherwise for
+ * debugging.
+ */
+async function runBenchSinglePrompt(
+  runId: string,
+  meta: RunMeta,
+  adapter: Harness,
+  appConfig: AppConfig,
+  bus: ActivityBus,
+): Promise<SinglePromptOutcome> {
+  const startTime = Date.now();
+
+  // 1 — fresh clone of the baseline (CWD repo + current branch by default).
+  let clone;
+  try {
+    clone = createClone(runId, { repo: meta.bench_repo, branch: meta.bench_branch });
+  } catch (err) {
+    const reason = `clone failed: ${err instanceof Error ? err.message : String(err)}`;
+    await markFailed(runId, reason, bus);
+    return { outcome: 'failed', reason };
+  }
+
+  updateMeta(runId, {
+    isolation: 'clone',
+    worktree_path: clone.path,
+    bench_repo: clone.baseline.repo,
+    bench_branch: clone.baseline.branch,
+    base_ref: clone.baseRef,
+    status: 'executing',
+  });
+  bus.emit({ kind: 'phase', timestamp: new Date(), runId, phaseNumber: -1, phaseName: 'bench' });
+
+  // 2 — prompt file (reuse the single-prompt template + schema).
+  const combined = SINGLE_PROMPT_TEMPLATE
+    .replace('{{USER_PROMPT}}', meta.prompt ?? '')
+    .replace('{{GITHUB_ISSUE_SECTION}}', '');
+  const tmpFile = path.join(os.tmpdir(), `cpe-bench-${runId}.md`);
+  fs.writeFileSync(tmpFile, combined);
+
+  // 3 — provider env + model args.
+  const provider = await resolveProvider(appConfig.providers ?? [], 'phase', appConfig.provider_for_phases);
+
+  // 4 — activity-based timeout + bail guard; activity comes from the bus (the
+  // same stream the live tail consumes), with repeat suppression in RunGuard.
+  const guard = new RunGuard({
+    inactivityMs: (appConfig.inactivity_timeout_seconds ?? 0) * 1000,
+    maxRuntimeMs: (appConfig.max_runtime_seconds ?? 0) * 1000,
+  });
+  registerGuard(runId, guard);
+  const unsub = bus.subscribe(e => {
+    if (e.runId === runId) guard.noteActivity(activitySignature(e));
+  });
+
+  const logPath = path.join(getLogsDir(runId), 'bench.log');
+  const uuid = crypto.randomUUID();
+
+  // Kick off the harness first, then start the JSONL tail (it polls for the
+  // session file the harness is creating) — same ordering as the non-bench
+  // path. The guard's inactivity timer starts with the run.
+  guard.start();
+  const runPromise = adapter.run({
+    cwd: clone.path,
+    promptFile: tmpFile,
+    sessionId: uuid,
+    logPath,
+    schema: SINGLE_PROMPT_RESULT_SCHEMA,
+    dangerouslySkipPermissions: appConfig.dangerously_skip_permissions,
+    providerEnv: provider?.env ?? {},
+    modelArgs: provider?.modelArgs ?? [],
+    signal: guard.signal,
+  });
+  const stopTail = await startJsonlTail(
+    uuid, clone.path, runId, -1, bus, logPath,
+    sig => guard.noteActivity(sig),
+  );
+
+  let result;
+  try {
+    result = await runPromise;
+  } finally {
+    stopTail();
+    guard.dispose();
+    unsub();
+    unregisterGuard(runId);
+    try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+  }
+
+  const durationMs = Date.now() - startTime;
+  const runOutcome = guard.outcome ?? result?.outcome ?? 'error';
+  const outcomeReason =
+    guard.reason === 'timeout-inactivity' ? 'no new output within inactivity window'
+    : guard.reason === 'timeout-maxruntime' ? 'exceeded max runtime'
+    : guard.reason === 'bailed' ? 'manually bailed'
+    : undefined;
+
+  // 5 — capture (diff/transcript/meta + optional harnesstests push) on any outcome.
+  const cap = captureRun({
+    runId,
+    meta: readMeta(runId),
+    cwd: clone.path,
+    baseRef: clone.baseRef,
+    result: result ?? { exitCode: -1, outcome: 'error' },
+    outcome: runOutcome,
+    outcomeReason,
+    durationMs,
+    transcriptPath: logPath,
+  });
+
+  const status =
+    runOutcome === 'completed' ? 'complete'
+    : runOutcome === 'timeout' ? 'timeout'
+    : runOutcome === 'bailed' ? 'bailed'
+    : 'failed';
+  updateMeta(runId, {
+    status,
+    run_outcome: runOutcome,
+    ...(outcomeReason ? { outcome_reason: outcomeReason } : {}),
+    duration_ms: durationMs,
+    results_dir: cap.resultsDir,
+    total_cost_usd: result?.costUsd ?? 0,
+  });
+
+  if (runOutcome === 'timeout' || runOutcome === 'bailed' || runOutcome === 'error') {
+    bus.emit({
+      kind: 'error', timestamp: new Date(), runId, phaseNumber: -1,
+      message: `bench ${runOutcome}${outcomeReason ? ': ' + outcomeReason : ''} (results: ${cap.resultsDir})`,
+    });
+  } else {
+    bus.emit({
+      kind: 'ok', timestamp: new Date(), runId, phaseNumber: -1,
+      summary: `bench complete${cap.pushed ? ` — pushed ${cap.branch}` : ''} (results: ${cap.resultsDir})`,
+      costUsd: result?.costUsd ?? 0,
+    });
+  }
+
+  // 6 — keep the clone on failure/timeout/bail for debugging; remove on success.
+  if (runOutcome === 'completed') {
+    try { removeClone(clone.path); } catch { /* ignore */ }
+  }
+
+  return { outcome: 'bench', runOutcome, resultsDir: cap.resultsDir };
 }

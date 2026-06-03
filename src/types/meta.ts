@@ -62,6 +62,23 @@ export interface RunMeta {
   harness?: string;
   model?: string;
   provider?: string;
+  // --- bench / clone-isolation fields (Phase 04) ---
+  /** Isolation mode for this run. Defaults to 'worktree' (existing behaviour). */
+  isolation?: 'worktree' | 'clone';
+  /** Baseline repo the clone is made from (defaults to the CWD repo at launch). */
+  bench_repo?: string;
+  /** Baseline branch the clone starts on (defaults to the CWD current branch). */
+  bench_branch?: string;
+  /** Commit the clone started at — capture diffs against this. */
+  base_ref?: string;
+  /** Normalised outcome of the harness invocation (incl. timeout/bail). */
+  run_outcome?: 'completed' | 'error' | 'timeout' | 'no-op' | 'bailed';
+  /** Human-readable reason for a timeout/bail/error outcome. */
+  outcome_reason?: string;
+  /** Wall-clock duration of the harness invocation, milliseconds. */
+  duration_ms?: number;
+  /** Directory the captured results (meta/diff/transcript) were written to. */
+  results_dir?: string;
 }
 
 export interface QueueEntry {
@@ -95,12 +112,22 @@ export interface AppConfig {
   provider_for_phases?: string;
   harness_for_planning?: string;
   harness_for_phases?: string;
+  // --- bench / clone-isolation config (Phase 04) ---
+  /** Default isolation mode. 'worktree' (default) keeps existing behaviour. */
+  isolation?: 'worktree' | 'clone';
+  /** No-new-output window before a run is killed as 'timeout'. Off when unset. */
+  inactivity_timeout_seconds?: number;
+  /** Absolute wall-clock cap regardless of activity. Off when unset. */
+  max_runtime_seconds?: number;
+  /** Seconds to sleep between runs (lets Ollama evict the previous model). */
+  pause_seconds?: number;
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
   max_retries: 1,
   harness_for_planning: 'claude-code',
   harness_for_phases: 'claude-code',
+  isolation: 'worktree',
   sandbox: {
     enabled: true,
     allowedDomains: [

@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { parseEnvelope, type ClaudeEnvelope } from './envelope.js';
 import type { ResolvedProvider } from './provider.js';
+import { groupWrap, killTree } from './proc-tree.js';
 
 export interface SessionOpts {
   worktreePath: string;
@@ -11,6 +12,13 @@ export interface SessionOpts {
   schema: string;
   dangerouslySkipPermissions?: boolean;
   provider?: ResolvedProvider | null;
+  /**
+   * Optional abort signal. When provided, the claude process is started in its
+   * own process group and the whole tree is killed if the signal fires (used for
+   * activity timeout / manual bail in bench runs). When omitted, behaviour is
+   * unchanged from before — same spawn, no process group.
+   */
+  signal?: AbortSignal;
 }
 
 export interface SessionResult {
@@ -52,13 +60,24 @@ export async function runSession(opts: SessionOpts): Promise<SessionResult> {
     args.push('--dangerously-skip-permissions');
   }
 
-  const proc = Bun.spawn(args, {
+  // For bench runs (signal provided) start claude in its own process group so a
+  // timeout/bail can kill the whole tree. Default path is unchanged.
+  const spawnArgs = opts.signal ? groupWrap(args) : args;
+
+  const proc = Bun.spawn(spawnArgs, {
     cwd: opts.worktreePath,
     stdin: null,
     stdout: 'pipe',
     stderr: 'pipe',
     ...(env ? { env } : {}),
   });
+
+  let onAbort: (() => void) | undefined;
+  if (opts.signal) {
+    onAbort = () => killTree(proc.pid);
+    if (opts.signal.aborted) onAbort();
+    else opts.signal.addEventListener('abort', onAbort, { once: true });
+  }
 
   // Stream stderr to log file
   const stderrDone = (async () => {
@@ -70,6 +89,8 @@ export async function runSession(opts: SessionOpts): Promise<SessionResult> {
   const stdoutBuffer = await new Response(proc.stdout).arrayBuffer();
   const exitCode = await proc.exited;
   await stderrDone;
+
+  if (opts.signal && onAbort) opts.signal.removeEventListener('abort', onAbort);
 
   await new Promise<void>((resolve, reject) => {
     logStream.close(err => (err ? reject(err) : resolve()));

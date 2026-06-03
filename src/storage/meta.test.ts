@@ -10,6 +10,7 @@ import type { RunMeta } from '../types/meta.js';
 const ALL_STATES = [
   'queued', 'executing', 'retrying', 'paused', 'paused-limit',
   'finalising', 'complete', 'pr-created', 'failed', 'pending', 'archived',
+  'timeout', 'bailed',
 ] as const;
 
 let tmpDir: string;
@@ -37,8 +38,8 @@ function makeMinimalMeta(overrides?: Partial<RunMeta>): RunMeta {
   };
 }
 
-test('STATE_TABLE covers all 11 states', () => {
-  expect(Object.keys(STATE_TABLE)).toHaveLength(11);
+test('STATE_TABLE covers all 13 states', () => {
+  expect(Object.keys(STATE_TABLE)).toHaveLength(13);
   for (const state of ALL_STATES) {
     const info = STATE_TABLE[state];
     expect(info.glyph.length).toBeGreaterThan(0);

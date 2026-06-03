@@ -46,6 +46,7 @@ export const claudeCodeHarness: Harness = {
       schema: ctx.schema,
       dangerouslySkipPermissions: ctx.dangerouslySkipPermissions,
       provider,
+      signal: ctx.signal,
     });
 
     const summary = typeof envelope.result === 'string' && envelope.result.length > 0
