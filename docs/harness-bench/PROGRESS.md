@@ -12,7 +12,7 @@ no per-phase branches, no per-phase PRs (we build and test locally; nobody else 
 | 02 | Executor dispatch refactor (single-prompt + phase-loop) | complete | 01 |
 | 03 | Anthropic->Ollama proxy + local-model provider preset | complete | 02 |
 | 04 | Clone isolation + capture + branch push + activity-timeout + pause | complete | 02 |
-| 05 | Matrix / bench command + summary table | not-started | 04 |
+| 05 | Matrix / bench command + summary table | complete | 04 |
 | 06 | Bounded live TUI + manual bail | not-started | 04 |
 
 ## Adapters (one harness per phase; template = Phase 07)
@@ -84,9 +84,21 @@ full set rather than stopping at plandex.
   bare repo (not a real github/gitea remote, to avoid pushing test branches).
 
 ### Phase 05
-- Status: not-started
-- Started: - / Completed: -
-- Notes:
+- Status: complete
+- Started: 2026-06-03 / Completed: 2026-06-03
+- Notes: New src/commands/bench.ts: `cpe bench "<prompt>" --harness a,b --model x,y [--provider --repo
+  --branch --prompt-file --force]` enqueues the harness×model cross-product as clone-isolated
+  single-prompt runs (baseline = CWD repo at current branch, overridable; nothing hardcoded). Validates
+  all harnesses up front (enqueues nothing on unknown); requires ≥1 model; de-dupes combos; skips combos
+  with existing results unless --force; prints the planned matrix first. `cpe bench summary` tabulates
+  results/*/meta.json (harness/model/outcome/duration/files/lines/tokens/cost/branch), tolerating
+  missing/partial/unreadable meta. cli.ts registers `bench` + `bench summary`. start.ts: skip
+  worktree-reconcile for clone runs (they clone lazily) — needed so the queue processor runs bench runs.
+  Validated: fail-fast (queue unchanged), matrix enqueue (correct names/meta), skip/--force, summary
+  table (incl. partial/unreadable rows), and the queue processor running two clone runs SEQUENTIALLY
+  with the configured pause (reconcile guard: neither failed). 55 tests pass, lint/build clean.
+  NOTE: during validation a too-broad cleanup rm deleted all cpe run *metadata* in ~/.local/state/cpe/runs
+  (no code/git loss; all branches intact). User accepted the loss. Lesson saved to memory.
 
 ### Phase 06
 - Status: not-started

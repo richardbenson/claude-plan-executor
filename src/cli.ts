@@ -10,6 +10,7 @@ import { cleanCommand } from './commands/clean.js';
 import { bootstrapCommand } from './commands/bootstrap.js';
 import { worktreeCommand } from './commands/worktree.js';
 import { promptCommand } from './commands/prompt.js';
+import { benchCommand, benchSummaryCommand } from './commands/bench.js';
 import { readQueue, writeQueue } from './storage/queue.js';
 import {
   providerListCommand,
@@ -64,6 +65,23 @@ export function setupCli(): void {
     .option('--model <model>', 'Model to use for this run')
     .option('--harness <name>', 'Harness adapter to use for this run')
     .action(wrap(promptCommand));
+
+  const benchCmd = program
+    .command('bench [prompt...]')
+    .description('Enqueue a harness×model matrix for one prompt (clone-isolated runs)')
+    .option('--harness <list>', 'Comma-separated harness names (default: claude-code)')
+    .option('--model <list>', 'Comma-separated model ids (required)')
+    .option('--provider <name>', 'Provider to use for the runs')
+    .option('--repo <path>', 'Baseline repo to clone (default: current repo)')
+    .option('--branch <name>', 'Baseline branch to clone (default: current branch)')
+    .option('--prompt-file <path>', 'Read the prompt from a file')
+    .option('--force', 'Re-run combos that already have captured results')
+    .action(wrap(benchCommand));
+
+  benchCmd
+    .command('summary')
+    .description('Print a table over captured bench results')
+    .action(wrap(benchSummaryCommand));
 
   program
     .command('start')

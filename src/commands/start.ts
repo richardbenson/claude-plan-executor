@@ -86,7 +86,11 @@ export async function runQueueProcessor(config: AppConfig, bus: ActivityBus): Pr
         : {}),
     };
 
-    if (!reconciledRepos.has(meta.primary_repo_path)) {
+    // Clone-isolation (bench) runs create their clone lazily at run time and
+    // have no pre-existing worktree, so skip the worktree reconcile for them.
+    const isCloneRun = (meta.isolation ?? config.isolation ?? 'worktree') === 'clone';
+
+    if (!isCloneRun && !reconciledRepos.has(meta.primary_repo_path)) {
       reconciledRepos.add(meta.primary_repo_path);
       const { orphaned, missing } = reconcileWorktrees(meta.primary_repo_path, [{ id: runId, worktreePath: meta.worktree_path }]);
       if (orphaned.length > 0) {
