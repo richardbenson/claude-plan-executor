@@ -91,7 +91,7 @@ export async function planCommand(
 
   const effectiveProviders = existingRepoConfig?.providers ?? config.providers ?? [];
   const effectiveProviderName = existingRepoConfig?.provider_for_planning ?? config.provider_for_planning;
-  const provider = await resolveProvider(effectiveProviders, 'planning', effectiveProviderName);
+  const provider = await resolveProvider(effectiveProviders, 'planning', runOptions.provider ?? effectiveProviderName, runOptions.model);
 
   const repoConfig = await ensureRepoConfig(repoPath, config.gitea_host, provider);
 

@@ -31,17 +31,33 @@ const PROVIDER_PRESETS: Record<string, () => ProviderEntry> = {
   // needed — point ANTHROPIC_BASE_URL straight at it.
   'desktop-ollama': () => {
     const baseUrl = (process.env.CPE_OLLAMA_BASE_URL ?? 'http://192.168.1.3:11434').replace(/\/$/, '');
-    const model = process.env.CPE_OLLAMA_MODEL ?? 'gemma4-cpe:31b';
+    const defaultModel = process.env.CPE_OLLAMA_MODEL ?? 'gemma4-cpe:31b';
+    const models = (process.env.CPE_OLLAMA_MODELS ?? 'gemma4-cpe:31b,gemma4-cpe:26b')
+      .split(',').map(s => s.trim()).filter(Boolean);
     const token = process.env.CPE_OLLAMA_AUTH_TOKEN ?? 'ollama';
     return {
       name: 'desktop-ollama',
-      model,
       anthropic_base_url: baseUrl,
       anthropic_auth_token: token,
       health_check_url: '/api/tags',
+      models: models.includes(defaultModel) ? models : [defaultModel, ...models],
+      default_model: defaultModel,
     };
   },
 };
+
+/** The model an entry will use by default, across new + legacy shapes. */
+function entryDefaultModel(e: ProviderEntry): string | undefined {
+  return e.default_model ?? e.model;
+}
+
+/** A short "Model" cell for listings: the default, with a +N hint when the catalogue is larger. */
+function modelSummary(e: ProviderEntry): string {
+  const def = entryDefaultModel(e);
+  const extra = (e.models ?? []).filter(m => m !== def).length;
+  if (!def) return e.models && e.models.length ? `${e.models[0]} (+${e.models.length - 1})` : '';
+  return extra > 0 ? `${def} (+${extra})` : def;
+}
 
 function addPreset(presetName: string): void {
   const build = PROVIDER_PRESETS[presetName];
@@ -58,7 +74,8 @@ function addPreset(presetName: string): void {
   config.providers.push(entry);
   writeConfig(config);
   process.stdout.write(`Provider '${entry.name}' added from preset.\n`);
-  process.stdout.write(`  model:    ${entry.model}\n`);
+  process.stdout.write(`  models:   ${(entry.models ?? []).join(', ') || '(none)'}\n`);
+  process.stdout.write(`  default:  ${entryDefaultModel(entry) ?? '(none)'}\n`);
   process.stdout.write(`  base URL: ${entry.anthropic_base_url}\n`);
   process.stdout.write(`  health:   ${entry.anthropic_base_url}${entry.health_check_url}\n`);
   process.stdout.write(
@@ -103,7 +120,7 @@ export async function providerListCommand(): Promise<void> {
 
     const row =
       p.name.padEnd(COL_NAME) +
-      (p.model ?? '').padEnd(COL_MODEL) +
+      truncate(modelSummary(p), COL_MODEL - 1).padEnd(COL_MODEL) +
       truncate(p.anthropic_base_url ?? '', 40).padEnd(COL_URL) +
       truncate(p.health_check_url ?? '', 40).padEnd(COL_HEALTH) +
       roles.padEnd(COL_ROLES);
@@ -142,8 +159,16 @@ export async function providerAddCommand(options?: { preset?: string }): Promise
     break;
   }
 
-  process.stdout.write('Model (Enter to skip): ');
-  const model = readLine();
+  process.stdout.write('Models this endpoint serves, comma-separated (Enter to skip): ');
+  const models = readLine().split(',').map(s => s.trim()).filter(Boolean);
+
+  let defaultModel = '';
+  if (models.length === 1) {
+    defaultModel = models[0]!;
+  } else if (models.length > 1) {
+    process.stdout.write(`Default model [${models[0]}]: `);
+    defaultModel = readLine() || models[0]!;
+  }
 
   process.stdout.write('ANTHROPIC_BASE_URL (Enter to skip): ');
   const baseUrl = readLine();
@@ -164,7 +189,8 @@ export async function providerAddCommand(options?: { preset?: string }): Promise
   const forPhases = readLine().toLowerCase() === 'y';
 
   const entry: ProviderEntry = { name };
-  if (model) entry.model = model;
+  if (models.length) entry.models = models;
+  if (defaultModel) entry.default_model = defaultModel;
   if (baseUrl) entry.anthropic_base_url = baseUrl;
   if (apiKey) entry.anthropic_api_key = apiKey;
   if (authToken) entry.anthropic_auth_token = authToken;

@@ -119,11 +119,19 @@ export async function runPhase(
     effectivePromptFile = tmpPath;
   }
 
-  const provider = await resolveProvider(
-    appConfig.providers ?? [],
-    'phase',
-    appConfig.provider_for_phases,
-  );
+  let provider;
+  try {
+    provider = await resolveProvider(
+      appConfig.providers ?? [],
+      'phase',
+      meta.provider ?? appConfig.provider_for_phases,
+      meta.model,
+    );
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    await markPhaseFailed(runId, phaseNumber, reason, bus);
+    return { outcome: 'failed', reason };
+  }
 
   const sessionPromise = adapter.run({
     cwd: meta.worktree_path,
@@ -133,6 +141,7 @@ export async function runPhase(
     schema: PHASE_RESULT_SCHEMA,
     dangerouslySkipPermissions: appConfig.dangerously_skip_permissions,
     providerEnv: provider?.env ?? {},
+    model: provider?.model,
     modelArgs: provider?.modelArgs ?? [],
   });
 
@@ -309,11 +318,19 @@ export async function resumeOrRestart(
   const { createWriteStream } = await import('fs');
   const logStream = createWriteStream(logPath, { flags: 'a' });
 
-  const provider = await resolveProvider(
-    appConfig.providers ?? [],
-    'phase',
-    appConfig.provider_for_phases,
-  );
+  let provider;
+  try {
+    provider = await resolveProvider(
+      appConfig.providers ?? [],
+      'phase',
+      meta.provider ?? appConfig.provider_for_phases,
+      meta.model,
+    );
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    await markPhaseFailed(runId, phaseNumber, reason, bus);
+    return { outcome: 'failed', reason };
+  }
   const providerEnv = provider?.env ?? {};
   const spawnEnv = Object.keys(providerEnv).length > 0
     ? { ...process.env, ...providerEnv }

@@ -3,7 +3,24 @@ import type { ProviderEntry } from '../types/meta.js';
 export interface ResolvedProvider {
   name: string;
   env: Record<string, string>;
+  /** The resolved model id (for harness ctx.model), or undefined for the endpoint default. */
+  model?: string;
+  /** CLI args selecting the model (`['--model', <id>]`), or [] when none is resolved. */
   modelArgs: string[];
+}
+
+/**
+ * The model an endpoint will use, by precedence:
+ *   per-run request (`--model`) → provider.default_model → legacy provider.model.
+ * Returns undefined when none is set (only valid for the default Anthropic endpoint).
+ */
+export function resolveModel(provider: ProviderEntry, requestedModel?: string): string | undefined {
+  return requestedModel || provider.default_model || provider.model;
+}
+
+/** A provider that points at a custom endpoint must have a model — its backend won't know claude's default. */
+function isCustomEndpoint(p: ProviderEntry): boolean {
+  return !!p.anthropic_base_url;
 }
 
 export async function checkProvider(provider: ProviderEntry): Promise<boolean> {
@@ -33,14 +50,16 @@ export function buildProviderEnv(provider: ProviderEntry): Record<string, string
   return env;
 }
 
-export function buildProviderArgs(provider: ProviderEntry): string[] {
-  return provider.model ? ['--model', provider.model] : [];
+export function buildProviderArgs(provider: ProviderEntry, requestedModel?: string): string[] {
+  const model = resolveModel(provider, requestedModel);
+  return model ? ['--model', model] : [];
 }
 
 export async function resolveProvider(
   providers: ProviderEntry[],
   role: 'planning' | 'phase',
   nameOverride?: string,
+  requestedModel?: string,
 ): Promise<ResolvedProvider | null> {
   void role;
 
@@ -57,10 +76,22 @@ export async function resolveProvider(
 
   for (const candidate of candidates) {
     if (await checkProvider(candidate)) {
+      const model = resolveModel(candidate, requestedModel);
+      // Fail fast: a healthy custom endpoint with no resolvable model would
+      // otherwise let the harness fall back to its built-in default model
+      // (e.g. claude-opus-4-8), which a local/OpenAI-compatible backend 404s.
+      if (isCustomEndpoint(candidate) && !model) {
+        throw new Error(
+          `Provider '${candidate.name}' points at a custom endpoint ` +
+          `(${candidate.anthropic_base_url}) but no model is selected. Pass ` +
+          `--model <id>, or set "default_model" (or "models") on the provider.`,
+        );
+      }
       return {
         name: candidate.name,
         env: buildProviderEnv(candidate),
-        modelArgs: buildProviderArgs(candidate),
+        ...(model ? { model } : {}),
+        modelArgs: model ? ['--model', model] : [],
       };
     }
   }

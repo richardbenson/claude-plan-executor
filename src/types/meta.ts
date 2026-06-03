@@ -94,11 +94,22 @@ export interface AppQueue {
 
 export interface ProviderEntry {
   name: string;
-  model?: string;
+  /**
+   * A provider is an *endpoint* (base URL + auth + health check). Model
+   * selection is orthogonal: it is chosen per-run (`--model`), falling back to
+   * `default_model`, then the legacy single `model` field. `models` is the
+   * catalogue of model ids the endpoint serves (informational + for listings).
+   */
   anthropic_base_url?: string;
   anthropic_api_key?: string;
   anthropic_auth_token?: string;
   health_check_url?: string;
+  /** Model ids this endpoint serves (e.g. ['gemma4-cpe:31b', 'gemma4-cpe:26b']). */
+  models?: string[];
+  /** Model used when a run doesn't request one. Falls back to legacy `model`. */
+  default_model?: string;
+  /** @deprecated Legacy single-model field; still read as the default. Use default_model/models. */
+  model?: string;
 }
 
 export interface AppConfig {

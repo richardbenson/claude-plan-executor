@@ -36,7 +36,9 @@ cpe provider test desktop-ollama        # -> ✓ available
 ```
 
 Preset defaults (override with the env vars in brackets):
-- `model`: `gemma4-cpe:31b`  [`CPE_OLLAMA_MODEL`]
+- `default_model`: `gemma4-cpe:31b`  [`CPE_OLLAMA_MODEL`]
+- `models`: `gemma4-cpe:31b,gemma4-cpe:26b`  [`CPE_OLLAMA_MODELS`] — a provider is an
+  endpoint serving many models; pick per-run with `--model`, else `default_model`.
 - `anthropic_base_url`: `http://192.168.1.3:11434`  [`CPE_OLLAMA_BASE_URL`]
 - `anthropic_auth_token`: `ollama`  [`CPE_OLLAMA_AUTH_TOKEN`]
 - `health_check_url`: `/api/tags` (a cheap GET `resolveProvider` probes with its

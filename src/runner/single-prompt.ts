@@ -130,7 +130,8 @@ export async function runSinglePrompt(
   const provider = await resolveProvider(
     appConfig.providers ?? [],
     'phase',
-    appConfig.provider_for_phases,
+    meta.provider ?? appConfig.provider_for_phases,
+    meta.model,
   );
   const sessionPromise = adapter.run({
     cwd: meta.worktree_path,
@@ -140,6 +141,7 @@ export async function runSinglePrompt(
     schema: SINGLE_PROMPT_RESULT_SCHEMA,
     dangerouslySkipPermissions: appConfig.dangerously_skip_permissions,
     providerEnv: provider?.env ?? {},
+    model: provider?.model,
     modelArgs: provider?.modelArgs ?? [],
   });
 
@@ -328,18 +330,18 @@ async function runBenchSinglePrompt(
   const tmpFile = path.join(os.tmpdir(), `cpe-bench-${runId}.md`);
   fs.writeFileSync(tmpFile, promptText);
 
-  // 3 — provider env + model args. For a bench run the matrix model (meta.model)
-  // is the authoritative selection and must override any model bundled in the
-  // provider config — otherwise the harness falls back to its built-in default
-  // model (e.g. claude-opus-4-8), which a local Ollama endpoint 404s. The
-  // provider chosen via `cpe bench --provider` (meta.provider) likewise takes
+  // 3 — provider env + model. For a bench run the matrix model (meta.model) is
+  // the authoritative request and resolveProvider applies it (request > provider
+  // default > legacy), failing fast if a custom endpoint ends up with no model.
+  // The provider chosen via `cpe bench --provider` (meta.provider) takes
   // precedence over the config default.
   const provider = await resolveProvider(
     appConfig.providers ?? [],
     'phase',
     meta.provider ?? appConfig.provider_for_phases,
+    meta.model,
   );
-  const modelArgs = meta.model ? ['--model', meta.model] : (provider?.modelArgs ?? []);
+  const modelArgs = provider?.modelArgs ?? (meta.model ? ['--model', meta.model] : []);
 
   // 4 — activity-based timeout + bail guard; activity comes from the bus (the
   // same stream the live tail consumes), with repeat suppression in RunGuard.
@@ -367,7 +369,7 @@ async function runBenchSinglePrompt(
     schema: SINGLE_PROMPT_RESULT_SCHEMA,
     dangerouslySkipPermissions: appConfig.dangerously_skip_permissions,
     providerEnv: provider?.env ?? {},
-    model: meta.model,
+    model: provider?.model ?? meta.model,
     modelArgs,
     signal: guard.signal,
   });

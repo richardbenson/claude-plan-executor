@@ -63,7 +63,7 @@ export async function finaliseRun(runId: string, bus: ActivityBus, appConfig?: A
   const logFd = fs.openSync(logPath, 'w');
 
   const provider = appConfig
-    ? await resolveProvider(appConfig.providers ?? [], 'phase', appConfig.provider_for_phases)
+    ? await resolveProvider(appConfig.providers ?? [], 'phase', meta.provider ?? appConfig.provider_for_phases, meta.model)
     : null;
   const providerEnv = provider?.env ?? {};
   const spawnEnv = Object.keys(providerEnv).length > 0
