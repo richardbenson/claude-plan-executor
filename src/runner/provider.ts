@@ -42,6 +42,73 @@ export async function checkProvider(provider: ProviderEntry): Promise<boolean> {
   }
 }
 
+/**
+ * Candidate model-list endpoints to probe for a given base URL, covering the
+ * common backends: OpenAI-compatible / Anthropic (`/v1/models`) and native
+ * Ollama (`/api/tags`). An empty base URL means the real Anthropic API.
+ */
+export function modelListEndpoints(baseUrl?: string): string[] {
+  const b = (baseUrl?.trim() || 'https://api.anthropic.com').replace(/\/+$/, '');
+  const noV1 = b.replace(/\/v1$/, '');
+  return [...new Set([
+    b.endsWith('/v1') ? `${b}/models` : `${b}/v1/models`,
+    `${noV1}/api/tags`,
+    `${b}/models`,
+  ])];
+}
+
+/**
+ * Extract model ids from a model-list response. Handles OpenAI/Anthropic
+ * (`{ data: [{ id }] }`) and Ollama (`{ models: [{ name }] }`) shapes.
+ */
+export function parseModelList(json: unknown): string[] {
+  if (!json || typeof json !== 'object') return [];
+  const o = json as Record<string, unknown>;
+  const pick = (arr: unknown, keys: string[]): string[] =>
+    Array.isArray(arr)
+      ? arr
+          .map(it => {
+            const r = it as Record<string, unknown> | null;
+            for (const k of keys) if (r && typeof r[k] === 'string') return r[k] as string;
+            return undefined;
+          })
+          .filter((x): x is string => !!x)
+      : [];
+  const fromData = pick(o['data'], ['id']);
+  if (fromData.length) return fromData;
+  return pick(o['models'], ['name', 'id', 'model']);
+}
+
+/**
+ * Try to fetch the model catalogue from a provider endpoint. Probes the common
+ * list endpoints in turn and returns the first non-empty result (sorted), along
+ * with the endpoint that worked (usable as a health-check URL). Returns null if
+ * none respond usefully. Auth is sent in both Bearer and x-api-key forms so it
+ * works for OpenAI-compatible and Anthropic backends alike.
+ */
+export async function fetchProviderModels(
+  baseUrl?: string,
+  opts?: { apiKey?: string; authToken?: string },
+): Promise<{ models: string[]; endpoint: string } | null> {
+  const headers: Record<string, string> = { 'anthropic-version': '2023-06-01' };
+  const key = opts?.apiKey || opts?.authToken;
+  if (key) {
+    headers['Authorization'] = `Bearer ${key}`;
+    headers['x-api-key'] = key;
+  }
+  for (const url of modelListEndpoints(baseUrl)) {
+    try {
+      const res = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });
+      if (!res.ok) continue;
+      const models = parseModelList(await res.json());
+      if (models.length) return { models: [...new Set(models)].sort(), endpoint: url };
+    } catch {
+      // try the next candidate
+    }
+  }
+  return null;
+}
+
 export function buildProviderEnv(provider: ProviderEntry): Record<string, string> {
   const env: Record<string, string> = {};
   if (provider.anthropic_base_url) env['ANTHROPIC_BASE_URL'] = provider.anthropic_base_url;

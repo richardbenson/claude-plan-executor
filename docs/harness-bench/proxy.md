@@ -24,26 +24,27 @@ from a `ProviderEntry`, so all you do is add a provider.
 > It isn't for current Ollama. The proxy survives only as an optional fallback —
 > see the appendix.
 
-## Use it from cpe (provider preset)
+## Use it from cpe
 
-A built-in preset wires a `ProviderEntry` straight at Ollama. No secrets are
-hardcoded; values are overridable via env (Ollama ignores auth, so the token is
-a dummy):
+Add a provider (an *endpoint*) pointing straight at Ollama with `cpe provider
+add`. A provider serves many models; pick one per-run with `--model`, else the
+`default_model`. Example answers for a local Ollama box (substitute your own
+host — nothing here is hardcoded in the tool):
 
-```bash
-cpe provider add --preset desktop-ollama
-cpe provider test desktop-ollama        # -> ✓ available
+```
+cpe provider add
+  Name:                              local-ollama
+  Models (comma-separated):          gemma4-cpe:31b, gemma4-cpe:26b
+  Default model:                     gemma4-cpe:31b
+  ANTHROPIC_BASE_URL:                http://<ollama-host>:11434
+  ANTHROPIC_AUTH_TOKEN:              ollama        # Ollama ignores it; any value
+  Health check URL:                  /api/tags     # cheap GET, 5s probe
+
+cpe provider test local-ollama       # -> ✓ available
 ```
 
-Preset defaults (override with the env vars in brackets):
-- `default_model`: `gemma4-cpe:31b`  [`CPE_OLLAMA_MODEL`]
-- `models`: `gemma4-cpe:31b,gemma4-cpe:26b`  [`CPE_OLLAMA_MODELS`] — a provider is an
-  endpoint serving many models; pick per-run with `--model`, else `default_model`.
-- `anthropic_base_url`: `http://192.168.1.3:11434`  [`CPE_OLLAMA_BASE_URL`]
-- `anthropic_auth_token`: `ollama`  [`CPE_OLLAMA_AUTH_TOKEN`]
-- `health_check_url`: `/api/tags` (a cheap GET `resolveProvider` probes with its
-  existing 5s timeout — if Ollama is down the provider is skipped/surfaced, not
-  hung).
+The `health_check_url` is probed by `resolveProvider` with a 5s timeout — if
+Ollama is down the provider is skipped/surfaced, not hung.
 
 This matches how the repo's other Ollama providers are already configured. Then
 run cpe against it — set it as the phase default or pass per-run:
@@ -81,8 +82,8 @@ All run against `gemma4-cpe:31b` (Ollama capability list includes `tools`),
    cat noproxy.txt   # -> NO-PROXY-OK
    ```
 
-3. **Full cpe single-prompt run** using the `desktop-ollama` preset
-   (`provider_for_phases = desktop-ollama`): the local model made edit/bash tool
+3. **Full cpe single-prompt run** using a local Ollama provider
+   (`provider_for_phases` pointed at it): the local model made edit/bash tool
    calls, created and committed a file, emitted valid structured output, and the
    run reached status `complete` (PR step correctly skipped — throwaway repo had
    no remote), with zero Anthropic traffic.

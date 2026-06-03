@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import type { ProviderEntry } from '../types/meta.js';
 import { readConfig, writeConfig } from '../storage/config.js';
-import { checkProvider } from '../runner/provider.js';
+import { checkProvider, fetchProviderModels } from '../runner/provider.js';
 
 function readLine(): string {
   const buf = Buffer.alloc(4096);
@@ -19,33 +19,6 @@ function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) + '…' : s;
 }
 
-/**
- * Built-in provider presets. A preset fills in a ProviderEntry so a known
- * backend can be added without typing every field. Values are overridable via
- * env so no host/secret is hardcoded in a committed file; Ollama ignores auth,
- * so the token default is a harmless dummy. See docs/harness-bench/proxy.md.
- */
-const PROVIDER_PRESETS: Record<string, () => ProviderEntry> = {
-  // claude-code -> Ollama gemma4-cpe:31b, direct. Modern Ollama natively serves
-  // the Anthropic /v1/messages API (incl. tool use), so no translation proxy is
-  // needed — point ANTHROPIC_BASE_URL straight at it.
-  'desktop-ollama': () => {
-    const baseUrl = (process.env.CPE_OLLAMA_BASE_URL ?? 'http://192.168.1.3:11434').replace(/\/$/, '');
-    const defaultModel = process.env.CPE_OLLAMA_MODEL ?? 'gemma4-cpe:31b';
-    const models = (process.env.CPE_OLLAMA_MODELS ?? 'gemma4-cpe:31b,gemma4-cpe:26b')
-      .split(',').map(s => s.trim()).filter(Boolean);
-    const token = process.env.CPE_OLLAMA_AUTH_TOKEN ?? 'ollama';
-    return {
-      name: 'desktop-ollama',
-      anthropic_base_url: baseUrl,
-      anthropic_auth_token: token,
-      health_check_url: '/api/tags',
-      models: models.includes(defaultModel) ? models : [defaultModel, ...models],
-      default_model: defaultModel,
-    };
-  },
-};
-
 /** The model an entry will use by default, across new + legacy shapes. */
 function entryDefaultModel(e: ProviderEntry): string | undefined {
   return e.default_model ?? e.model;
@@ -57,30 +30,6 @@ function modelSummary(e: ProviderEntry): string {
   const extra = (e.models ?? []).filter(m => m !== def).length;
   if (!def) return e.models && e.models.length ? `${e.models[0]} (+${e.models.length - 1})` : '';
   return extra > 0 ? `${def} (+${extra})` : def;
-}
-
-function addPreset(presetName: string): void {
-  const build = PROVIDER_PRESETS[presetName];
-  if (!build) {
-    const known = Object.keys(PROVIDER_PRESETS).join(', ');
-    throw new Error(`Unknown preset '${presetName}'. Available presets: ${known}.`);
-  }
-  const config = readConfig();
-  if (!config.providers) config.providers = [];
-  const entry = build();
-  if (config.providers.find(p => p.name === entry.name)) {
-    throw new Error(`Provider '${entry.name}' already exists. Remove it first or edit the config.`);
-  }
-  config.providers.push(entry);
-  writeConfig(config);
-  process.stdout.write(`Provider '${entry.name}' added from preset.\n`);
-  process.stdout.write(`  models:   ${(entry.models ?? []).join(', ') || '(none)'}\n`);
-  process.stdout.write(`  default:  ${entryDefaultModel(entry) ?? '(none)'}\n`);
-  process.stdout.write(`  base URL: ${entry.anthropic_base_url}\n`);
-  process.stdout.write(`  health:   ${entry.anthropic_base_url}${entry.health_check_url}\n`);
-  process.stdout.write(
-    `Use it with: cpe prompt --provider ${entry.name} ...  (or set it as a default with 'cpe provider' config).\n`,
-  );
 }
 
 export async function providerListCommand(): Promise<void> {
@@ -135,12 +84,7 @@ export async function providerListCommand(): Promise<void> {
   }
 }
 
-export async function providerAddCommand(options?: { preset?: string }): Promise<void> {
-  if (options?.preset) {
-    addPreset(options.preset);
-    return;
-  }
-
+export async function providerAddCommand(): Promise<void> {
   const config = readConfig();
   if (!config.providers) config.providers = [];
 
@@ -159,17 +103,6 @@ export async function providerAddCommand(options?: { preset?: string }): Promise
     break;
   }
 
-  process.stdout.write('Models this endpoint serves, comma-separated (Enter to skip): ');
-  const models = readLine().split(',').map(s => s.trim()).filter(Boolean);
-
-  let defaultModel = '';
-  if (models.length === 1) {
-    defaultModel = models[0]!;
-  } else if (models.length > 1) {
-    process.stdout.write(`Default model [${models[0]}]: `);
-    defaultModel = readLine() || models[0]!;
-  }
-
   process.stdout.write('ANTHROPIC_BASE_URL (Enter to skip): ');
   const baseUrl = readLine();
 
@@ -179,8 +112,43 @@ export async function providerAddCommand(options?: { preset?: string }): Promise
   process.stdout.write('ANTHROPIC_AUTH_TOKEN (Enter to skip): ');
   const authToken = readLine();
 
-  process.stdout.write('Health check URL (Enter to skip) (full URL or path relative to base URL): ');
-  const healthUrl = readLine();
+  // Model catalogue: offer to fetch it from the endpoint, else collect manually.
+  let models: string[] = [];
+  let fetchedEndpoint: string | undefined;
+  if (baseUrl || apiKey || authToken) {
+    process.stdout.write('Fetch the model list from the provider automatically? [Y/n]: ');
+    const wantFetch = readLine().toLowerCase() !== 'n';
+    if (wantFetch) {
+      process.stdout.write('Fetching models…\n');
+      const result = await fetchProviderModels(baseUrl, { apiKey, authToken });
+      if (result && result.models.length) {
+        models = result.models;
+        fetchedEndpoint = result.endpoint;
+        const preview = models.slice(0, 8).join(', ');
+        process.stdout.write(`  Found ${models.length} model${models.length === 1 ? '' : 's'} (via ${result.endpoint}): ${preview}${models.length > 8 ? ', …' : ''}\n`);
+      } else {
+        process.stdout.write('  Could not fetch models from the provider — enter them manually.\n');
+      }
+    }
+  }
+  if (models.length === 0) {
+    process.stdout.write('Models this endpoint serves, comma-separated (Enter to skip): ');
+    models = readLine().split(',').map(s => s.trim()).filter(Boolean);
+  }
+
+  let defaultModel = '';
+  if (models.length === 1) {
+    defaultModel = models[0]!;
+  } else if (models.length > 1) {
+    process.stdout.write(`Default model [${models[0]}]: `);
+    defaultModel = readLine() || models[0]!;
+  }
+
+  const healthDefault = fetchedEndpoint ?? '';
+  process.stdout.write(
+    `Health check URL${healthDefault ? ` [${healthDefault}]` : ' (Enter to skip)'} (full URL or path relative to base URL): `,
+  );
+  const healthUrl = readLine() || healthDefault;
 
   process.stdout.write('Set as default for planning sessions? [y/N]: ');
   const forPlanning = readLine().toLowerCase() === 'y';

@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test';
-import { resolveModel, buildProviderArgs, resolveProvider } from './provider.js';
+import { resolveModel, buildProviderArgs, resolveProvider, modelListEndpoints, parseModelList } from './provider.js';
 import type { ProviderEntry } from '../types/meta.js';
 
 test('resolveModel precedence: requested > default_model > legacy model', () => {
@@ -49,4 +49,27 @@ test('resolveProvider tolerates a model-less Anthropic endpoint (no custom base 
 
 test('resolveProvider returns null when no providers are configured', async () => {
   expect(await resolveProvider([], 'phase', undefined)).toBeNull();
+});
+
+test('modelListEndpoints probes OpenAI-compatible, Ollama, and plain shapes', () => {
+  expect(modelListEndpoints('http://host:11434')).toEqual([
+    'http://host:11434/v1/models',
+    'http://host:11434/api/tags',
+    'http://host:11434/models',
+  ]);
+  // A base that already ends in /v1 shouldn't double it.
+  expect(modelListEndpoints('http://host:11434/v1')).toEqual([
+    'http://host:11434/v1/models',
+    'http://host:11434/api/tags',
+    'http://host:11434/v1/models',
+  ].filter((v, i, a) => a.indexOf(v) === i));
+  // Empty base URL means the real Anthropic API.
+  expect(modelListEndpoints('')[0]).toBe('https://api.anthropic.com/v1/models');
+});
+
+test('parseModelList handles OpenAI/Anthropic (data[].id) and Ollama (models[].name)', () => {
+  expect(parseModelList({ object: 'list', data: [{ id: 'gpt-x' }, { id: 'gpt-y' }] })).toEqual(['gpt-x', 'gpt-y']);
+  expect(parseModelList({ models: [{ name: 'gemma:31b' }, { name: 'gemma:26b' }] })).toEqual(['gemma:31b', 'gemma:26b']);
+  expect(parseModelList({})).toEqual([]);
+  expect(parseModelList('nope')).toEqual([]);
 });
