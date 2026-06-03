@@ -15,6 +15,7 @@ import { readQueue, writeQueue } from './storage/queue.js';
 import {
   providerListCommand,
   providerAddCommand,
+  providerRefreshCommand,
   providerRemoveCommand,
   providerTestCommand,
 } from './commands/provider.js';
@@ -160,6 +161,12 @@ export function setupCli(): void {
     .command('add')
     .description('Add a provider interactively')
     .action(wrap(providerAddCommand));
+
+  providerCmd
+    .command('refresh')
+    .description('Re-fetch model catalogues for providers (all, or one by name)')
+    .option('--provider <name>', 'Refresh only this provider')
+    .action(wrap(providerRefreshCommand));
 
   providerCmd
     .command('remove <name>')

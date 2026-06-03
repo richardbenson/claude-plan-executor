@@ -172,6 +172,72 @@ export async function providerAddCommand(): Promise<void> {
   process.stdout.write(`Provider '${name}' added.\n`);
 }
 
+/**
+ * Re-fetch the model catalogue for one or all providers and update `models[]`.
+ * Replaces the stored list with what the endpoint now reports, summarising what
+ * was added/removed. Providers with nothing to query (no base URL and no key)
+ * are skipped; the default model is left alone but flagged if it disappeared.
+ */
+export async function providerRefreshCommand(options?: { provider?: string }): Promise<void> {
+  const config = readConfig();
+  const providers = config.providers ?? [];
+
+  if (providers.length === 0) {
+    process.stdout.write("No providers configured. Use 'cpe provider add' to add one.\n");
+    return;
+  }
+
+  let targets: ProviderEntry[];
+  if (options?.provider) {
+    const found = providers.find(p => p.name === options.provider);
+    if (!found) {
+      process.stderr.write(`Provider '${options.provider}' not found.\n`);
+      process.exit(1);
+    }
+    targets = [found];
+  } else {
+    targets = providers;
+  }
+
+  let changed = false;
+  for (const p of targets) {
+    if (!p.anthropic_base_url && !p.anthropic_api_key && !p.anthropic_auth_token) {
+      process.stdout.write(`  ${p.name}: skipped (no endpoint or key to query)\n`);
+      continue;
+    }
+    const result = await fetchProviderModels(p.anthropic_base_url, {
+      apiKey: p.anthropic_api_key,
+      authToken: p.anthropic_auth_token,
+    });
+    if (!result || result.models.length === 0) {
+      process.stdout.write(`  ${p.name}: ✗ could not fetch models\n`);
+      continue;
+    }
+    const before = new Set(p.models ?? []);
+    const added = result.models.filter(m => !before.has(m));
+    const removed = [...before].filter(m => !result.models.includes(m));
+    p.models = result.models;
+    changed = true;
+
+    const parts = [`${result.models.length} models`];
+    if (added.length) parts.push(`+${added.length} new`);
+    if (removed.length) parts.push(`-${removed.length} removed`);
+    process.stdout.write(`  ${p.name}: ${parts.join(', ')}\n`);
+    if (added.length) process.stdout.write(`      new: ${added.join(', ')}\n`);
+    const def = entryDefaultModel(p);
+    if (def && !result.models.includes(def)) {
+      process.stdout.write(`      ⚠ default model '${def}' is no longer offered — update it with 'cpe provider add' or edit the config.\n`);
+    }
+  }
+
+  if (changed) {
+    writeConfig(config);
+    process.stdout.write('Updated provider config.\n');
+  } else {
+    process.stdout.write('No changes.\n');
+  }
+}
+
 export async function providerRemoveCommand(name: string): Promise<void> {
   const config = readConfig();
   const providers = config.providers ?? [];
