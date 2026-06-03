@@ -7,6 +7,7 @@ import * as harnessRegistry from '../harness/registry.js';
 import { classifyEnvelope } from './envelope.js';
 import { handleRateLimit } from './limit.js';
 import { startJsonlTail } from './jsonl-tail.js';
+import { startOutputTail } from './output-tail.js';
 import { getHead } from '../git/repo.js';
 import { SINGLE_PROMPT_TEMPLATE, SINGLE_PROMPT_RESULT_SCHEMA } from '../prompts/index.js';
 import { createClone, removeClone } from '../git/clone.js';
@@ -271,6 +272,7 @@ function activitySignature(e: ActivityEvent): string {
     (r['command'] as string) ??
     (r['message'] as string) ??
     (r['text'] as string) ??
+    (r['line'] as string) ??
     (r['summary'] as string) ??
     (r['phaseName'] as string) ??
     '';
@@ -352,10 +354,16 @@ async function runBenchSinglePrompt(
     modelArgs: provider?.modelArgs ?? [],
     signal: guard.signal,
   });
-  const stopTail = await startJsonlTail(
-    uuid, clone.path, runId, -1, bus, logPath,
-    sig => guard.noteActivity(sig),
-  );
+  // Structured adapters (claude-code) expose a parseable JSONL stream we tail for
+  // rich activity events; opaque adapters only append raw stdout to logPath, so
+  // we use the generic line tail. Both feed the bus, and the bus subscription
+  // above forwards every event to the guard as activity.
+  const stopTail = adapter.completionMode === 'structured'
+    ? await startJsonlTail(
+        uuid, clone.path, runId, -1, bus, logPath,
+        sig => guard.noteActivity(sig),
+      )
+    : startOutputTail(logPath, runId, -1, bus);
 
   let result;
   try {

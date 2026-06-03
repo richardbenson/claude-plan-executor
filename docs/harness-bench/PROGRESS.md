@@ -13,7 +13,7 @@ no per-phase branches, no per-phase PRs (we build and test locally; nobody else 
 | 03 | Anthropic->Ollama proxy + local-model provider preset | complete | 02 |
 | 04 | Clone isolation + capture + branch push + activity-timeout + pause | complete | 02 |
 | 05 | Matrix / bench command + summary table | complete | 04 |
-| 06 | Bounded live TUI + manual bail | not-started | 04 |
+| 06 | Bounded live TUI + manual bail | complete | 04 |
 
 ## Adapters (one harness per phase; template = Phase 07)
 
@@ -101,9 +101,27 @@ full set rather than stopping at plandex.
   (no code/git loss; all branches intact). User accepted the loss. Lesson saved to memory.
 
 ### Phase 06
-- Status: not-started
-- Started: - / Completed: -
-- Notes:
+- Status: complete
+- Started: 2026-06-03 / Completed: 2026-06-03
+- Notes: New src/runner/output-tail.ts — generic, harness-agnostic poll-based line tail over a run's
+  log/stdout; emits a new `output` ActivityEvent per appended line. It is the live-output source for
+  opaque harnesses AND the activity signal the Phase 04 timeout consumes (bench dispatch subscribes to
+  the bus and treats each event as activity), so no second reader. single-prompt.ts bench path now
+  selects the tail by adapter.completionMode: structured→jsonl-tail (claude, unchanged), opaque→
+  output-tail. New src/tui/Bench.tsx + src/tui/hooks/useBenchState.ts (testable deriveBenchState):
+  matrix of clone runs (running→pending→finished, with glyph/colour from the state table + counts),
+  a NOW line (current harness__model + elapsed + last-output age, age→yellow when quiet >10s, 1s clock
+  so it never looks frozen), and a BOUNDED live pane (height clamped to MAX_LIVE_ROWS=14, matrix to 12,
+  overflow hidden — one chatty harness can't blow up the layout). Manual bail: `b` in the bench view →
+  confirm → requestBail(runId) → Phase 04 guard.bail() → process-tree kill → recorded 'bailed' → capture
+  still runs → matrix continues after the pause (bailing one run never aborts the matrix). App.tsx: `v`
+  now cycles watch→manage→bench→watch (first press still watch→manage, so the claude flow is unchanged);
+  Header gained a BENCH mode (cyan). ActivityFeed renders the new `output` kind (`·`). Verified: build/
+  typecheck/lint clean (0 errors), 63 tests pass (8 new: output-tail line/partial/stop-flush/late-file;
+  deriveBenchState filter/order+counts/slugify/empty). Bail plumbing (requestBail→guard→abort→'bailed'+
+  capture) already covered by run-guard.test.ts and validated end-to-end in Phase 04. The live Ink
+  render + keybind interaction needs a real TTY (raw mode) and is the in-terminal manual acceptance step;
+  no headless mode was built (explicitly out of scope).
 
 ### Phase 07
 - Status: not-started
