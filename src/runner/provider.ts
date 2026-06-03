@@ -23,6 +23,17 @@ function isCustomEndpoint(p: ProviderEntry): boolean {
   return !!p.anthropic_base_url;
 }
 
+/** Auth headers covering OpenAI-compatible (Bearer), Anthropic (x-api-key), and Ollama (ignored). */
+function authHeaders(opts?: { apiKey?: string; authToken?: string }): Record<string, string> {
+  const headers: Record<string, string> = { 'anthropic-version': '2023-06-01' };
+  const key = opts?.apiKey || opts?.authToken;
+  if (key) {
+    headers['Authorization'] = `Bearer ${key}`;
+    headers['x-api-key'] = key;
+  }
+  return headers;
+}
+
 export async function checkProvider(provider: ProviderEntry): Promise<boolean> {
   if (!provider.health_check_url) return true;
 
@@ -35,11 +46,32 @@ export async function checkProvider(provider: ProviderEntry): Promise<boolean> {
   }
 
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    // Send the provider's auth so an authenticated endpoint (e.g. /v1/models on a
+    // keyed backend) reports healthy rather than 401 — important now that the
+    // health URL is auto-guessed from the model-list endpoint.
+    const res = await fetch(url, {
+      headers: authHeaders({ apiKey: provider.anthropic_api_key, authToken: provider.anthropic_auth_token }),
+      signal: AbortSignal.timeout(5000),
+    });
     return res.status >= 200 && res.status < 300;
   } catch {
     return false;
   }
+}
+
+/**
+ * Turn a model-list endpoint URL into the value to store as `health_check_url`:
+ * a base-relative path when it sits under the base URL (e.g. `/v1/models`),
+ * otherwise the full URL. The endpoint that served the model list is, by
+ * definition, a reachable health check.
+ */
+export function healthCheckPath(baseUrl: string | undefined, endpoint: string): string {
+  const b = (baseUrl ?? '').replace(/\/+$/, '');
+  if (b && endpoint.startsWith(b)) {
+    const rest = endpoint.slice(b.length);
+    return rest.startsWith('/') ? rest : `/${rest}`;
+  }
+  return endpoint;
 }
 
 /**
@@ -90,12 +122,7 @@ export async function fetchProviderModels(
   baseUrl?: string,
   opts?: { apiKey?: string; authToken?: string },
 ): Promise<{ models: string[]; endpoint: string } | null> {
-  const headers: Record<string, string> = { 'anthropic-version': '2023-06-01' };
-  const key = opts?.apiKey || opts?.authToken;
-  if (key) {
-    headers['Authorization'] = `Bearer ${key}`;
-    headers['x-api-key'] = key;
-  }
+  const headers = authHeaders(opts);
   for (const url of modelListEndpoints(baseUrl)) {
     try {
       const res = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });

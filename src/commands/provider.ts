@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import type { ProviderEntry } from '../types/meta.js';
 import { readConfig, writeConfig } from '../storage/config.js';
-import { checkProvider, fetchProviderModels } from '../runner/provider.js';
+import { checkProvider, fetchProviderModels, healthCheckPath } from '../runner/provider.js';
 
 function readLine(): string {
   const buf = Buffer.alloc(4096);
@@ -144,11 +144,19 @@ export async function providerAddCommand(): Promise<void> {
     defaultModel = readLine() || models[0]!;
   }
 
-  const healthDefault = fetchedEndpoint ?? '';
-  process.stdout.write(
-    `Health check URL${healthDefault ? ` [${healthDefault}]` : ' (Enter to skip)'} (full URL or path relative to base URL): `,
-  );
-  const healthUrl = readLine() || healthDefault;
+  // Auto-guess the health check from the model endpoint that responded (it is,
+  // by definition, reachable). Stored as a base-relative path when possible.
+  let healthUrl: string;
+  if (fetchedEndpoint) {
+    healthUrl = healthCheckPath(baseUrl, fetchedEndpoint);
+    process.stdout.write(`Health check: ${healthUrl} (auto-detected — Enter to keep, or type another / 'none'): `);
+    const override = readLine();
+    if (override.toLowerCase() === 'none') healthUrl = '';
+    else if (override) healthUrl = override;
+  } else {
+    process.stdout.write('Health check URL (Enter to skip) (full URL or path relative to base URL): ');
+    healthUrl = readLine();
+  }
 
   process.stdout.write('Set as default for planning sessions? [y/N]: ');
   const forPlanning = readLine().toLowerCase() === 'y';

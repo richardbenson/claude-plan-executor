@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test';
-import { resolveModel, buildProviderArgs, resolveProvider, modelListEndpoints, parseModelList } from './provider.js';
+import { resolveModel, buildProviderArgs, resolveProvider, modelListEndpoints, parseModelList, healthCheckPath } from './provider.js';
 import type { ProviderEntry } from '../types/meta.js';
 
 test('resolveModel precedence: requested > default_model > legacy model', () => {
@@ -72,4 +72,12 @@ test('parseModelList handles OpenAI/Anthropic (data[].id) and Ollama (models[].n
   expect(parseModelList({ models: [{ name: 'gemma:31b' }, { name: 'gemma:26b' }] })).toEqual(['gemma:31b', 'gemma:26b']);
   expect(parseModelList({})).toEqual([]);
   expect(parseModelList('nope')).toEqual([]);
+});
+
+test('healthCheckPath returns a base-relative path under the base url, else the full url', () => {
+  expect(healthCheckPath('http://host:11434', 'http://host:11434/v1/models')).toBe('/v1/models');
+  expect(healthCheckPath('http://host:11434/', 'http://host:11434/api/tags')).toBe('/api/tags');
+  // Endpoint not under the base (or no base) → keep the full URL.
+  expect(healthCheckPath('', 'https://api.anthropic.com/v1/models')).toBe('https://api.anthropic.com/v1/models');
+  expect(healthCheckPath('http://a', 'http://b/v1/models')).toBe('http://b/v1/models');
 });
