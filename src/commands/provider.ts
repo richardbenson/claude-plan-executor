@@ -103,13 +103,13 @@ export async function providerAddCommand(): Promise<void> {
     break;
   }
 
-  process.stdout.write('ANTHROPIC_BASE_URL (Enter to skip): ');
+  process.stdout.write('Base URL (e.g. http://localhost:11434; Enter for default Anthropic): ');
   const baseUrl = readLine();
 
-  process.stdout.write('ANTHROPIC_API_KEY (Enter to skip): ');
+  process.stdout.write('API key (Enter to skip): ');
   const apiKey = readLine();
 
-  process.stdout.write('ANTHROPIC_AUTH_TOKEN (Enter to skip): ');
+  process.stdout.write('Auth token (Enter to skip): ');
   const authToken = readLine();
 
   // Model catalogue: offer to fetch it from the endpoint, else collect manually.
