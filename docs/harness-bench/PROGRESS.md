@@ -21,7 +21,7 @@ no per-phase branches, no per-phase PRs (we build and test locally; nobody else 
 |-------|-------|--------|-----------|
 | 07 | opencode adapter (canonical template) | complete | 05 |
 | 08 | aider adapter | complete | 07 |
-| 09 | goose adapter | not-started | 07 |
+| 09 | goose adapter | complete | 07 |
 | 10 | openhands adapter | not-started | 07 |
 | 11 | plandex adapter + orchestrator write-up | not-started | 07 |
 | 12 | pi adapter | not-started | 07 |
@@ -196,6 +196,38 @@ full set rather than stopping at plandex.
   isolation fix). This isn't apples-to-apples (26b ran the heavy README task; 31b ran a light create-file
   task), so the real whole-vs-diff / 26b-vs-31b verdict is deferred to the full matrix on a common task.
 
-### Phases 09-15
-- One adapter per phase (goose, openhands, plandex, pi, crush, codex-cli, swe-agent), each a
+### Phase 09
+- Status: complete
+- Started: 2026-06-03 / Completed: 2026-06-04
+- Notes: goose (Block) adapter (goose 1.37.0). **completionMode = opaque** (confirmed empirically):
+  `goose run` prints human progress + tool-call traces, no result envelope; outcome from exit + git
+  diff (exit0+changes→completed, exit0+no-diff→no-op, nonzero→error). goose does NOT auto-commit — it
+  edits the working tree — so change-detection is `git status --porcelain` (like opencode), and Phase-04
+  capture diffs the staged tree vs base ref as usual. New src/harness/goose.ts (registered in
+  registry.ts): `goose run --no-session --max-turns <n> -t <prompt>` in ctx.cwd. File editing works out
+  of the box via goose's built-in developer tools (write/edit/shell/todo_write) — **no MCP extension
+  config needed**. `--max-turns` is a loop backstop (env CPE_GOOSE_MAX_TURNS, default 50).
+  **Provider/model + isolation:** goose is config-driven (global `$XDG_CONFIG_HOME/goose/config.yaml`)
+  and persists sessions/logs under XDG_DATA/STATE — the global-config hazard the phase warned about. We
+  avoid touching the user's real config by pointing ALL FOUR XDG base dirs (CONFIG/DATA/STATE/CACHE) at a
+  per-run temp dir and selecting the model purely via env: GOOSE_PROVIDER=ollama, GOOSE_MODEL=<model>,
+  OLLAMA_HOST=<provider base url> (cpe's ANTHROPIC_BASE_URL maps straight to it; goose prepends http://
+  if absent). ANTHROPIC_* stripped from the spawn env. Verified `goose info` honours XDG_CONFIG_HOME and
+  that a run wrote only to the temp dirs — the real ~/.config/goose/config.yaml mtime was unchanged
+  (it's the user's own install-time `goose configure` output, not ours). Temp dir removed after the run,
+  so no goose state lands in the captured diff. **Tokens** parsed best-effort from goose's per-request
+  logs ($XDG_STATE_HOME/goose/logs/llm_request.*.jsonl), each carrying a `usage` object — summed across
+  requests; cost not reported for a local model (omitted).
+  **Validation (synthetic, single fast model per the scope decision):** validated end-to-end on
+  gemma4-cpe:31b via the bench path with a bounded create-file task → run_outcome=completed, aider-style
+  capture wrote results/goose__gemma4-cpe-31b/{meta.json,diff,transcript}, diff (UPDATING.md | 3 +++)
+  matches goose's change, tokens parsed (15166 in / 529 out), harnesstests/goose__gemma4-cpe-31b pushed,
+  real repo + real goose config untouched (isolation held). Output streams live (the bench output tail
+  surfaced goose's progress). 94 tests pass (6 new goose tests: registration/opaque, ollamaHostFrom,
+  deriveGooseOutcome, max-turns env, usage parsing across logs, empty-logs), lint/build clean. Test
+  artifacts (results, clone, run dir, remote branch, scratch + XDG temp dirs, driver) cleaned up by exact
+  id/name afterward.
+
+### Phases 10-15
+- One adapter per phase (openhands, plandex, pi, crush, codex-cli, swe-agent), each a
   commit on `feature/harness-bench`. See ADAPTER_BACKLOG.md.

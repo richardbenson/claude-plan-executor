@@ -2,6 +2,7 @@ import type { Harness } from './types.js';
 import { claudeCodeHarness } from './claude-code.js';
 import { opencodeHarness } from './opencode.js';
 import { aiderHarness } from './aider.js';
+import { gooseHarness } from './goose.js';
 
 const registry = new Map<string, Harness>();
 
@@ -30,3 +31,4 @@ register(claudeCodeHarness);
 // Register opaque-mode adapters.
 register(opencodeHarness);
 register(aiderHarness);
+register(gooseHarness);
