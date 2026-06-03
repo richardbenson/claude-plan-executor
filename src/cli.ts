@@ -140,7 +140,8 @@ export function setupCli(): void {
 
   providerCmd
     .command('add')
-    .description('Add a provider interactively')
+    .description('Add a provider interactively, or from a preset')
+    .option('--preset <name>', 'Add a built-in preset (e.g. desktop-ollama) without prompts')
     .action(wrap(providerAddCommand));
 
   providerCmd

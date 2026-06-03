@@ -10,7 +10,7 @@ no per-phase branches, no per-phase PRs (we build and test locally; nobody else 
 |-------|-------|--------|-----------|
 | 01 | Run parameterization + Harness contract & registry | complete | - |
 | 02 | Executor dispatch refactor (single-prompt + phase-loop) | complete | 01 |
-| 03 | Anthropic->Ollama proxy + local-model provider preset | not-started | 02 |
+| 03 | Anthropic->Ollama proxy + local-model provider preset | complete | 02 |
 | 04 | Clone isolation + capture + branch push + activity-timeout + pause | not-started | 02 |
 | 05 | Matrix / bench command + summary table | not-started | 04 |
 | 06 | Bounded live TUI + manual bail | not-started | 04 |
@@ -52,9 +52,19 @@ full set rather than stopping at plandex.
   not part of the contract this phase). Unknown harness fails fast via existing error paths.
 
 ### Phase 03
-- Status: not-started
-- Started: - / Completed: -
+- Status: complete
+- Started: 2026-06-03 / Completed: 2026-06-03
 - Notes: The immediate cost escape; enables claude-on-local for validating phases 04-06 for free.
+  **Correction:** the phase premise (a translation proxy is required) is obsolete - modern Ollama
+  (verified 0.30.2) natively serves the Anthropic /v1/messages API incl. tool use, so **no proxy is
+  needed**; point ANTHROPIC_BASE_URL straight at Ollama (as the repo's existing providers already do).
+  Final approach: `cpe provider add --preset desktop-ollama` -> direct
+  (anthropic_base_url=http://192.168.1.3:11434, health_check_url=/api/tags, env-overridable, no
+  hardcoded secrets). Validated end-to-end: claude -p direct and a full cpe single-prompt run on
+  gemma4-cpe:31b both created+committed a file with valid structured output, status `complete`, zero
+  api.anthropic.com traffic. docs/harness-bench/proxy.md documents the direct path; LiteLLM
+  (docker-compose.yml + litellm-config.yaml, verified working) is demoted to an optional appendix for
+  non-Anthropic-native backends only. Test artifacts cleaned up afterwards.
 
 ### Phase 04
 - Status: not-started

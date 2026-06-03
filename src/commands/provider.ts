@@ -19,6 +19,53 @@ function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) + '…' : s;
 }
 
+/**
+ * Built-in provider presets. A preset fills in a ProviderEntry so a known
+ * backend can be added without typing every field. Values are overridable via
+ * env so no host/secret is hardcoded in a committed file; Ollama ignores auth,
+ * so the token default is a harmless dummy. See docs/harness-bench/proxy.md.
+ */
+const PROVIDER_PRESETS: Record<string, () => ProviderEntry> = {
+  // claude-code -> Ollama gemma4-cpe:31b, direct. Modern Ollama natively serves
+  // the Anthropic /v1/messages API (incl. tool use), so no translation proxy is
+  // needed — point ANTHROPIC_BASE_URL straight at it.
+  'desktop-ollama': () => {
+    const baseUrl = (process.env.CPE_OLLAMA_BASE_URL ?? 'http://192.168.1.3:11434').replace(/\/$/, '');
+    const model = process.env.CPE_OLLAMA_MODEL ?? 'gemma4-cpe:31b';
+    const token = process.env.CPE_OLLAMA_AUTH_TOKEN ?? 'ollama';
+    return {
+      name: 'desktop-ollama',
+      model,
+      anthropic_base_url: baseUrl,
+      anthropic_auth_token: token,
+      health_check_url: '/api/tags',
+    };
+  },
+};
+
+function addPreset(presetName: string): void {
+  const build = PROVIDER_PRESETS[presetName];
+  if (!build) {
+    const known = Object.keys(PROVIDER_PRESETS).join(', ');
+    throw new Error(`Unknown preset '${presetName}'. Available presets: ${known}.`);
+  }
+  const config = readConfig();
+  if (!config.providers) config.providers = [];
+  const entry = build();
+  if (config.providers.find(p => p.name === entry.name)) {
+    throw new Error(`Provider '${entry.name}' already exists. Remove it first or edit the config.`);
+  }
+  config.providers.push(entry);
+  writeConfig(config);
+  process.stdout.write(`Provider '${entry.name}' added from preset.\n`);
+  process.stdout.write(`  model:    ${entry.model}\n`);
+  process.stdout.write(`  base URL: ${entry.anthropic_base_url}\n`);
+  process.stdout.write(`  health:   ${entry.anthropic_base_url}${entry.health_check_url}\n`);
+  process.stdout.write(
+    `Use it with: cpe prompt --provider ${entry.name} ...  (or set it as a default with 'cpe provider' config).\n`,
+  );
+}
+
 export async function providerListCommand(): Promise<void> {
   const config = readConfig();
   const providers = config.providers;
@@ -71,7 +118,12 @@ export async function providerListCommand(): Promise<void> {
   }
 }
 
-export async function providerAddCommand(): Promise<void> {
+export async function providerAddCommand(options?: { preset?: string }): Promise<void> {
+  if (options?.preset) {
+    addPreset(options.preset);
+    return;
+  }
+
   const config = readConfig();
   if (!config.providers) config.providers = [];
 

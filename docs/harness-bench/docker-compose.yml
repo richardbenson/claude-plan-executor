@@ -1,0 +1,24 @@
+# Anthropic -> Ollama translation proxy for cpe / Claude Code.
+#
+#   docker compose -f docs/harness-bench/docker-compose.yml up -d
+#
+# Defaults target the desktop Ollama (gemma4-cpe:31b). Override per-deployment:
+#   OLLAMA_OPENAI_BASE_URL=http://<host>:11434/v1 docker compose ... up -d
+# For the eventual k3s target, set
+#   OLLAMA_OPENAI_BASE_URL=http://ollama.ollama.svc.homelab.cluster:11434/v1
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: cpe-litellm
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./litellm-config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    environment:
+      # Ollama's OpenAI-compatible endpoint (note the trailing /v1).
+      OLLAMA_OPENAI_BASE_URL: ${OLLAMA_OPENAI_BASE_URL:-http://192.168.1.3:11434/v1}
+      OLLAMA_API_KEY: ${OLLAMA_API_KEY:-ollama}
+      # Dummy local-only key; the proxy is not internet-exposed.
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-cpe-local}
+    restart: unless-stopped
