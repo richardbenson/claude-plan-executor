@@ -20,7 +20,7 @@ no per-phase branches, no per-phase PRs (we build and test locally; nobody else 
 | Phase | Title | Status | Depends on |
 |-------|-------|--------|-----------|
 | 07 | opencode adapter (canonical template) | complete | 05 |
-| 08 | aider adapter | not-started | 07 |
+| 08 | aider adapter | complete | 07 |
 | 09 | goose adapter | not-started | 07 |
 | 10 | openhands adapter | not-started | 07 |
 | 11 | plandex adapter + orchestrator write-up | not-started | 07 |
@@ -149,6 +149,49 @@ full set rather than stopping at plandex.
   (4 new opencode tests: registration/opaque, base-url mapping, outcome rules, usage parsing), lint/build
   clean. Test artifacts cleaned up afterward (by exact id/name).
 
-### Phases 08-15
-- One adapter per phase (aider, goose, openhands, plandex, pi, crush, codex-cli, swe-agent), each a
+### Phase 08
+- Status: complete
+- Started: 2026-06-03 / Completed: 2026-06-03
+- Notes: aider adapter (aider 0.86.2). **completionMode = opaque** (confirmed empirically): `aider
+  --message` prints human-readable progress and AUTO-COMMITS; there is no machine-readable result
+  envelope. Outcome from exit + change: exit0+change→completed, exit0+no-change→no-op, nonzero→error.
+  New src/harness/aider.ts (registered in registry.ts): `aider --model openai/<model> --edit-format
+  <fmt> --message <prompt> --yes-always --no-gitignore --no-stream --no-pretty --no-fancy-input
+  --no-check-update --no-analytics --no-show-model-warnings`. **Model wiring:** OpenAI-compatible via
+  LiteLLM — `openai/<model>` with OPENAI_API_BASE=<base>/v1 + OPENAI_API_KEY (Ollama ignores it but
+  LiteLLM requires one), translated from cpe's provider env; ANTHROPIC_* stripped so aider can't inherit
+  cpe creds. **Edit format** (`whole|diff|udiff`) is exposed via CPE_AIDER_EDIT_FORMAT (default `whole`)
+  since the Harness contract has no per-harness option slot.
+  **Auto-commit reconciliation:** aider's commits are the source of truth — Phase-04 capture diffs the
+  index against the clone's base ref, so committed changes are captured with no double-commit; the
+  adapter's change-detection is "HEAD advanced since entry OR dirty tree" (not `git status` alone, which
+  is clean right after an auto-commit).
+  **Bug found + fixed during validation:** letting aider manage `.gitignore` (its default `.aider*`
+  housekeeping) auto-commits a `.gitignore` line that (a) pollutes every diff and (b) FALSELY reports
+  'completed' even when the real edit fails (the housekeeping commit moves HEAD). Fixed by keeping
+  `.aider*` out of capture via the clone's `.git/info/exclude` (local-only, never committed, honoured by
+  `git add -A`) + `--no-gitignore`; now HEAD only advances on a genuine task commit, so completed/no-op
+  is honest. Verified: a no-op run captures an empty diff (was a spurious `.gitignore | 1 +`).
+  **Validation (synthetic, per the new scope — see below):** a single fast-model run confirms wiring,
+  not the full matrix. Validated end-to-end on **gemma4-cpe:31b**: a bounded create-file task →
+  run_outcome=completed, aider auto-committed (UPDATING.md), results/aider__gemma4-cpe-31b/{meta.json,
+  diff,transcript} written, captured diff matches the commit exactly, tokens parsed (2000 in / 131 out),
+  harnesstests/aider__gemma4-cpe-31b pushed to origin, real repo untouched (clone isolation held). 88
+  tests pass (incl. new aider tests: registration/opaque, openAiBaseFrom, deriveAiderOutcome, edit-format
+  env, usage parsing, .git/info/exclude idempotency), lint/build clean. Test artifacts (results, clones,
+  run dirs, remote branch, scratch dir, driver) cleaned up afterward by exact id/name.
+  **Scope note:** per-adapter validation is now a lightweight single-fast-model wiring check; the full
+  harness×model comparison runs once, after all adapters (08–15) exist. The dense 24b
+  (`devstral-small-2-cpe:24b`) is pathologically slow on this endpoint (no 16-token reply in 90s) — the
+  **MoE** gemma4 models are the fast ones; whole-file rewrites of large files (e.g. the README) are
+  expensive under `--no-stream`, so synthetic checks use small bounded tasks.
+  **26b edit-strategy hypothesis (whole-file rescuing the fast MoE):** NOT settled here. gemma4-cpe:26b
+  under aider `whole` mode did not land a valid edit in two attempts — it emitted a unified-diff block
+  (ignoring the whole-file convention) and then `--yes-always` auto-added every file it name-dropped,
+  spiralling into aider's 3-reflection "which files do you need?" loop (ending in a clean no-op after the
+  isolation fix). This isn't apples-to-apples (26b ran the heavy README task; 31b ran a light create-file
+  task), so the real whole-vs-diff / 26b-vs-31b verdict is deferred to the full matrix on a common task.
+
+### Phases 09-15
+- One adapter per phase (goose, openhands, plandex, pi, crush, codex-cli, swe-agent), each a
   commit on `feature/harness-bench`. See ADAPTER_BACKLOG.md.
