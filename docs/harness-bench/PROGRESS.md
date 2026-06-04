@@ -23,7 +23,7 @@ no per-phase branches, no per-phase PRs (we build and test locally; nobody else 
 | 08 | aider adapter | complete | 07 |
 | 09 | goose adapter | complete | 07 |
 | 10 | openhands adapter | complete | 07 |
-| 11 | plandex adapter + orchestrator write-up | not-started | 07 |
+| 11 | plandex adapter + orchestrator write-up | complete (live validation deferred — server parked) | 07 |
 | 12 | pi adapter | not-started | 07 |
 | 13 | crush adapter | not-started | 07 |
 | 14 | codex-cli adapter | not-started | 07 |
@@ -260,6 +260,31 @@ full set rather than stopping at plandex.
   clean. Test artifacts (results, clone, run dir, remote branch, scratch dirs, temp HOME, the one real-
   home conversation from an early non-isolated probe, driver) cleaned up by exact id/name afterward.
 
-### Phases 11-15
-- One adapter per phase (plandex, pi, crush, codex-cli, swe-agent), each a
+### Phase 11
+- Status: complete (adapter + orchestrator notes + tests) — **live validation DEFERRED (server parked)**
+- Started: 2026-06-04 / Completed: 2026-06-04
+- Notes: plandex adapter + orchestrator write-up. plandex CLI v2.2.1 installed manually from the GitHub
+  release tarball (docs.plandex.ai was down). **completionMode = opaque** (applies changes to the working
+  tree; outcome from exit + git diff). New src/harness/plandex.ts (registered): runs `plandex new
+  --no-auto` then `plandex tell <prompt> --apply --skip-commit --no-exec --skip-menu --stop` in ctx.cwd;
+  ANTHROPIC_* stripped; `stdin: null` so a missing server fails fast instead of hanging; outcome from
+  `git status` (plandex applies uncommitted, like opencode/goose). Tokens omitted (server-side only).
+  **Key finding — plandex is client/server and the SERVER is the engine:** the CLI is a thin front-end;
+  the server holds model providers/endpoints, runs the agent loop, stores plan state, and does token/cost
+  accounting. Verified offline: with no server/account even `plandex new` blocks on an interactive
+  Cloud-auth prompt and errors (EOF). Consequences: (a) a reachable, AUTHENTICATED server is required for
+  any run; (b) the local model/endpoint (cpe's ANTHROPIC_BASE_URL → Ollama) is configured SERVER-SIDE,
+  not passed by the client — a genuine mismatch with cpe's per-run provider model (every other adapter
+  wires the provider env directly).
+  **Server PARKED by user decision** ("may come in use later if plandex proves a good harness"), so the
+  end-to-end bench run is DEFERRED. What IS done and green: CLI installed, adapter implemented from the
+  documented client interface + registered, 5 unit tests (registration/opaque, plan-name slug, new/tell
+  arg builders, outcome rules), and the bonus deliverable docs/harness-bench/orchestrator-notes.md (verdict:
+  keep plandex as just-another-adapter, low priority; do NOT adopt its server as cpe's orchestration
+  substrate — evolve cpe's own bench pipeline instead). 105 tests pass, lint/build clean. **When a server
+  is stood up (with the local model configured), validate like the others:** `cpe bench "<task>" --harness
+  plandex --model <model>` and confirm the captured diff matches what plandex applied.
+
+### Phases 12-15
+- One adapter per phase (pi, crush, codex-cli, swe-agent), each a
   commit on `feature/harness-bench`. See ADAPTER_BACKLOG.md.

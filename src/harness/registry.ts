@@ -4,6 +4,7 @@ import { opencodeHarness } from './opencode.js';
 import { aiderHarness } from './aider.js';
 import { gooseHarness } from './goose.js';
 import { openhandsHarness } from './openhands.js';
+import { plandexHarness } from './plandex.js';
 
 const registry = new Map<string, Harness>();
 
@@ -34,3 +35,4 @@ register(opencodeHarness);
 register(aiderHarness);
 register(gooseHarness);
 register(openhandsHarness);
+register(plandexHarness);
