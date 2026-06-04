@@ -26,7 +26,7 @@ no per-phase branches, no per-phase PRs (we build and test locally; nobody else 
 | 11 | plandex adapter + orchestrator write-up | complete (live validation deferred — server parked) | 07 |
 | 12 | pi adapter | complete | 07 |
 | 13 | crush adapter | complete | 07 |
-| 14 | codex-cli adapter | not-started | 07 |
+| 14 | codex-cli adapter | complete | 07 |
 | 15 | swe-agent adapter | not-started | 07 |
 
 Backlog detail and per-harness intel: [ADAPTER_BACKLOG.md](ADAPTER_BACKLOG.md). Every adapter phase
@@ -358,6 +358,50 @@ full set rather than stopping at plandex.
   from a fixture sqlite + missing/zero-db cases), lint/build clean. Test artifacts (results, run dir,
   remote branch, scratch + temp dirs, driver) cleaned up by exact id/name afterward.
 
-### Phases 14-15
-- One adapter per phase (codex-cli, swe-agent), each a
-  commit on `feature/harness-bench`. See ADAPTER_BACKLOG.md.
+### Phase 14
+- Status: complete
+- Started: 2026-06-04 / Completed: 2026-06-04
+- Notes: codex-cli (OpenAI) adapter, `codex-cli 0.137.0`. **completionMode = opaque** (confirmed
+  empirically): `codex exec` prints human / `--json` JSONL progress, no single result envelope, and does
+  NOT auto-commit — it edits the working tree directly (a created file shows as `?? <file>`). Outcome from
+  exit + git diff (exit0+changes→completed, exit0+no-diff→no-op, nonzero→error); change-detection is
+  `git status --porcelain` like opencode/goose/pi/crush. New src/harness/codex.ts (registered): `codex
+  exec --json --cd <clone> --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -m <model>
+  <prompt>`. The `--dangerously-bypass-…` flag is the documented automation path for an externally
+  sandboxed env (the bench already runs in a throwaway clone) and sidesteps WSL landlock while ensuring
+  edits land in the clone for capture. **stdin=null** so codex uses the arg prompt and doesn't block
+  reading piped stdin.
+  **LOCAL-MODEL wiring — the phase's key risk — NO proxy needed:** codex 0.137.0 **removed
+  `wire_api = "chat"`** (custom providers must now use `wire_api = "responses"`, the OpenAI Responses
+  API). Verified our Ollama (192.168.1.3:11434) serves the Responses API natively — a POST to
+  `/v1/responses` returns a proper `resp_…` object — so we declare a custom `model_provider` with
+  `wire_api = "responses"` and `base_url = <ANTHROPIC_BASE_URL>/v1` and point codex straight at Ollama
+  (the Phase-03 proxy is unnecessary). cpe's ANTHROPIC_BASE_URL maps to the provider base_url; Ollama
+  needs no API key (verified working with no auth), but if cpe's provider env carries a token we add an
+  `env_key` so authed OpenAI-compatible endpoints work too.
+  **ISOLATION (airtight, verified):** codex is config-driven via `$CODEX_HOME/config.toml`. We point
+  CODEX_HOME at a per-run temp dir and materialise config.toml there; `--cd <clone>` pins the working
+  root. Controlled probe confirmed CODEX_HOME relocates **all** codex state — config, sessions, auth, and
+  its global goals/memories/logs/state sqlite stores + skills/ all land under the temp CODEX_HOME and the
+  real ~/.codex mtime was UNCHANGED. (Caveat for future work: a BARE `codex` invocation with no CODEX_HOME
+  — e.g. `codex --version` — DOES init ~/.codex; the pre-flight version/help checks created the user's
+  ~/.codex, but every actual run is fully isolated.) ANTHROPIC_* stripped from the spawn env; temp dir
+  removed after the run. codex writes nothing into the cwd except the task's own edits (verified: clone
+  held only `?? <file>` + .git), so the captured diff stays clean. **Tokens** parsed best-effort from the
+  `--json` stream's terminal `turn.completed` event(s) (usage:{input_tokens, cached_input_tokens,
+  output_tokens, reasoning_output_tokens}), summed across turns (reasoning folds into output,
+  cached_input→cache_read); cost omitted (0 for a local model).
+  **Validation (synthetic, single fast model per the scope decision):** end-to-end on gemma4-cpe:31b via
+  the bench path with a bounded create-file task → run_outcome=completed, results/codex__gemma4-cpe-31b/
+  {meta.json,diff,transcript} written, diff (UPDATING.md | 17 ++…) matches codex's change (a homelab
+  update guide with backups / pulling images / rolling back sections), tokens parsed from turn.completed
+  (16179 in / 463 out), harnesstests/codex__gemma4-cpe-31b pushed to origin, real repo + real ~/.codex
+  both untouched (isolation held). 128 tests pass (8 new codex tests: registration/opaque, codexBaseUrl,
+  deriveCodexOutcome, codexExecArgs, buildCodexConfig + env_key gating, parseCodexUsage sum-across-turns +
+  empty), lint/build clean. Test artifacts (results, run dir, remote branch, scratch + temp dirs, driver)
+  cleaned up by exact id/name afterward. NOTE during scratch testing: in `--json` mode the model once
+  spiralled into repeated command executions and hit the 240s scratch timeout on a trivial task — model
+  variance, not an adapter bug (the validation run completed cleanly); the bench RunGuard owns timeouts.
+
+### Phase 15
+- One adapter (swe-agent), a commit on `feature/harness-bench`. See ADAPTER_BACKLOG.md.
