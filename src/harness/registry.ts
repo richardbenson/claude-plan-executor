@@ -3,6 +3,7 @@ import { claudeCodeHarness } from './claude-code.js';
 import { opencodeHarness } from './opencode.js';
 import { aiderHarness } from './aider.js';
 import { gooseHarness } from './goose.js';
+import { openhandsHarness } from './openhands.js';
 
 const registry = new Map<string, Harness>();
 
@@ -32,3 +33,4 @@ register(claudeCodeHarness);
 register(opencodeHarness);
 register(aiderHarness);
 register(gooseHarness);
+register(openhandsHarness);

@@ -22,7 +22,7 @@ no per-phase branches, no per-phase PRs (we build and test locally; nobody else 
 | 07 | opencode adapter (canonical template) | complete | 05 |
 | 08 | aider adapter | complete | 07 |
 | 09 | goose adapter | complete | 07 |
-| 10 | openhands adapter | not-started | 07 |
+| 10 | openhands adapter | complete | 07 |
 | 11 | plandex adapter + orchestrator write-up | not-started | 07 |
 | 12 | pi adapter | not-started | 07 |
 | 13 | crush adapter | not-started | 07 |
@@ -228,6 +228,38 @@ full set rather than stopping at plandex.
   artifacts (results, clone, run dir, remote branch, scratch + XDG temp dirs, driver) cleaned up by exact
   id/name afterward.
 
-### Phases 10-15
-- One adapter per phase (openhands, plandex, pi, crush, codex-cli, swe-agent), each a
+### Phase 10
+- Status: complete
+- Started: 2026-06-04 / Completed: 2026-06-04
+- Notes: openhands (All-Hands) adapter (OpenHands SDK CLI v1.16.1 / `openhands` 1.14.0). Pre-flight
+  checked the CLI **and** Docker (29.5.2, daemon reachable) — but Docker turned out to be unnecessary.
+  **completionMode = opaque.** New src/harness/openhands.ts (registered in registry.ts):
+  `openhands --headless --json --override-with-envs --exit-without-confirmation -t <prompt>` in ctx.cwd.
+  **Runtime/workspace (the phase's biggest risk):** despite the "sandboxed Docker runtime" expectation,
+  the SDK v1 CLI uses a **LOCAL runtime** — it runs its bash/file tools directly in the process CWD.
+  Verified empirically: no Docker image/container was created and the agent's edits landed in the spawn
+  cwd (untracked, NOT auto-committed). So the adapter just spawns in ctx.cwd (the clone) — no mount or
+  workspace config needed; change-detection is `git status --porcelain` like opencode/goose, and capture
+  diffs the staged tree vs base ref.
+  **LLM wiring:** `--override-with-envs` takes LLM settings from env — LLM_MODEL=ollama/<model>,
+  LLM_BASE_URL=<ollama root> (cpe's ANTHROPIC_BASE_URL), LLM_API_KEY=<token or 'ollama'> (Ollama ignores
+  it but LiteLLM needs one). OPENHANDS_SUPPRESS_BANNER=1 silences the banner. ANTHROPIC_* stripped.
+  **Isolation:** openhands persists conversations/cache/profiles under ~/.openhands (no env to relocate
+  it, but it keys off HOME), and writes NOTHING into the cwd — so the captured diff is already clean. To
+  also keep the user's home clean we point HOME at a per-run temp dir (verified: a run left the real
+  ~/.openhands with no new conversation) and remove it after. **Tokens** parsed best-effort from the
+  persisted conversation's base_state.json (stats.usage_to_metrics.<component>.accumulated_token_usage,
+  summed across agent/condenser); cost is 0 for a local model (omitted). The `--json` JSONL event stream
+  is captured to the transcript as a bonus (not depended on for outcome).
+  **Validation (synthetic, single fast model):** end-to-end on gemma4-cpe:31b via the bench path with a
+  bounded create-file task → run_outcome=completed, results/openhands__gemma4-cpe-31b/{meta.json,diff,
+  transcript} written, diff (UPDATING.md | 3 +++) matches openhands' change, tokens parsed (48606 in /
+  248 out), harnesstests/openhands__gemma4-cpe-31b pushed, real repo + real ~/.openhands both untouched
+  (isolation held). 100 tests pass (6 new openhands tests: registration/opaque, model-arg prefix,
+  baseUrlFrom, deriveOpenhandsOutcome, base_state usage parse across components, empty-state), lint/build
+  clean. Test artifacts (results, clone, run dir, remote branch, scratch dirs, temp HOME, the one real-
+  home conversation from an early non-isolated probe, driver) cleaned up by exact id/name afterward.
+
+### Phases 11-15
+- One adapter per phase (plandex, pi, crush, codex-cli, swe-agent), each a
   commit on `feature/harness-bench`. See ADAPTER_BACKLOG.md.
