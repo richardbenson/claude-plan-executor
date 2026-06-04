@@ -24,7 +24,7 @@ no per-phase branches, no per-phase PRs (we build and test locally; nobody else 
 | 09 | goose adapter | complete | 07 |
 | 10 | openhands adapter | complete | 07 |
 | 11 | plandex adapter + orchestrator write-up | complete (live validation deferred — server parked) | 07 |
-| 12 | pi adapter | not-started | 07 |
+| 12 | pi adapter | complete | 07 |
 | 13 | crush adapter | not-started | 07 |
 | 14 | codex-cli adapter | not-started | 07 |
 | 15 | swe-agent adapter | not-started | 07 |
@@ -285,6 +285,40 @@ full set rather than stopping at plandex.
   is stood up (with the local model configured), validate like the others:** `cpe bench "<task>" --harness
   plandex --model <model>` and confirm the captured diff matches what plandex applied.
 
-### Phases 12-15
-- One adapter per phase (pi, crush, codex-cli, swe-agent), each a
+### Phase 12
+- Status: complete
+- Started: 2026-06-04 / Completed: 2026-06-04
+- Notes: pi (pi.dev / @earendil-works/pi-coding-agent) adapter, **the easiest extra so far** as predicted.
+  pi CLI v0.78.0 (confirmed official binary name + install source https://pi.dev/; pre-flight gates on
+  `which pi`). **completionMode = opaque** (confirmed empirically): pi prints assistant text / JSONL
+  events, no single result envelope, and does NOT auto-commit — it edits the working tree directly
+  (a created file shows as `?? <file>`). Outcome from exit + git diff (exit0+changes→completed,
+  exit0+no-diff→no-op, nonzero→error); change-detection is `git status --porcelain` like opencode/goose.
+  New src/harness/pi.ts (registered): `pi -p --provider ollama --model <model> --mode json --no-session
+  -t read,write,edit,bash,grep,find,ls <prompt>` in ctx.cwd. **Tool allowlist is explicit** — an early
+  scratch run with neither `-t` nor the right flags produced empty output + no edit; allowlisting pi's
+  full built-in tool set made runs deterministic.
+  **Provider/model + ISOLATION:** pi is config-driven — custom providers (Ollama/vLLM/LM Studio) live in
+  `$PI_CODING_AGENT_DIR/models.json` (default ~/.pi/agent). We point PI_CODING_AGENT_DIR (+ SESSION_DIR)
+  at a per-run temp dir and materialise a models.json there declaring an `ollama` provider:
+  baseUrl=<ANTHROPIC_BASE_URL>/v1, api=openai-completions, apiKey=<token|"ollama">,
+  compat={supportsDeveloperRole:false, supportsReasoningEffort:false} (recommended for OpenAI-compatible
+  servers), models=[{id:<model>}]. cpe's ANTHROPIC_BASE_URL maps straight to the provider baseUrl;
+  ANTHROPIC_* stripped from the spawn env; temp dir removed after. Verified the real ~/.pi was untouched
+  (all mtimes predate the runs; sessions/ empty under --no-session). **Tokens** parsed best-effort from
+  the `--mode json` stream: each assistant message repeats its `usage` ({input,output,cacheRead,
+  cacheWrite,totalTokens,cost}) across update/end/turn_end/agent_end events tagged with a `responseId`,
+  so we dedupe by responseId then sum; cost omitted (0 for a local model).
+  **Validation (synthetic, single fast model per the scope decision):** end-to-end on gemma4-cpe:31b via
+  the bench path with a bounded create-file task → run_outcome=completed, results/pi__gemma4-cpe-31b/
+  {meta.json,diff,transcript} written, diff (UPDATING.md | 3 +++) matches pi's change, tokens parsed
+  (16574 in / 737 out), harnesstests/pi__gemma4-cpe-31b pushed to origin, real repo + real ~/.pi both
+  untouched (isolation held). Output streams live (the bench output tail surfaced pi's JSONL deltas). 113
+  tests pass (8 new pi tests: registration/opaque, openAiBaseFrom, derivePiOutcome, piRunArgs,
+  buildModelsJson, parsePiUsage dedupe-by-responseId + cost-gating + empty), lint/build clean. Test
+  artifacts (results, run dir, remote branch, scratch + temp agent dirs, driver) cleaned up by exact
+  id/name afterward.
+
+### Phases 13-15
+- One adapter per phase (crush, codex-cli, swe-agent), each a
   commit on `feature/harness-bench`. See ADAPTER_BACKLOG.md.

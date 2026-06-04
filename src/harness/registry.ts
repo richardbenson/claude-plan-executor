@@ -5,6 +5,7 @@ import { aiderHarness } from './aider.js';
 import { gooseHarness } from './goose.js';
 import { openhandsHarness } from './openhands.js';
 import { plandexHarness } from './plandex.js';
+import { piHarness } from './pi.js';
 
 const registry = new Map<string, Harness>();
 
@@ -36,3 +37,4 @@ register(aiderHarness);
 register(gooseHarness);
 register(openhandsHarness);
 register(plandexHarness);
+register(piHarness);
