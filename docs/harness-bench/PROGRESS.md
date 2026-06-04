@@ -25,7 +25,7 @@ no per-phase branches, no per-phase PRs (we build and test locally; nobody else 
 | 10 | openhands adapter | complete | 07 |
 | 11 | plandex adapter + orchestrator write-up | complete (live validation deferred — server parked) | 07 |
 | 12 | pi adapter | complete | 07 |
-| 13 | crush adapter | not-started | 07 |
+| 13 | crush adapter | complete | 07 |
 | 14 | codex-cli adapter | not-started | 07 |
 | 15 | swe-agent adapter | not-started | 07 |
 
@@ -319,6 +319,45 @@ full set rather than stopping at plandex.
   artifacts (results, run dir, remote branch, scratch + temp agent dirs, driver) cleaned up by exact
   id/name afterward.
 
-### Phases 13-15
-- One adapter per phase (crush, codex-cli, swe-agent), each a
+### Phase 13
+- Status: complete
+- Started: 2026-06-04 / Completed: 2026-06-04
+- Notes: crush (Charmbracelet / @charmland/crush) adapter, crush v0.75.0. **Headless mode: YES** (the
+  decisive step-1 check) — despite being a Bubble Tea TUI, crush ships `crush run "<prompt>"` which runs
+  one prompt non-interactively and exits (verified: edited a file, printed "Done"). So the adapter is a
+  normal opaque harness, NOT parked. **completionMode = opaque** (confirmed empirically): crush prints
+  human progress / "Done" under --quiet, no result envelope, and does NOT auto-commit — it edits the
+  working tree (created file shows as `?? <file>`). Outcome from exit + git diff (exit0+changes→completed,
+  exit0+no-diff→no-op, nonzero→error); change-detection is `git status --porcelain` like opencode/goose/
+  pi. New src/harness/crush.ts (registered): `crush --data-dir <dd> --cwd <clone> run --quiet -m
+  ollama/<model> <prompt>`.
+  **Gotchas found + fixed during scratch testing:** (1) `--yolo` (auto-accept permissions) is a ROOT-only,
+  non-persistent flag — `crush run` rejects it ("Unknown flag: --yolo"). Headless permission
+  auto-approval is instead config-driven via `permissions.allowed_tools`, which we set to crush's full
+  built-in tool set (view/ls/grep/glob/edit/multiedit/write/bash/fetch/download/sourcegraph/agent), else
+  the agent blocks on a permission prompt and makes no edit. (2) `CRUSH_GLOBAL_CONFIG` is a DIRECTORY
+  containing crush.json, not a file path (crush appends `/crush.json`).
+  **Provider/model + ISOLATION:** crush is config-driven. We point CRUSH_GLOBAL_CONFIG + CRUSH_GLOBAL_DATA
+  + --data-dir at a per-run temp dir and materialise a crush.json there declaring an `ollama` provider
+  (type=openai-compat, base_url=<ANTHROPIC_BASE_URL>/v1/, api_key="ollama", one model entry); cpe's
+  ANTHROPIC_BASE_URL maps to base_url. --data-dir is REQUIRED for isolation: by default crush writes a
+  `.crush/` dir (crush.db + logs) into the project cwd, which would pollute the captured clone diff —
+  relocating it keeps the diff clean (verified: scratch dir held only the created file + .git). Also set
+  CRUSH_DISABLE_PROVIDER_AUTO_UPDATE=1 (no startup provider-list fetch); ANTHROPIC_* stripped; temp dir
+  removed after. Verified the user's ~/.config/crush was never created. **Tokens** read from crush's own
+  SQLite store (<data-dir>/crush.db `sessions` table: prompt_tokens/completion_tokens/cost) via bun:sqlite,
+  summed across sessions; cost omitted (0 for a local model). NOTE: crush's completion_tokens count came
+  back low (6) — it appears to track only the final assistant text turn, not tool-call turns; we report
+  what crush stores.
+  **Validation (synthetic, single fast model per the scope decision):** end-to-end on gemma4-cpe:31b via
+  the bench path with a bounded create-file task → run_outcome=completed, results/crush__gemma4-cpe-31b/
+  {meta.json,diff,transcript} written, diff (UPDATING.md | 6 ++++++) matches crush's change, tokens read
+  from crush.db (13924 in / 6 out), harnesstests/crush__gemma4-cpe-31b pushed to origin, real repo +
+  ~/.config/crush both untouched (isolation held). 120 tests pass (7 new crush tests: registration/opaque,
+  crushBaseUrl, deriveCrushOutcome, crushRunArgs, buildCrushConfig + allowed_tools, parseCrushUsage sum
+  from a fixture sqlite + missing/zero-db cases), lint/build clean. Test artifacts (results, run dir,
+  remote branch, scratch + temp dirs, driver) cleaned up by exact id/name afterward.
+
+### Phases 14-15
+- One adapter per phase (codex-cli, swe-agent), each a
   commit on `feature/harness-bench`. See ADAPTER_BACKLOG.md.

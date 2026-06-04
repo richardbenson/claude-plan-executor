@@ -6,6 +6,7 @@ import { gooseHarness } from './goose.js';
 import { openhandsHarness } from './openhands.js';
 import { plandexHarness } from './plandex.js';
 import { piHarness } from './pi.js';
+import { crushHarness } from './crush.js';
 
 const registry = new Map<string, Harness>();
 
@@ -38,3 +39,4 @@ register(gooseHarness);
 register(openhandsHarness);
 register(plandexHarness);
 register(piHarness);
+register(crushHarness);
