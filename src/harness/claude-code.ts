@@ -22,6 +22,7 @@ function outcomeFromEnvelope(envelope: ClaudeEnvelope): HarnessOutcome {
 export const claudeCodeHarness: Harness = {
   name: 'claude-code',
   completionMode: 'structured',
+  install: { bin: 'claude', url: 'https://docs.claude.com/en/docs/claude-code' },
 
   async run(ctx: HarnessContext): Promise<HarnessResult> {
     if (!ctx.promptFile) {

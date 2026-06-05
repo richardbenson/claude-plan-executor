@@ -135,6 +135,7 @@ export function parseOpenhandsUsage(homeDir: string): {
 export const openhandsHarness: Harness = {
   name: 'openhands',
   completionMode: 'opaque',
+  install: { bin: 'openhands', url: 'https://docs.all-hands.dev' },
 
   async run(ctx: HarnessContext): Promise<HarnessResult> {
     const prompt = ctx.prompt ?? (ctx.promptFile ? fs.readFileSync(ctx.promptFile, 'utf8') : '');

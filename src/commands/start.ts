@@ -1,6 +1,7 @@
 import React from 'react';
 import { render } from 'ink';
 import { readConfig } from '../storage/config.js';
+import { ensureHarnessDetection } from '../harness/detect.js';
 import { readMeta, updateMeta, listAllRunIds } from '../storage/meta.js';
 import { isQueuePaused, dequeue, enqueueFront, readQueue, writeQueue } from '../storage/queue.js';
 import { reconcileWorktrees } from '../git/worktree.js';
@@ -195,7 +196,9 @@ export async function interruptiblePause(
 }
 
 export async function startCommand(): Promise<void> {
-  const config = readConfig();
+  // Ensure harness install-detection has run at least once so the dispatch-time
+  // install gate has data on first launch (cheap no-op once the cache exists).
+  const config = ensureHarnessDetection(readConfig());
 
   seedBusFromHistory();
 

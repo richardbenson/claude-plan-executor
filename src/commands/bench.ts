@@ -6,6 +6,7 @@ import { readConfig } from '../storage/config.js';
 import { writeMeta } from '../storage/meta.js';
 import { enqueue } from '../storage/queue.js';
 import * as harnessRegistry from '../harness/registry.js';
+import { ensureHarnessDetection, assertHarnessInstalled } from '../harness/detect.js';
 import { comboName, getResultsDir, RESULTS_BASE } from '../runner/capture.js';
 import type { RunMeta } from '../types/meta.js';
 
@@ -75,12 +76,15 @@ export async function benchCommand(text: string[], options?: BenchOptions): Prom
     process.exit(1);
   }
 
-  // 2 — harness list (default claude-code); validate ALL before enqueueing anything.
+  // 2 — harness list (default claude-code); validate ALL before enqueueing anything:
+  // registered AND installed (detect once if the cache is absent — first-launch hook).
   const harnesses = splitList(options?.harness);
   if (harnesses.length === 0) harnesses.push('claude-code');
+  const benchConfig = ensureHarnessDetection(readConfig());
   for (const h of harnesses) {
     try {
       harnessRegistry.get(h);
+      assertHarnessInstalled(benchConfig, h);
     } catch (err) {
       console.error(err instanceof Error ? err.message : String(err));
       console.error('No runs enqueued.');

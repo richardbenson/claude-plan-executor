@@ -182,6 +182,7 @@ function hasChanges(cwd: string): boolean {
 export const codexHarness: Harness = {
   name: 'codex',
   completionMode: 'opaque',
+  install: { bin: 'codex', url: 'https://github.com/openai/codex' },
 
   async run(ctx: HarnessContext): Promise<HarnessResult> {
     const prompt = ctx.prompt ?? (ctx.promptFile ? fs.readFileSync(ctx.promptFile, 'utf8') : '');

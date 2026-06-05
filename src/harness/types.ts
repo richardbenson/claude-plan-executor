@@ -14,6 +14,20 @@ export type CompletionMode = 'structured' | 'opaque';
 export type HarnessOutcome = 'completed' | 'error' | 'timeout' | 'no-op';
 
 /**
+ * How to detect whether a harness is installed on the host. Used by
+ * `src/harness/detect.ts` to probe PATH + version and cache the result in config
+ * so selection can be gated to installed harnesses only.
+ */
+export interface HarnessInstall {
+  /** Executable name looked up on PATH (e.g. 'codex', 'mini'). */
+  bin: string;
+  /** Args to print the version (default `['--version']`). Best-effort. */
+  versionArgs?: string[];
+  /** Official install instructions, shown when the harness is missing. */
+  url: string;
+}
+
+/**
  * Everything a harness adapter needs to run one invocation. Either `prompt`
  * (inline text) or `promptFile` (a path) is supplied; structured adapters that
  * shell out to a CLI generally prefer `promptFile`.
@@ -75,5 +89,10 @@ export interface HarnessResult {
 export interface Harness {
   name: string;
   completionMode: CompletionMode;
+  /**
+   * How to detect this harness on the host. Optional: a harness without it is
+   * undetectable and therefore not install-gated ("cannot verify").
+   */
+  install?: HarnessInstall;
   run(ctx: HarnessContext): Promise<HarnessResult>;
 }

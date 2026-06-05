@@ -11,6 +11,7 @@ import { bootstrapCommand } from './commands/bootstrap.js';
 import { worktreeCommand } from './commands/worktree.js';
 import { promptCommand } from './commands/prompt.js';
 import { benchCommand, benchSummaryCommand } from './commands/bench.js';
+import { harnessCheckCommand, harnessListCommand } from './commands/harness.js';
 import { readQueue, writeQueue } from './storage/queue.js';
 import {
   providerListCommand,
@@ -147,6 +148,20 @@ export function setupCli(): void {
     .option('--stub', 'Write an empty template')
     .option('--edit', 'Open cpe.config.json in $EDITOR')
     .action(wrap(bootstrapCommand));
+
+  const harnessCmd = program
+    .command('harness')
+    .description('Manage harness adapters (install detection)');
+
+  harnessCmd
+    .command('check')
+    .description('Probe every harness for its CLI on PATH + version and cache the result')
+    .action(wrap(harnessCheckCommand));
+
+  harnessCmd
+    .command('list')
+    .description('Show cached harness install status (probes once if never checked)')
+    .action(wrap(harnessListCommand));
 
   const providerCmd = program
     .command('provider')

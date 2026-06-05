@@ -202,6 +202,7 @@ function hasChanges(cwd: string): boolean {
 export const piHarness: Harness = {
   name: 'pi',
   completionMode: 'opaque',
+  install: { bin: 'pi', url: 'https://pi.dev' },
 
   async run(ctx: HarnessContext): Promise<HarnessResult> {
     const prompt = ctx.prompt ?? (ctx.promptFile ? fs.readFileSync(ctx.promptFile, 'utf8') : '');

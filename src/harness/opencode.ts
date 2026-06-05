@@ -151,6 +151,7 @@ function hasChanges(cwd: string): boolean {
 export const opencodeHarness: Harness = {
   name: 'opencode',
   completionMode: 'opaque',
+  install: { bin: 'opencode', url: 'https://opencode.ai' },
 
   async run(ctx: HarnessContext): Promise<HarnessResult> {
     const prompt = ctx.prompt ?? (ctx.promptFile ? fs.readFileSync(ctx.promptFile, 'utf8') : '');

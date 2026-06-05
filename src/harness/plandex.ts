@@ -90,6 +90,7 @@ function hasChanges(cwd: string): boolean {
 export const plandexHarness: Harness = {
   name: 'plandex',
   completionMode: 'opaque',
+  install: { bin: 'plandex', url: 'https://plandex.ai' },
 
   async run(ctx: HarnessContext): Promise<HarnessResult> {
     const prompt = ctx.prompt ?? (ctx.promptFile ? fs.readFileSync(ctx.promptFile, 'utf8') : '');

@@ -136,6 +136,7 @@ export function parseGooseUsage(stateDir: string): {
 export const gooseHarness: Harness = {
   name: 'goose',
   completionMode: 'opaque',
+  install: { bin: 'goose', url: 'https://block.github.io/goose' },
 
   async run(ctx: HarnessContext): Promise<HarnessResult> {
     const prompt = ctx.prompt ?? (ctx.promptFile ? fs.readFileSync(ctx.promptFile, 'utf8') : '');

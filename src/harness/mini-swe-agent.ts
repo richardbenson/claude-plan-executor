@@ -172,6 +172,7 @@ function hasChanges(cwd: string): boolean {
 export const miniSweAgentHarness: Harness = {
   name: 'mini-swe-agent',
   completionMode: 'opaque',
+  install: { bin: 'mini', url: 'https://github.com/SWE-agent/mini-swe-agent' },
 
   async run(ctx: HarnessContext): Promise<HarnessResult> {
     const prompt = ctx.prompt ?? (ctx.promptFile ? fs.readFileSync(ctx.promptFile, 'utf8') : '');

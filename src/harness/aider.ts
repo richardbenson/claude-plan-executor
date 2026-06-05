@@ -191,6 +191,7 @@ export function excludeAiderArtifacts(cwd: string): void {
 export const aiderHarness: Harness = {
   name: 'aider',
   completionMode: 'opaque',
+  install: { bin: 'aider', url: 'https://aider.chat' },
 
   async run(ctx: HarnessContext): Promise<HarnessResult> {
     const prompt = ctx.prompt ?? (ctx.promptFile ? fs.readFileSync(ctx.promptFile, 'utf8') : '');

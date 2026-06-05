@@ -4,6 +4,7 @@ import * as path from 'path';
 import { readMeta, updateMeta, getLogsDir } from '../storage/meta.js';
 import { resolveProvider } from './provider.js';
 import * as harnessRegistry from '../harness/registry.js';
+import { assertHarnessInstalled } from '../harness/detect.js';
 import { classifyEnvelope } from './envelope.js';
 import { handleRateLimit } from './limit.js';
 import { startJsonlTail } from './jsonl-tail.js';
@@ -75,6 +76,8 @@ export async function runSinglePrompt(
   let adapter;
   try {
     adapter = harnessRegistry.get(harnessName);
+    // Hard-block: the resolved harness (incl. the default) must be installed.
+    assertHarnessInstalled(appConfig, harnessName);
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     await markFailed(runId, reason, bus);

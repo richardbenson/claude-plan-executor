@@ -168,6 +168,7 @@ function hasChanges(cwd: string): boolean {
 export const crushHarness: Harness = {
   name: 'crush',
   completionMode: 'opaque',
+  install: { bin: 'crush', url: 'https://github.com/charmbracelet/crush' },
 
   async run(ctx: HarnessContext): Promise<HarnessResult> {
     const prompt = ctx.prompt ?? (ctx.promptFile ? fs.readFileSync(ctx.promptFile, 'utf8') : '');

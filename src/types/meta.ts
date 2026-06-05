@@ -112,6 +112,17 @@ export interface ProviderEntry {
   model?: string;
 }
 
+/** Cached result of probing whether a harness's binary is installed on the host. */
+export interface HarnessStatus {
+  name: string;
+  bin: string;
+  installed: boolean;
+  path?: string;
+  version?: string;
+  /** ISO timestamp of when this was probed. */
+  checked_at: string;
+}
+
 export interface AppConfig {
   max_retries: number;
   gitea_host?: string;
@@ -123,6 +134,12 @@ export interface AppConfig {
   provider_for_phases?: string;
   harness_for_planning?: string;
   harness_for_phases?: string;
+  /**
+   * Cached harness install-detection results (see src/harness/detect.ts). Populated
+   * on first launch of a harness-selecting command, refreshed by `cpe harness check`.
+   * Selection is gated to harnesses whose status here is installed.
+   */
+  harnesses?: HarnessStatus[];
   // --- bench / clone-isolation config (Phase 04) ---
   /** Default isolation mode. 'worktree' (default) keeps existing behaviour. */
   isolation?: 'worktree' | 'clone';
