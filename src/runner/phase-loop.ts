@@ -8,10 +8,14 @@ import { assertHarnessInstalled } from '../harness/detect.js';
 import { classifyEnvelope } from './envelope.js';
 import { handleRateLimit } from './limit.js';
 import { startJsonlTail } from './jsonl-tail.js';
+import { startOutputTail } from './output-tail.js';
 import { getHead } from '../git/repo.js';
-import { PHASE_RESULT_SCHEMA } from '../prompts/index.js';
+import { PHASE_RESULT_SCHEMA, buildOpaquePrompt } from '../prompts/index.js';
+import { acquireReport, excludeCpeArtifacts } from './report.js';
+import type { ResolvedProvider } from './provider.js';
+import type { Harness } from '../harness/types.js';
 import type { ActivityBus } from '../events/bus.js';
-import type { AppConfig } from '../types/meta.js';
+import type { AppConfig, RunMeta } from '../types/meta.js';
 
 export interface PhaseResult {
   completed: boolean;
@@ -134,6 +138,17 @@ export async function runPhase(
     const reason = err instanceof Error ? err.message : String(err);
     await markPhaseFailed(runId, phaseNumber, reason, bus);
     return { outcome: 'failed', reason };
+  }
+
+  // Opaque harnesses have no structured envelope: run with the reporting-contract
+  // prompt, then derive a normalized PhaseReport (self-report → git). Structured
+  // (claude-code) falls through to the unchanged envelope path below.
+  if (adapter.completionMode === 'opaque') {
+    return runOpaquePhase({
+      runId, phaseNumber, meta, appConfig, bus, adapter,
+      provider: provider ?? null, headBefore, uuid, logPath,
+      basePromptFile: effectivePromptFile, originalPromptFile: promptFile,
+    });
   }
 
   const sessionPromise = adapter.run({
@@ -276,6 +291,123 @@ export async function runPhase(
   });
 
   return { outcome: 'complete', result: phaseResult };
+}
+
+/**
+ * Opaque-harness phase execution. Runs the phase prompt augmented with the
+ * reporting contract (commit + write `.cpe/result.json`), then derives a
+ * PhaseReport via acquireReport. Commit truth comes from git (HEAD moved), not
+ * the self-report. No envelope classification — a non-zero exit is the only hard
+ * failure and is retried up to `max_retries`.
+ */
+async function runOpaquePhase(args: {
+  runId: string;
+  phaseNumber: number;
+  meta: RunMeta;
+  appConfig: AppConfig;
+  bus: ActivityBus;
+  adapter: Harness;
+  provider: ResolvedProvider | null;
+  headBefore: string;
+  uuid: string;
+  logPath: string;
+  basePromptFile: string;
+  originalPromptFile: string;
+}): Promise<PhaseOutcome> {
+  const {
+    runId, phaseNumber, meta, appConfig, bus, adapter, provider,
+    headBefore, uuid, logPath, basePromptFile, originalPromptFile,
+  } = args;
+
+  excludeCpeArtifacts(meta.worktree_path);
+  const base = fs.readFileSync(basePromptFile, 'utf-8');
+  const prompt = buildOpaquePrompt(base, { withPr: false });
+
+  const sessionPromise = adapter.run({
+    cwd: meta.worktree_path,
+    prompt,
+    sessionId: uuid,
+    logPath,
+    dangerouslySkipPermissions: appConfig.dangerously_skip_permissions,
+    providerEnv: provider?.env ?? {},
+    model: provider?.model ?? meta.model,
+    modelArgs: provider?.modelArgs ?? [],
+  });
+  const stopTail = startOutputTail(logPath, runId, phaseNumber, bus);
+  const harnessResult = await sessionPromise;
+  stopTail();
+  if (basePromptFile !== originalPromptFile) {
+    try { fs.unlinkSync(basePromptFile); } catch { /* ignore */ }
+  }
+
+  // The only hard failure for an opaque harness is a non-zero exit; retry it.
+  if (harnessResult.exitCode !== 0) {
+    const fresh = readMeta(runId);
+    const entry = (fresh.phases ?? []).find(p => p.number === phaseNumber)!;
+    const retryCount = entry.retry_count + 1;
+    if (retryCount > appConfig.max_retries) {
+      await markPhaseFailed(runId, phaseNumber, `harness '${adapter.name}' exited ${harnessResult.exitCode}`, bus);
+      return { outcome: 'failed', reason: `harness exited ${harnessResult.exitCode}` };
+    }
+    await updatePhase(runId, phaseNumber, { status: 'retrying', retry_count: retryCount });
+    return runPhase(runId, phaseNumber, appConfig, bus);
+  }
+
+  const { report, source } = await acquireReport({
+    worktree: meta.worktree_path,
+    headBefore,
+    exitCode: harnessResult.exitCode,
+  });
+
+  // Commit truth from git, not the self-report.
+  const headAfter = getHead(meta.worktree_path);
+  const committed = headAfter !== headBefore;
+  const commitSha = committed ? headAfter : undefined;
+
+  bus.emit({
+    kind: 'text',
+    timestamp: new Date(),
+    runId,
+    phaseNumber,
+    text: `phase result via ${source}: ${report.summary}`,
+  });
+
+  await updatePhase(runId, phaseNumber, {
+    status: 'complete',
+    completed_at: new Date().toISOString(),
+    commit_sha: commitSha,
+    summary: report.summary,
+    commit_message: report.commit_message ?? undefined,
+    notes_for_next_phase: report.notes_for_next_phase ?? '',
+    blockers: report.blockers,
+    ...(harnessResult.costUsd !== undefined ? { cost_usd: harnessResult.costUsd } : {}),
+    ...(harnessResult.tokens ? { tokens: harnessResult.tokens } : {}),
+  });
+
+  const freshMeta = readMeta(runId);
+  const totalCost = (freshMeta.phases ?? []).reduce((sum, p) => sum + (p.cost_usd ?? 0), 0);
+  await updateMeta(runId, { total_cost_usd: totalCost });
+
+  bus.emit({
+    kind: 'ok',
+    timestamp: new Date(),
+    runId,
+    phaseNumber,
+    summary: report.summary,
+    costUsd: harnessResult.costUsd ?? 0,
+  });
+
+  return {
+    outcome: 'complete',
+    result: {
+      completed: report.completed,
+      committed,
+      commit_message: report.commit_message ?? null,
+      summary: report.summary,
+      blockers: report.blockers,
+      notes_for_next_phase: report.notes_for_next_phase ?? '',
+    },
+  };
 }
 
 export async function resumeOrRestart(

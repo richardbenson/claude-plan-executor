@@ -10,7 +10,8 @@ import { handleRateLimit } from './limit.js';
 import { startJsonlTail } from './jsonl-tail.js';
 import { startOutputTail } from './output-tail.js';
 import { getHead } from '../git/repo.js';
-import { SINGLE_PROMPT_TEMPLATE, SINGLE_PROMPT_RESULT_SCHEMA } from '../prompts/index.js';
+import { SINGLE_PROMPT_TEMPLATE, SINGLE_PROMPT_RESULT_SCHEMA, buildOpaquePrompt } from '../prompts/index.js';
+import { acquireReport, excludeCpeArtifacts } from './report.js';
 import { createClone, removeClone } from '../git/clone.js';
 import { captureRun } from './capture.js';
 import { RunGuard, registerGuard, unregisterGuard } from './run-guard.js';
@@ -91,6 +92,13 @@ export async function runSinglePrompt(
   const isolation = meta.isolation ?? appConfig.isolation ?? 'worktree';
   if (isolation === 'clone') {
     return runBenchSinglePrompt(runId, meta, adapter, appConfig, bus);
+  }
+
+  // Opaque harnesses have no structured envelope: run with the reporting-contract
+  // prompt (commit + PR + write .cpe/result.json) and derive a normalized report.
+  // Structured (claude-code) falls through to the unchanged envelope path below.
+  if (adapter.completionMode === 'opaque') {
+    return runOpaqueSinglePrompt(runId, meta, adapter, appConfig, bus, _retryCount);
   }
 
   // STEP 2 — inject user prompt and optional GitHub issue section into template
@@ -267,6 +275,107 @@ export async function runSinglePrompt(
   void commitSha;
 
   return { outcome: 'complete', result: promptResult };
+}
+
+/**
+ * Opaque-harness single-prompt execution (worktree, non-bench). Runs the task
+ * augmented with the reporting contract (commit + open a PR + write
+ * `.cpe/result.json`) and derives a normalized report via acquireReport. Commit
+ * truth comes from git; a non-zero exit is the only hard failure (retried).
+ */
+async function runOpaqueSinglePrompt(
+  runId: string,
+  meta: RunMeta,
+  adapter: Harness,
+  appConfig: AppConfig,
+  bus: ActivityBus,
+  retryCountIn: number,
+): Promise<SinglePromptOutcome> {
+  const githubIssueSection = meta.github_issue_number
+    ? `Include \`Closes #${meta.github_issue_number}\` in the PR body so GitHub automatically closes the issue when the PR is merged.`
+    : '';
+  const base = `${meta.prompt}${githubIssueSection ? `\n\n${githubIssueSection}` : ''}`;
+  // Only ask the agent to open a PR when there's actually a remote to push to;
+  // otherwise it flails on `git push origin` (mirrors finalise's skipPushAndPr).
+  const prompt = buildOpaquePrompt(base, { withPr: Boolean(meta.remote) });
+
+  updateMeta(runId, { status: 'executing' });
+  bus.emit({ kind: 'phase', timestamp: new Date(), runId, phaseNumber: -1, phaseName: 'single-prompt' });
+
+  excludeCpeArtifacts(meta.worktree_path);
+  const headBefore = getHead(meta.worktree_path);
+  const uuid = crypto.randomUUID();
+  const logPath = path.join(getLogsDir(runId), 'single-prompt.log');
+  const provider = await resolveProvider(
+    appConfig.providers ?? [],
+    'phase',
+    meta.provider ?? appConfig.provider_for_phases,
+    meta.model,
+  );
+
+  const sessionPromise = adapter.run({
+    cwd: meta.worktree_path,
+    prompt,
+    sessionId: uuid,
+    logPath,
+    dangerouslySkipPermissions: appConfig.dangerously_skip_permissions,
+    providerEnv: provider?.env ?? {},
+    model: provider?.model ?? meta.model,
+    modelArgs: provider?.modelArgs ?? [],
+  });
+  const stopTail = startOutputTail(logPath, runId, -1, bus);
+  const harnessResult = await sessionPromise;
+  stopTail();
+
+  if (harnessResult.exitCode !== 0) {
+    const retryCount = retryCountIn + 1;
+    if (retryCount > appConfig.max_retries) {
+      await markFailed(runId, `harness '${adapter.name}' exited ${harnessResult.exitCode}`, bus);
+      return { outcome: 'failed', reason: `harness exited ${harnessResult.exitCode}` };
+    }
+    updateMeta(runId, { status: 'retrying' });
+    return runSinglePrompt(runId, appConfig, bus, retryCount);
+  }
+
+  const { report, source } = await acquireReport({
+    worktree: meta.worktree_path,
+    headBefore,
+    exitCode: harnessResult.exitCode,
+  });
+  const headAfter = getHead(meta.worktree_path);
+  const committed = headAfter !== headBefore;
+
+  const status = report.pr_created ? 'pr-created' : 'complete';
+  updateMeta(runId, {
+    status,
+    ...(harnessResult.costUsd !== undefined ? { total_cost_usd: harnessResult.costUsd } : {}),
+    ...(report.pr_url ? { pr_url: report.pr_url } : {}),
+  });
+
+  bus.emit({
+    kind: 'ok',
+    timestamp: new Date(),
+    runId,
+    phaseNumber: -1,
+    summary: report.pr_url ? `PR opened: ${report.pr_url}` : `${report.summary} (via ${source})`,
+    costUsd: harnessResult.costUsd ?? 0,
+  });
+  for (const blocker of report.blockers) {
+    bus.emit({ kind: 'error', timestamp: new Date(), runId, phaseNumber: -1, message: blocker });
+  }
+
+  return {
+    outcome: 'complete',
+    result: {
+      completed: report.completed,
+      committed,
+      commit_message: report.commit_message ?? null,
+      summary: report.summary,
+      pr_created: report.pr_created ?? false,
+      pr_url: report.pr_url ?? null,
+      blockers: report.blockers,
+    },
+  };
 }
 
 /** Build a stable signature for an activity event so repeats can be detected. */
