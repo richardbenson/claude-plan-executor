@@ -3,12 +3,21 @@
 A CLI/TUI tool that automates the planbot → next-phase → summarise-plan loop.
 Queue work across multiple repos, let it run overnight, and pick up where Claude Code left off after session-limit resets — all without manual intervention.
 
+Every run carries a selectable **`{ provider, model, harness }`** triple:
+
+- **provider** — the API endpoint/credentials (Anthropic, a local Ollama, an internal gateway). See [Providers](#providers).
+- **model** — the model id to run.
+- **harness** — which coding agent drives the work. `claude-code` is the default and powers the full plan loop; nine more agents (opencode, aider, goose, …) are supported for running and **benchmarking** the same task across tools — including on local models at zero API cost. See [Harnesses](#harnesses) and [Benchmarking harnesses](#benchmarking-harnesses).
+
+Defaults preserve the original behaviour: with no flags, `cpe` runs `claude-code` against Anthropic exactly as before.
+
 ## Prerequisites
 
-- [Claude Code](https://claude.ai/code) (`claude` on your PATH)
+- [Claude Code](https://claude.ai/code) (`claude` on your PATH) — the default harness
 - `git`
 - `gh` (GitHub CLI, for PR creation and release notes)
 - Linux (x64/arm64) or macOS (x64/arm64)
+- *Optional:* any of the [alternative harnesses](#harnesses) you want to run or benchmark (each is a separate CLI install)
 
 **Linux/WSL2 — sandbox isolation** (recommended): `bubblewrap` and `socat` are required for Claude's sandbox to work. `cpe` runs without them but sessions will be unsandboxed.
 
@@ -79,17 +88,25 @@ cpe start
 |---|---|
 | `cpe plan [details]` | Launch an interactive planning session in the current repo |
 | `cpe queue [folder]` | Add a plan folder to the queue |
+| `cpe prompt [text]` | Queue a single-prompt run (args, stdin, or `--github-issue`) |
 | `cpe start` | Start the TUI queue processor |
 | `cpe status` | Print queue status (non-interactive, for scripting) |
 | `cpe list` | List all runs |
 | `cpe pause` / `cpe resume` | Pause or resume queue processing |
 | `cpe remove <run-id>` | Remove a run from the queue |
 | `cpe clean` | Remove worktrees for completed runs |
+| `cpe worktree` | Enter a worktree shell for the current repo |
 | `cpe bootstrap` | Set up per-repo bootstrap config (`--detect`, `--stub`, `--edit`) |
+| `cpe bench <prompt>` | Enqueue a harness×model matrix for one prompt (clone-isolated) |
+| `cpe bench summary` | Print a table over captured bench results |
+| `cpe harness check` | Probe every harness for its CLI + version and cache the result |
+| `cpe harness list` | Show cached harness install status |
 | `cpe provider list` | List configured providers and their assigned roles |
 | `cpe provider add` | Add a provider interactively |
 | `cpe provider remove <name>` | Remove a provider by name |
 | `cpe provider test [name]` | Test health checks for all providers, or one by name |
+
+`cpe plan`, `cpe queue`, and `cpe prompt` accept `--provider <name>`, `--model <id>`, and `--harness <name>` to override the `{ provider, model, harness }` triple for that run.
 
 ## Per-repo configuration
 
@@ -133,10 +150,25 @@ A fully annotated example:
 | `providers` | `ProviderEntry[]` | Alternative Claude endpoints/models for this repo (overrides global config) |
 | `provider_for_planning` | `string` | Name of the preferred provider for interactive planning sessions |
 | `provider_for_phases` | `string` | Name of the preferred provider for headless phase and single-prompt runs |
+| `harness_for_planning` | `string` | Harness used for interactive planning (default `claude-code`) |
+| `harness_for_phases` | `string` | Harness used for headless phase and single-prompt runs (default `claude-code`) |
 
 When `providers` is set in `cpe.config.json` it fully replaces the global provider list for that repo. The `provider_for_planning` and `provider_for_phases` fields name the preferred provider for each role; if that provider fails its health check, `cpe` falls back through the list in order.
 
 Run `cpe bootstrap --detect` to have Claude inspect the repo and propose bootstrap commands automatically.
+
+### Global settings (`~/.config/cpe/config.json`)
+
+A few settings live only in the global config:
+
+| Field | Type | Description |
+|---|---|---|
+| `harness_for_planning` / `harness_for_phases` | `string` | Default harness per role (default `claude-code`) |
+| `isolation` | `"worktree"` \| `"clone"` | Default isolation mode (`bench` always uses `clone`) |
+| `inactivity_timeout_seconds` | `number` | Kill a run after this long with no new output (0/unset = off) |
+| `max_runtime_seconds` | `number` | Absolute wall-clock cap per run (0/unset = off) |
+| `pause_seconds` | `number` | Sleep between sequential runs (lets a local model server evict the previous model) |
+| `harnesses` | `HarnessStatus[]` | Cached harness install-detection results — managed automatically by `cpe harness check`; you don't edit this by hand |
 
 ## Providers
 
@@ -196,12 +228,103 @@ cpe provider test my-proxy    # Run health check for one provider
 
 `cpe provider list` shows a `Roles` column: **P** = used for planning, **F** = used for phases, **P+F** = both, **—** = not currently assigned to a role.
 
+### Local models (zero API cost)
+
+Point a provider at a local [Ollama](https://ollama.com) endpoint to run `cpe` for free. Modern Ollama serves the **Anthropic Messages API natively** (including tool use), so `claude-code` needs no translation proxy — just set `anthropic_base_url` to the Ollama host:
+
+```bash
+cpe provider add
+  Name:                 local-ollama
+  Models:               gemma4-cpe:31b, gemma4-cpe:26b
+  Default model:        gemma4-cpe:31b
+  ANTHROPIC_BASE_URL:   http://<ollama-host>:11434
+  ANTHROPIC_AUTH_TOKEN: ollama        # Ollama ignores it; any value
+  Health check URL:     /api/tags
+```
+
+The opaque harnesses reach local models through their own native/OpenAI-compatible/LiteLLM paths (see the [Supported harnesses](#supported-harnesses) table); `cpe` translates the provider's base URL into whatever each harness expects. A LiteLLM proxy is only needed for backends that don't speak the Anthropic API natively.
+
+## Harnesses
+
+A **harness** is the coding agent that actually edits code. `cpe` ships an adapter per harness behind a small contract (headless invocation, model wiring, and a *completion mode*):
+
+- **structured** — the agent returns a parseable result envelope (outcome, tokens, cost). Only `claude-code` is structured, and it is the harness that drives the full **plan → phase → PR → summary** loop.
+- **opaque** — the agent gives no machine-readable result; `cpe` derives the outcome from the process exit code plus the git diff it produced. All the alternative harnesses are opaque, and today they are run via [`cpe bench`](#benchmarking-harnesses) (clone-isolated). Wiring them into the normal worktree plan loop is in progress.
+
+### Supported harnesses
+
+| Harness | `--harness` | Mode | Local model | Install |
+|---|---|---|---|---|
+| Claude Code | `claude-code` | structured | Anthropic API (or Anthropic-native Ollama) | [docs](https://docs.claude.com/en/docs/claude-code) |
+| opencode | `opencode` | opaque | OpenAI-compatible | [opencode.ai](https://opencode.ai) |
+| Aider | `aider` | opaque | LiteLLM / OpenAI-compatible | [aider.chat](https://aider.chat) |
+| goose | `goose` | opaque | Ollama provider | [block.github.io/goose](https://block.github.io/goose) |
+| OpenHands | `openhands` | opaque | LiteLLM (`ollama/…`) | [docs.all-hands.dev](https://docs.all-hands.dev) |
+| Plandex | `plandex` | opaque | server-side (needs a Plandex server) | [plandex.ai](https://plandex.ai) |
+| pi | `pi` | opaque | OpenAI-compatible | [pi.dev](https://pi.dev) |
+| Crush | `crush` | opaque | OpenAI-compatible | [github.com/charmbracelet/crush](https://github.com/charmbracelet/crush) |
+| Codex CLI | `codex` | opaque | OpenAI Responses API (Ollama serves it natively) | [github.com/openai/codex](https://github.com/openai/codex) |
+| mini-swe-agent | `mini-swe-agent` | opaque | LiteLLM (`ollama/…`) | [github.com/SWE-agent/mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent) |
+
+Only `claude-code` is required. Each alternative harness is its own CLI you install separately — `cpe` does **not** bundle them.
+
+### Install detection
+
+`cpe` will only let you select a harness whose CLI is actually installed. Probing every harness on each invocation would be slow, so detection results are **cached** in `~/.config/cpe/config.json`. The first harness-selecting command (`cpe start`, `cpe bench`, or a `--harness` run) runs detection automatically; afterwards it is read from the cache.
+
+```bash
+cpe harness check     # (re)probe every harness's CLI + version, refresh the cache
+cpe harness list      # show the cached status (probes once if never checked)
+```
+
+`cpe harness check` prints live progress while scanning and a final table:
+
+```
+Checking for codex........... found (0.137.0)
+Checking for aider........... found (0.86.2)
+...
+Harness         Installed  Version     Path / install
+---------------------------------------------------------------------------------
+codex           yes        0.137.0     /home/you/.local/bin/codex
+aider           yes        0.86.2      /home/you/.local/bin/aider
+opencode        no         —           (not on PATH)
+```
+
+Selecting an uninstalled harness is blocked with its install link — both for an explicit `--harness` and for the resolved default at run time. Re-run `cpe harness check` after installing or upgrading a harness.
+
+### Selecting a harness
+
+```bash
+cpe prompt "fix the failing test" --harness opencode --model gemma4-cpe:31b --provider local-ollama
+```
+
+You can also set defaults in config (global or per-repo): `harness_for_planning` and `harness_for_phases` (both default to `claude-code`).
+
+## Benchmarking harnesses
+
+`cpe bench` runs the **same prompt** across a harness×model matrix so you can compare how different agents (and models) tackle one task. Each combination runs in a throwaway **full clone** of your repo (an agent running `git reset --hard` can never touch your real checkout), strictly sequentially, with an activity-based timeout and a manual bail.
+
+```bash
+# One prompt, three harnesses, two models = 6 clone-isolated runs:
+cpe bench "add a --json flag to the export command" \
+  --harness claude-code,opencode,aider \
+  --model gemma4-cpe:31b,gemma4-cpe:26b \
+  --provider local-ollama
+
+cpe start            # execute the queued matrix (sequential, with an inter-run pause)
+cpe bench summary    # tabulate the captured results
+```
+
+For each combination `cpe` captures `results/<harness>__<model>/{diff,transcript,meta.json}` under its state dir and pushes a `harnesstests/<harness>__<model>` branch (when the repo has a remote). `cpe bench summary` prints outcome, duration, files/lines changed, tokens, cost, and the pushed branch per combination. Quality scoring stays manual — `cpe` gives you the diffs and metrics to judge.
+
+Useful flags: `--repo`/`--branch` (baseline to clone, defaults to the current repo/branch), `--prompt-file`, and `--force` (re-run combinations that already have captured results).
+
 ## How it works
 
 Each plan lives in a `docs/<folder>/` directory with a `PROGRESS.md` and one `PHASE_NN.prompt.md` per phase (planbot output). `cpe` processes them sequentially:
 
 1. Creates a `git worktree` for the run so your main checkout is never touched
-2. Runs each phase by spawning `claude -p` with the phase prompt
+2. Runs each phase through the configured harness (by default `claude-code`, spawning `claude -p`) with the phase prompt
 3. Detects Claude Code session-limit pauses and resumes automatically when the window reopens
 4. Commits after each phase, then raises a PR and summarises the plan when all phases complete
 
