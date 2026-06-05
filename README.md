@@ -246,10 +246,12 @@ The opaque harnesses reach local models through their own native/OpenAI-compatib
 
 ## Harnesses
 
-A **harness** is the coding agent that actually edits code. `cpe` ships an adapter per harness behind a small contract (headless invocation, model wiring, and a *completion mode*):
+A **harness** is the coding agent that actually edits code. **Any harness can run the full job** — interactive planning, headless phases, single-prompt tasks, benchmarking, and the summarise → push → PR finalise step — on whatever model you point it at, including local models at zero API cost. `cpe` ships an adapter per harness behind a small contract (headless invocation, model wiring, and a *completion mode*):
 
-- **structured** — the agent returns a parseable result envelope (outcome, tokens, cost). Only `claude-code` is structured, and it is the harness that drives the full **plan → phase → PR → summary** loop.
-- **opaque** — the agent gives no machine-readable result; `cpe` derives the outcome from the process exit code plus the git diff it produced. All the alternative harnesses are opaque, and today they are run via [`cpe bench`](#benchmarking-harnesses) (clone-isolated). Wiring them into the normal worktree plan loop is in progress.
+- **structured** — the agent returns a parseable result envelope (outcome, tokens, cost). Only `claude-code` is structured.
+- **opaque** — the agent gives no machine-readable result. cpe gets a structured result anyway via a **hybrid**: the agent writes a `.cpe/result.json` self-report; if it doesn't, cpe asks the model to summarise the run from its git diff + transcript; failing that, it derives the outcome from the exit code + git diff. Commit/PR mechanics run through the harness itself. All the alternative harnesses are opaque.
+
+Set the harness per run with `--harness`, or as a default with `harness_for_planning` / `harness_for_phases` in config.
 
 ### Supported harnesses
 

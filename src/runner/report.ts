@@ -184,8 +184,10 @@ export async function summarizeReport(opts: {
   const key = opts.providerEnv['ANTHROPIC_AUTH_TOKEN'] ?? opts.providerEnv['ANTHROPIC_API_KEY'];
 
   // Bound the call: a slow/hung summarizer must not stall the run — on timeout we
-  // abort and the caller falls back to the git-derived report.
-  const timeoutMs = Number(process.env['CPE_SUMMARIZE_TIMEOUT_MS']) || 90_000;
+  // abort and the caller falls back to the git-derived report. The default is
+  // generous because this is the rescue path for exactly the slow/weak local
+  // models that skip the self-report; override with CPE_SUMMARIZE_TIMEOUT_MS.
+  const timeoutMs = Number(process.env['CPE_SUMMARIZE_TIMEOUT_MS']) || 180_000;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
