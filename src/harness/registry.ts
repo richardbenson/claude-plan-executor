@@ -8,6 +8,7 @@ import { plandexHarness } from './plandex.js';
 import { piHarness } from './pi.js';
 import { crushHarness } from './crush.js';
 import { codexHarness } from './codex.js';
+import { miniSweAgentHarness } from './mini-swe-agent.js';
 
 const registry = new Map<string, Harness>();
 
@@ -42,3 +43,4 @@ register(plandexHarness);
 register(piHarness);
 register(crushHarness);
 register(codexHarness);
+register(miniSweAgentHarness);

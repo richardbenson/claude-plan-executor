@@ -27,7 +27,7 @@ no per-phase branches, no per-phase PRs (we build and test locally; nobody else 
 | 12 | pi adapter | complete | 07 |
 | 13 | crush adapter | complete | 07 |
 | 14 | codex-cli adapter | complete | 07 |
-| 15 | swe-agent adapter | not-started | 07 |
+| 15 | swe-agent adapter (built as mini-swe-agent) | complete | 07 |
 
 Backlog detail and per-harness intel: [ADAPTER_BACKLOG.md](ADAPTER_BACKLOG.md). Every adapter phase
 (08-15) follows the Phase 07 template; since the whole matrix may run for many hours, we phase in the
@@ -404,4 +404,49 @@ full set rather than stopping at plandex.
   variance, not an adapter bug (the validation run completed cleanly); the bench RunGuard owns timeouts.
 
 ### Phase 15
-- One adapter (swe-agent), a commit on `feature/harness-bench`. See ADAPTER_BACKLOG.md.
+- Status: complete
+- Started: 2026-06-05 / Completed: 2026-06-05
+- Notes: **Scope change (user decision):** the original Princeton `swe-agent` named by the plan has been
+  superseded by **mini-swe-agent**, so this phase wires mini-swe-agent (registered as `mini-swe-agent`).
+  mini-swe-agent v2.3.0 (`pipx install mini-swe-agent` → `mini`/`mini-extra`). **completionMode = opaque**
+  (confirmed empirically): mini prints human progress, no result envelope, and does NOT auto-commit — it
+  edits the working tree directly (created file shows as `?? <file>`). Outcome from exit + git diff
+  (exit0+changes→completed, exit0+no-diff→no-op, nonzero→error); change-detection is
+  `git status --porcelain` like opencode/goose/pi/crush/codex. New src/harness/mini-swe-agent.ts
+  (registered): `mini --agent-class default -y --exit-immediately -l 0 -c mini.yaml -c agent.step_limit=N
+  -c agent.wall_time_limit_seconds=M -m ollama/<model> -t <task> -o <traj.json>`.
+  **Gotchas found + fixed during scratch testing:** (1) mini's default agent is INTERACTIVE and raises
+  EOFError under closed stdin — forced `--agent-class default` (the non-interactive DefaultAgent run loop,
+  no stdin prompts). (2) Any `-c` DROPS the implicit builtin config, so we re-add `-c mini.yaml` (resolved
+  by bare name from the package config dir) before layering key=value overrides. (3) With step_limit AND
+  cost_limit both 0, a model that never issues the `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT` submit
+  command loops forever — added `agent.step_limit` (CPE_MINI_STEP_LIMIT, default 40) +
+  `agent.wall_time_limit_seconds` (CPE_MINI_WALL_SECONDS, default 1800) BACKSTOPS; on a limit the agent
+  exits gracefully (exit_status LimitsExceeded/TimeExceeded, exit 0). (4) Local models aren't in LiteLLM's
+  cost map, which raises "Cost must be > 0.0" — set MSWEA_COST_TRACKING=ignore_errors.
+  **LOCAL-MODEL wiring (LiteLLM/Ollama):** mini queries via LiteLLM; we select `ollama/<model>` and point
+  LiteLLM's Ollama provider at OLLAMA_API_BASE = the ROOT of cpe's ANTHROPIC_BASE_URL (native Ollama API,
+  any trailing /v1 stripped). mini parses bash from the chat TEXT (no native tool-calling needed), so any
+  chat model works. **ISOLATION:** mini reads/writes a global config dir (~/.config/mini-swe-agent: .env,
+  last-run trajectory, history); we relocate it via MSWEA_GLOBAL_CONFIG_DIR to a per-run temp dir, set
+  MSWEA_CONFIGURED=true (skip the first-run setup wizard) + MSWEA_SILENT_STARTUP=1 (mute banner). The
+  trajectory is written into that temp dir and parsed before removal; ANTHROPIC_* stripped. The
+  LocalEnvironment runs bash directly in the spawn cwd (the clone) — edits land there for capture and
+  nothing else is written into the cwd (verified: created file shows as `?? <file>`). **Tokens** parsed
+  from the trajectory JSON (each assistant message's extra.response.usage prompt_tokens/completion_tokens,
+  summed); cost omitted (instance_cost 0 for a local model).
+  **Validation (synthetic, single fast model per the scope decision):** end-to-end on gemma4-cpe:31b via
+  the bench path with a bounded create-file task → run_outcome=completed, results/mini-swe-agent__gemma4-
+  cpe-31b/{meta.json,diff,transcript} written, diff (UPDATING.md | 13 +++…) matches mini's change (a
+  homelab update guide with backups / pulling images / rolling back), tokens parsed (5222 in / 371 out),
+  harnesstests/mini-swe-agent__gemma4-cpe-31b pushed to origin, real repo + real ~/.config/mini-swe-agent
+  both untouched (isolation held). 135 tests pass (7 new mini tests: registration/opaque, ollamaApiBase,
+  miniModelArg, deriveMiniOutcome, miniRunArgs, parseMiniUsage sum + empty), lint/build clean.
+  **Operational note:** the DefaultAgent emits NO inter-turn stdout (only the CLI's startup line), so the
+  live output tail shows gaps and the run can look "stuck" — it is not. The run took ~10 min for only ~4
+  model calls: gemma4-cpe:31b per-call prefill latency on this endpoint is high, so the long wall time is
+  model latency, not step count (the wall_time backstop guards the never-submit case). Test artifacts
+  (results, run dir, clone, remote branch, scratch + temp dirs, driver) cleaned up by exact id/name.
+- **ALL ADAPTER PHASES (08–15) NOW COMPLETE** → the full harness×model matrix (`cpe bench` across all
+  registered opaque adapters + claude-code) is unblocked. Registered harnesses: claude-code, opencode,
+  aider, goose, openhands, plandex (server parked), pi, crush, codex, mini-swe-agent.
