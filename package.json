@@ -1,5 +1,6 @@
 {
   "name": "cpe",
+  "description": "Coding Plan Executor — run structured plans on any coding agent (harness) + model",
   "version": "0.1.0",
   "scripts": {
     "build": "bun build --compile --outfile cpe src/index.ts",

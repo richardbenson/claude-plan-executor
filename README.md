@@ -1,4 +1,4 @@
-# Claude Plan Executor (`cpe`)
+# Coding Plan Executor (`cpe`)
 
 A CLI/TUI tool that automates the planbot → next-phase → summarise-plan loop.
 Queue work across multiple repos, let it run overnight, and pick up where Claude Code left off after session-limit resets — all without manual intervention.
@@ -342,7 +342,7 @@ The exact changes needed depend on your specific devcontainer setup: whether you
 Copy and paste this into Claude Code (inside your project):
 
 ```
-I want to configure my devcontainer to run cpe (Claude Plan Executor) inside the
+I want to configure my devcontainer to run cpe (Coding Plan Executor) inside the
 container. Please make the following changes to my devcontainer configuration:
 
 1. Add a bind mount of `~/.claude` from the host into the container user's home

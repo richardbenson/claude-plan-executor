@@ -37,7 +37,7 @@ function wrap(fn: (...args: any[]) => Promise<void>) {
 export function setupCli(): void {
   program
     .name('cpe')
-    .description('Claude Plan Executor — automates planbot → next-phase → summarise-plan')
+    .description('Coding Plan Executor — automates planbot → next-phase → summarise-plan on any harness')
     .version(CPE_VERSION);
 
   program
