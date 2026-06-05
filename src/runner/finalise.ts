@@ -4,6 +4,7 @@ import * as path from 'path';
 import { readMeta, updateMeta, getLogsDir } from '../storage/meta.js';
 import { SUMMARISE_PROMPT } from '../prompts/index.js';
 import { resolveProvider } from './provider.js';
+import { excludeCpeArtifacts } from './report.js';
 import * as harnessRegistry from '../harness/registry.js';
 import type { ActivityBus } from '../events/bus.js';
 import type { AppConfig } from '../types/meta.js';
@@ -24,25 +25,15 @@ export async function finaliseRun(runId: string, bus: ActivityBus, appConfig?: A
     phaseName: 'finalise',
   });
 
-  // The summarise step is claude/planbot-specific (a schema-less `claude -p`
-  // invocation reading the prompt from stdin). Resolve the adapter and only run
-  // summarise for structured adapters; opaque harnesses skip it explicitly. We
-  // deliberately keep the existing claude summarise spawn untouched here (rather
-  // than routing it through adapter.run(), which is the structured json-schema
-  // path) so the regression gate holds byte-for-byte for claude-code.
+  // The summarise step writes docs/<plan>.md, deletes the plan folder, and (with
+  // a remote) pushes + opens a PR. It runs through the SELECTED harness:
+  //  - structured (claude-code): the existing schema-less `claude -p` spawn,
+  //    kept byte-for-byte for the regression gate.
+  //  - opaque: routed through the adapter (adapter.run with the raw prompt) so any
+  //    harness/model can finalise. Success is verified from the filesystem below
+  //    (summary doc present, plan folder gone), not a structured result.
   const harnessName = meta.harness ?? appConfig?.harness_for_phases ?? 'claude-code';
   const adapter = harnessRegistry.get(harnessName);
-  if (adapter.completionMode !== 'structured') {
-    bus.emit({
-      kind: 'text',
-      timestamp: new Date(),
-      runId,
-      phaseNumber: -1,
-      text: `skipping summarise: harness '${adapter.name}' is opaque (no structured summarise step)`,
-    });
-    updateMeta(runId, { status: 'complete' });
-    return { prUrl: '' };
-  }
 
   const { plan_folder: planFolder = '', worktree_path: worktreePath } = meta;
   const featureBranch = meta.feature_branch;
@@ -55,32 +46,46 @@ export async function finaliseRun(runId: string, bus: ActivityBus, appConfig?: A
     .replace(/TARGET_BRANCH/g, targetBranch)
     .replace(/SKIP_PUSH_AND_PR/g, skipPushAndPr ? 'true' : 'false');
 
-  const tmpFile = path.join(os.tmpdir(), `cpe-summarise-${runId}.md`);
-  fs.writeFileSync(tmpFile, prompt);
-
   const logPath = path.join(getLogsDir(runId), 'finalise.log');
   fs.mkdirSync(path.dirname(logPath), { recursive: true });
-  const logFd = fs.openSync(logPath, 'w');
 
   const provider = appConfig
     ? await resolveProvider(appConfig.providers ?? [], 'phase', meta.provider ?? appConfig.provider_for_phases, meta.model)
     : null;
-  const providerEnv = provider?.env ?? {};
-  const spawnEnv = Object.keys(providerEnv).length > 0
-    ? { ...process.env, ...providerEnv }
-    : undefined;
-  const modelArgs = provider?.modelArgs ?? [];
 
-  const proc = Bun.spawn(['claude', '-p', '--dangerously-skip-permissions', ...modelArgs], {
-    cwd: worktreePath,
-    stdin: fs.openSync(tmpFile, 'r'),
-    stdout: logFd,
-    stderr: logFd,
-    ...(spawnEnv ? { env: spawnEnv } : {}),
-  });
-  const exitCode = await proc.exited;
-  try { fs.closeSync(logFd); } catch { /* ignore */ }
-  try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+  let exitCode: number;
+  if (adapter.completionMode === 'structured') {
+    const tmpFile = path.join(os.tmpdir(), `cpe-summarise-${runId}.md`);
+    fs.writeFileSync(tmpFile, prompt);
+    const logFd = fs.openSync(logPath, 'w');
+    const providerEnv = provider?.env ?? {};
+    const spawnEnv = Object.keys(providerEnv).length > 0 ? { ...process.env, ...providerEnv } : undefined;
+    const modelArgs = provider?.modelArgs ?? [];
+    const proc = Bun.spawn(['claude', '-p', '--dangerously-skip-permissions', ...modelArgs], {
+      cwd: worktreePath,
+      stdin: fs.openSync(tmpFile, 'r'),
+      stdout: logFd,
+      stderr: logFd,
+      ...(spawnEnv ? { env: spawnEnv } : {}),
+    });
+    exitCode = await proc.exited;
+    try { fs.closeSync(logFd); } catch { /* ignore */ }
+    try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+  } else {
+    // Route the summarise step through the opaque harness.
+    excludeCpeArtifacts(worktreePath);
+    const result = await adapter.run({
+      cwd: worktreePath,
+      prompt,
+      sessionId: crypto.randomUUID(),
+      logPath,
+      dangerouslySkipPermissions: appConfig?.dangerously_skip_permissions,
+      providerEnv: provider?.env ?? {},
+      model: provider?.model ?? meta.model,
+      modelArgs: provider?.modelArgs ?? [],
+    });
+    exitCode = result.exitCode;
+  }
 
   if (exitCode !== 0) {
     bus.emit({
@@ -88,7 +93,7 @@ export async function finaliseRun(runId: string, bus: ActivityBus, appConfig?: A
       timestamp: new Date(),
       runId,
       phaseNumber: -1,
-      message: `claude -p exited ${exitCode} — see ${logPath}`,
+      message: `summarise (${adapter.name}) exited ${exitCode} — see ${logPath}`,
     });
   }
 
