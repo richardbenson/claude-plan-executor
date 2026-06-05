@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { buildSummarizePrompt } from '../prompts/index.js';
 import type { ClaudeEnvelope } from './envelope.js';
 
 /*
@@ -136,6 +137,80 @@ export function gitDerivedReport(worktree: string, headBefore: string, exitCode:
     blockers: exitCode === 0 ? [] : [`harness exited with code ${exitCode}`],
     notes_for_next_phase: '',
   };
+}
+
+/** Extract a PhaseReport from a model's free-text response (tolerant of fences/prose). */
+export function parseSummaryReport(text: string): PhaseReport | null {
+  let s = text.trim();
+  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence && fence[1]) s = fence[1].trim();
+  const start = s.indexOf('{');
+  const end = s.lastIndexOf('}');
+  if (start === -1 || end === -1 || end < start) return null;
+  let parsed: unknown;
+  try { parsed = JSON.parse(s.slice(start, end + 1)); } catch { return null; }
+  if (!isReportShape(parsed)) return null;
+  return normalizeReport(parsed as Record<string, unknown>);
+}
+
+/** OpenAI-compatible chat base (`<ANTHROPIC_BASE_URL>/v1`) for the summarization call. */
+function chatBaseUrl(providerEnv: Record<string, string>): string | null {
+  const base = providerEnv['ANTHROPIC_BASE_URL'];
+  if (!base) return null;
+  const trimmed = base.replace(/\/+$/, '');
+  return trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`;
+}
+
+/**
+ * Fallback report generation: ask the configured model (via the provider's
+ * OpenAI-compatible chat endpoint) to summarize the run from its git diff +
+ * transcript into a PhaseReport. Used only when the agent wrote no valid
+ * self-report. Returns null on any failure (caller then falls back to git).
+ */
+export async function summarizeReport(opts: {
+  worktree: string;
+  headBefore: string;
+  transcriptPath: string;
+  providerEnv: Record<string, string>;
+  model?: string;
+}): Promise<PhaseReport | null> {
+  const base = chatBaseUrl(opts.providerEnv);
+  if (!base || !opts.model) return null;
+
+  const diff = git(['diff', opts.headBefore], opts.worktree);
+  let transcript = '';
+  try { transcript = fs.readFileSync(opts.transcriptPath, 'utf8'); } catch { /* none */ }
+  const prompt = buildSummarizePrompt(diff, transcript);
+  const key = opts.providerEnv['ANTHROPIC_AUTH_TOKEN'] ?? opts.providerEnv['ANTHROPIC_API_KEY'];
+
+  // Bound the call: a slow/hung summarizer must not stall the run — on timeout we
+  // abort and the caller falls back to the git-derived report.
+  const timeoutMs = Number(process.env['CPE_SUMMARIZE_TIMEOUT_MS']) || 90_000;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${base}/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(key ? { authorization: `Bearer ${key}` } : {}) },
+      body: JSON.stringify({
+        model: opts.model,
+        messages: [{ role: 'user', content: prompt }],
+        stream: false,
+        temperature: 0,
+        max_tokens: 800,
+      }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as { choices?: { message?: { content?: unknown } }[] };
+    const content = data.choices?.[0]?.message?.content;
+    if (typeof content !== 'string') return null;
+    return parseSummaryReport(content);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export type ReportSource = 'self-report' | 'summarize' | 'git';

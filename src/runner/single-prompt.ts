@@ -11,7 +11,7 @@ import { startJsonlTail } from './jsonl-tail.js';
 import { startOutputTail } from './output-tail.js';
 import { getHead } from '../git/repo.js';
 import { SINGLE_PROMPT_TEMPLATE, SINGLE_PROMPT_RESULT_SCHEMA, buildOpaquePrompt } from '../prompts/index.js';
-import { acquireReport, excludeCpeArtifacts } from './report.js';
+import { acquireReport, excludeCpeArtifacts, summarizeReport } from './report.js';
 import { createClone, removeClone } from '../git/clone.js';
 import { captureRun } from './capture.js';
 import { RunGuard, registerGuard, unregisterGuard } from './run-guard.js';
@@ -341,6 +341,13 @@ async function runOpaqueSinglePrompt(
     worktree: meta.worktree_path,
     headBefore,
     exitCode: harnessResult.exitCode,
+    summarize: () => summarizeReport({
+      worktree: meta.worktree_path,
+      headBefore,
+      transcriptPath: logPath,
+      providerEnv: provider?.env ?? {},
+      model: provider?.model ?? meta.model,
+    }),
   });
   const headAfter = getHead(meta.worktree_path);
   const committed = headAfter !== headBefore;

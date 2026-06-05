@@ -11,7 +11,7 @@ import { startJsonlTail } from './jsonl-tail.js';
 import { startOutputTail } from './output-tail.js';
 import { getHead } from '../git/repo.js';
 import { PHASE_RESULT_SCHEMA, buildOpaquePrompt } from '../prompts/index.js';
-import { acquireReport, excludeCpeArtifacts } from './report.js';
+import { acquireReport, excludeCpeArtifacts, summarizeReport } from './report.js';
 import type { ResolvedProvider } from './provider.js';
 import type { Harness } from '../harness/types.js';
 import type { ActivityBus } from '../events/bus.js';
@@ -357,6 +357,13 @@ async function runOpaquePhase(args: {
     worktree: meta.worktree_path,
     headBefore,
     exitCode: harnessResult.exitCode,
+    summarize: () => summarizeReport({
+      worktree: meta.worktree_path,
+      headBefore,
+      transcriptPath: logPath,
+      providerEnv: provider?.env ?? {},
+      model: provider?.model ?? meta.model,
+    }),
   });
 
   // Commit truth from git, not the self-report.

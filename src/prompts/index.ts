@@ -12,6 +12,8 @@ import _bootstrapDetect from './bootstrap-detect.md' with { type: 'text' };
 import _singlePrompt from './single-prompt.md' with { type: 'text' };
 // @ts-expect-error — Bun text import
 import _opaqueContract from './opaque-contract.md' with { type: 'text' };
+// @ts-expect-error — Bun text import
+import _summarizeResult from './summarize-result.md' with { type: 'text' };
 import _phaseResultSchemaObj from './phase-result-schema.json';
 import _bootstrapDetectSchemaObj from './bootstrap-detect-schema.json';
 import _singlePromptResultSchemaObj from './single-prompt-result-schema.json';
@@ -47,6 +49,16 @@ export function buildOpaquePrompt(base: string, opts: { withPr: boolean }): stri
     .replace('{{PR_STEP}}', prStep)
     .replace('{{PR_FIELDS}}', prFields);
   return `${base.trimEnd()}\n\n${contract}`;
+}
+
+export const SUMMARIZE_RESULT_PROMPT: string = _summarizeResult as unknown as string;
+
+/** Build the summarization prompt from a git diff + transcript tail (both truncated). */
+export function buildSummarizePrompt(diff: string, transcript: string): string {
+  const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '\n…(truncated)…' : s);
+  return SUMMARIZE_RESULT_PROMPT
+    .replace('{{DIFF}}', clip(diff.trim() || '(empty diff)', 12000))
+    .replace('{{TRANSCRIPT}}', clip(transcript.trim() || '(no transcript)', 6000));
 }
 export const PHASE_RESULT_SCHEMA: string = JSON.stringify(_phaseResultSchemaObj);
 export const BOOTSTRAP_DETECT_SCHEMA: string = JSON.stringify(_bootstrapDetectSchemaObj);

@@ -9,6 +9,7 @@ import {
   readSelfReport,
   gitDerivedReport,
   acquireReport,
+  parseSummaryReport,
   CPE_RESULT_REL,
 } from './report.js';
 import type { ClaudeEnvelope } from './envelope.js';
@@ -107,6 +108,14 @@ test('gitDerivedReport: no change → not completed; non-zero exit → blocker',
   expect(failed.completed).toBe(false);
   expect(failed.blockers[0]).toMatch(/exited with code 3/);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('parseSummaryReport tolerates fences/prose and rejects junk', () => {
+  expect(parseSummaryReport('{"completed":true,"committed":true,"summary":"plain"}')?.summary).toBe('plain');
+  expect(parseSummaryReport('```json\n{"completed":false,"committed":false,"summary":"fenced","blockers":["x"]}\n```')?.blockers).toEqual(['x']);
+  expect(parseSummaryReport('Here is the result:\n{"completed":true,"committed":true,"summary":"prose"}\nDone.')?.summary).toBe('prose');
+  expect(parseSummaryReport('no json at all')).toBeNull();
+  expect(parseSummaryReport('{"summary":"missing required fields"}')).toBeNull();
 });
 
 test('acquireReport precedence: self-report > summarize > git', async () => {
