@@ -12,6 +12,23 @@
  * counts.
  */
 
+import type { ActivityEvent } from '../events/types.js';
+
+/** Build a stable signature for an activity event so repeated lines can be detected. */
+export function activitySignature(e: ActivityEvent): string {
+  const r = e as unknown as Record<string, unknown>;
+  const detail =
+    (r['file'] as string) ??
+    (r['command'] as string) ??
+    (r['message'] as string) ??
+    (r['text'] as string) ??
+    (r['line'] as string) ??
+    (r['summary'] as string) ??
+    (r['phaseName'] as string) ??
+    '';
+  return `${e.kind}:${detail}`;
+}
+
 export type AbortReason = 'timeout-inactivity' | 'timeout-maxruntime' | 'bailed';
 
 export interface RunGuardOptions {

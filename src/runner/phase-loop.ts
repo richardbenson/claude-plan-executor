@@ -12,6 +12,7 @@ import { startOutputTail } from './output-tail.js';
 import { getHead } from '../git/repo.js';
 import { PHASE_RESULT_SCHEMA, buildOpaquePrompt } from '../prompts/index.js';
 import { acquireReport, excludeCpeArtifacts, summarizeReport } from './report.js';
+import { RunGuard, registerGuard, unregisterGuard, activitySignature } from './run-guard.js';
 import type { ResolvedProvider } from './provider.js';
 import type { Harness } from '../harness/types.js';
 import type { ActivityBus } from '../events/bus.js';
@@ -323,6 +324,15 @@ async function runOpaquePhase(args: {
   const base = fs.readFileSync(basePromptFile, 'utf-8');
   const prompt = buildOpaquePrompt(base, { withPr: false });
 
+  // Activity-based timeout + manual bail (off unless inactivity/max-runtime are
+  // configured), fed by the output tail — so a hung/runaway opaque phase is killed.
+  const guard = new RunGuard({
+    inactivityMs: (appConfig.inactivity_timeout_seconds ?? 0) * 1000,
+    maxRuntimeMs: (appConfig.max_runtime_seconds ?? 0) * 1000,
+  });
+  registerGuard(runId, guard);
+  const unsub = bus.subscribe(e => { if (e.runId === runId) guard.noteActivity(activitySignature(e)); });
+  guard.start();
   const sessionPromise = adapter.run({
     cwd: meta.worktree_path,
     prompt,
@@ -332,15 +342,32 @@ async function runOpaquePhase(args: {
     providerEnv: provider?.env ?? {},
     model: provider?.model ?? meta.model,
     modelArgs: provider?.modelArgs ?? [],
+    signal: guard.signal,
   });
   const stopTail = startOutputTail(logPath, runId, phaseNumber, bus);
-  const harnessResult = await sessionPromise;
-  stopTail();
+  let harnessResult;
+  try {
+    harnessResult = await sessionPromise;
+  } finally {
+    stopTail();
+    guard.dispose();
+    unsub();
+    unregisterGuard(runId);
+  }
   if (basePromptFile !== originalPromptFile) {
     try { fs.unlinkSync(basePromptFile); } catch { /* ignore */ }
   }
 
-  // The only hard failure for an opaque harness is a non-zero exit; retry it.
+  // Guard fired (timeout/bail) → terminal; killing-and-retrying would just hang again.
+  if (guard.outcome) {
+    const reason = guard.reason === 'bailed' ? 'manually bailed'
+      : guard.reason === 'timeout-maxruntime' ? 'exceeded max runtime'
+      : 'no new output within inactivity window';
+    await markPhaseFailed(runId, phaseNumber, `${adapter.name}: ${reason}`, bus);
+    return { outcome: 'failed', reason };
+  }
+
+  // The only other hard failure for an opaque harness is a non-zero exit; retry it.
   if (harnessResult.exitCode !== 0) {
     const fresh = readMeta(runId);
     const entry = (fresh.phases ?? []).find(p => p.number === phaseNumber)!;

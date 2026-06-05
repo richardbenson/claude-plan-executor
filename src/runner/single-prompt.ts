@@ -14,9 +14,8 @@ import { SINGLE_PROMPT_TEMPLATE, SINGLE_PROMPT_RESULT_SCHEMA, buildOpaquePrompt 
 import { acquireReport, excludeCpeArtifacts, summarizeReport } from './report.js';
 import { createClone, removeClone } from '../git/clone.js';
 import { captureRun } from './capture.js';
-import { RunGuard, registerGuard, unregisterGuard } from './run-guard.js';
+import { RunGuard, registerGuard, unregisterGuard, activitySignature } from './run-guard.js';
 import type { ActivityBus } from '../events/bus.js';
-import type { ActivityEvent } from '../events/types.js';
 import type { AppConfig, RunMeta } from '../types/meta.js';
 import type { Harness } from '../harness/types.js';
 
@@ -313,6 +312,15 @@ async function runOpaqueSinglePrompt(
     meta.model,
   );
 
+  // Activity-based timeout + manual bail (off unless inactivity/max-runtime are
+  // configured), fed by the output tail — so a hung/runaway opaque run is killed.
+  const guard = new RunGuard({
+    inactivityMs: (appConfig.inactivity_timeout_seconds ?? 0) * 1000,
+    maxRuntimeMs: (appConfig.max_runtime_seconds ?? 0) * 1000,
+  });
+  registerGuard(runId, guard);
+  const unsub = bus.subscribe(e => { if (e.runId === runId) guard.noteActivity(activitySignature(e)); });
+  guard.start();
   const sessionPromise = adapter.run({
     cwd: meta.worktree_path,
     prompt,
@@ -322,10 +330,27 @@ async function runOpaqueSinglePrompt(
     providerEnv: provider?.env ?? {},
     model: provider?.model ?? meta.model,
     modelArgs: provider?.modelArgs ?? [],
+    signal: guard.signal,
   });
   const stopTail = startOutputTail(logPath, runId, -1, bus);
-  const harnessResult = await sessionPromise;
-  stopTail();
+  let harnessResult;
+  try {
+    harnessResult = await sessionPromise;
+  } finally {
+    stopTail();
+    guard.dispose();
+    unsub();
+    unregisterGuard(runId);
+  }
+
+  // Guard fired (timeout/bail) → terminal; killing-and-retrying would just hang again.
+  if (guard.outcome) {
+    const reason = guard.reason === 'bailed' ? 'manually bailed'
+      : guard.reason === 'timeout-maxruntime' ? 'exceeded max runtime'
+      : 'no new output within inactivity window';
+    await markFailed(runId, `${adapter.name}: ${reason}`, bus);
+    return { outcome: 'failed', reason };
+  }
 
   if (harnessResult.exitCode !== 0) {
     const retryCount = retryCountIn + 1;
@@ -383,21 +408,6 @@ async function runOpaqueSinglePrompt(
       blockers: report.blockers,
     },
   };
-}
-
-/** Build a stable signature for an activity event so repeats can be detected. */
-function activitySignature(e: ActivityEvent): string {
-  const r = e as unknown as Record<string, unknown>;
-  const detail =
-    (r['file'] as string) ??
-    (r['command'] as string) ??
-    (r['message'] as string) ??
-    (r['text'] as string) ??
-    (r['line'] as string) ??
-    (r['summary'] as string) ??
-    (r['phaseName'] as string) ??
-    '';
-  return `${e.kind}:${detail}`;
 }
 
 /**
