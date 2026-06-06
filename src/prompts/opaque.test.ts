@@ -1,5 +1,12 @@
 import { test, expect } from 'bun:test';
-import { buildOpaquePrompt, buildSummarizePrompt } from './index.js';
+import { buildOpaquePrompt, buildSummarizePrompt, BENCH_PROMPT_TEMPLATE, SINGLE_PROMPT_TEMPLATE } from './index.js';
+
+test('BENCH_PROMPT_TEMPLATE commits but never instructs push/PR (single-prompt template does)', () => {
+  expect(SINGLE_PROMPT_TEMPLATE.toLowerCase()).toContain('pull request');
+  expect(BENCH_PROMPT_TEMPLATE).toContain('{{USER_PROMPT}}');
+  expect(BENCH_PROMPT_TEMPLATE.toLowerCase()).toContain('commit');
+  expect(BENCH_PROMPT_TEMPLATE).toMatch(/do NOT push|never open a PR|always false/i);
+});
 
 test('buildOpaquePrompt (phase) appends the contract, commit + result file, no PR', () => {
   const out = buildOpaquePrompt('PHASE BODY', { withPr: false });

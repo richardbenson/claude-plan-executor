@@ -10,7 +10,7 @@ import { handleRateLimit } from './limit.js';
 import { startJsonlTail } from './jsonl-tail.js';
 import { startOutputTail } from './output-tail.js';
 import { getHead } from '../git/repo.js';
-import { SINGLE_PROMPT_TEMPLATE, SINGLE_PROMPT_RESULT_SCHEMA, buildOpaquePrompt } from '../prompts/index.js';
+import { SINGLE_PROMPT_TEMPLATE, BENCH_PROMPT_TEMPLATE, SINGLE_PROMPT_RESULT_SCHEMA, buildOpaquePrompt } from '../prompts/index.js';
 import { acquireReport, excludeCpeArtifacts, summarizeReport } from './report.js';
 import { createClone, removeClone } from '../git/clone.js';
 import { captureRun } from './capture.js';
@@ -446,15 +446,14 @@ async function runBenchSinglePrompt(
   });
   bus.emit({ kind: 'phase', timestamp: new Date(), runId, phaseNumber: -1, phaseName: 'bench' });
 
-  // 2 — prompt file. Structured adapters (claude-code) need the single-prompt
-  // template that instructs the StructuredOutput envelope; opaque adapters
-  // (opencode, …) have no such envelope and must receive the raw user prompt —
-  // wrapping it in claude-specific structured-output instructions would just
-  // confuse them. The outcome of an opaque run comes from exit code + git diff.
+  // 2 — prompt file. Structured adapters (claude-code) need a template that
+  // instructs the StructuredOutput envelope; we use the BENCH variant, which
+  // commits but explicitly does NOT push or open a PR — a bench clone's origin is
+  // the local baseline, so a push/PR request just makes the agent flail for ages
+  // (observed: claude-code burning ~90 min on gh/tea PR attempts). Opaque adapters
+  // have no envelope and get the raw user prompt; their outcome is exit + git diff.
   const promptText = adapter.completionMode === 'structured'
-    ? SINGLE_PROMPT_TEMPLATE
-        .replace('{{USER_PROMPT}}', meta.prompt ?? '')
-        .replace('{{GITHUB_ISSUE_SECTION}}', '')
+    ? BENCH_PROMPT_TEMPLATE.replace('{{USER_PROMPT}}', meta.prompt ?? '')
     : (meta.prompt ?? '');
   const tmpFile = path.join(os.tmpdir(), `cpe-bench-${runId}.md`);
   fs.writeFileSync(tmpFile, promptText);

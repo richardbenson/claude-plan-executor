@@ -11,6 +11,8 @@ import _bootstrapDetect from './bootstrap-detect.md' with { type: 'text' };
 // @ts-expect-error — Bun text import
 import _singlePrompt from './single-prompt.md' with { type: 'text' };
 // @ts-expect-error — Bun text import
+import _benchPrompt from './bench-prompt.md' with { type: 'text' };
+// @ts-expect-error — Bun text import
 import _opaqueContract from './opaque-contract.md' with { type: 'text' };
 // @ts-expect-error — Bun text import
 import _summarizeResult from './summarize-result.md' with { type: 'text' };
@@ -22,6 +24,8 @@ export const PLANBOT_PROMPT: string = _planbot as unknown as string;
 export const SUMMARISE_PROMPT: string = _summarise as unknown as string;
 export const BOOTSTRAP_DETECT_PROMPT: string = _bootstrapDetect as unknown as string;
 export const SINGLE_PROMPT_TEMPLATE: string = _singlePrompt as unknown as string;
+/** Bench variant of the single-prompt template: commit only, never push/PR (clone has no real forge). */
+export const BENCH_PROMPT_TEMPLATE: string = _benchPrompt as unknown as string;
 export const OPAQUE_CONTRACT: string = _opaqueContract as unknown as string;
 
 /** The push/PR step injected into the opaque contract for single-prompt runs only. */

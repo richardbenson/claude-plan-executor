@@ -72,7 +72,9 @@ import type { Harness, HarnessContext, HarnessResult, HarnessOutcome } from './t
  */
 
 const DEFAULT_STEP_LIMIT = 40;
-const DEFAULT_WALL_SECONDS = 1800;
+// A non-submitting agent on a slow local model can burn the whole window producing
+// nothing (observed: a 30-min no-op at 1800s); fail faster. Override via CPE_MINI_WALL_SECONDS.
+const DEFAULT_WALL_SECONDS = 600;
 
 /** Strip cpe's ANTHROPIC_* keys so mini never inherits them (it uses LiteLLM env). */
 function cleanEnv(): Record<string, string> {
