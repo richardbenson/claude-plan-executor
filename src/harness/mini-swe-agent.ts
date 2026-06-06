@@ -36,15 +36,17 @@ import type { Harness, HarnessContext, HarnessResult, HarnessOutcome } from './t
  *                                  time; on a limit the agent exits GRACEFULLY
  *                                  (exit_status LimitsExceeded/TimeExceeded, exit 0).
  *                                  Tunable via CPE_MINI_STEP_LIMIT (default 40) and
- *                                  CPE_MINI_WALL_SECONDS (default 1800).
- *     -m ollama/<model>            LiteLLM model string (see below)
+ *                                  CPE_MINI_WALL_SECONDS (default 600).
+ *     -m openai/<model>            LiteLLM model string (see below)
  *     -o <traj.json>               trajectory JSON (used for token accounting)
  *
- * LOCAL-MODEL wiring (LiteLLM/Ollama): mini queries models via LiteLLM. We select
- * `ollama/<ctx.model>` and point LiteLLM's Ollama provider at our endpoint with
- * OLLAMA_API_BASE = the ROOT of cpe's ANTHROPIC_BASE_URL (Ollama's native API, NOT
- * the /v1 OpenAI shim — any trailing /v1 is stripped). mini parses bash commands
- * from the chat TEXT (no native tool-calling needed), so any chat model works.
+ * LOCAL-MODEL wiring (LiteLLM, OpenAI-compatible): mini queries models via LiteLLM.
+ * We select `openai/<ctx.model>` and point it at OPENAI_API_BASE = <base>/v1
+ * (+ OPENAI_API_KEY). We deliberately AVOID LiteLLM's `ollama/` provider: with a
+ * reasoning model it intermittently returns empty `content`, stalling mini's
+ * text-action parser to the wall cap; the /v1/chat/completions path returns
+ * populated content reliably. mini parses bash commands from the chat TEXT (no
+ * native tool-calling needed), so any chat model works.
  * Local models are not in LiteLLM's cost map, which otherwise raises
  * "Cost must be > 0.0"; we set MSWEA_COST_TRACKING=ignore_errors to tolerate it.
  *
@@ -87,16 +89,24 @@ function cleanEnv(): Record<string, string> {
   return out;
 }
 
-/** LiteLLM Ollama base = the ROOT of cpe's provider URL (no trailing slash, no /v1). */
-export function ollamaApiBase(providerEnv: Record<string, string>): string | null {
+/**
+ * LiteLLM base for mini's OpenAI-compatible provider (`<base>/v1`). We route via
+ * `openai/` rather than LiteLLM's `ollama/` provider: with a reasoning model the
+ * `ollama/` path intermittently returns EMPTY `content` (the reasoning lands
+ * elsewhere), which stalls mini's text-action parser until the wall cap (observed:
+ * a 30-min no-op). The `/v1/chat/completions` path returns populated content
+ * reliably (verified: 0 empty turns vs ≥1 on `ollama/`).
+ */
+export function openAiBase(providerEnv: Record<string, string>): string | null {
   const base = providerEnv['ANTHROPIC_BASE_URL'];
   if (!base) return null;
-  return base.replace(/\/+$/, '').replace(/\/v1$/, '');
+  const trimmed = base.replace(/\/+$/, '');
+  return trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`;
 }
 
-/** The LiteLLM model string for mini: prefix `ollama/` unless already provider-qualified. */
+/** The LiteLLM model string for mini: OpenAI-compatible provider unless already qualified. */
 export function miniModelArg(model: string): string {
-  return model.includes('/') ? model : `ollama/${model}`;
+  return model.includes('/') ? model : `openai/${model}`;
 }
 
 /**
@@ -198,8 +208,11 @@ export const miniSweAgentHarness: Harness = {
     env['MSWEA_CONFIGURED'] = 'true';
     env['MSWEA_SILENT_STARTUP'] = '1';
     env['MSWEA_COST_TRACKING'] = 'ignore_errors';
-    const apiBase = ollamaApiBase(ctx.providerEnv);
-    if (apiBase) env['OLLAMA_API_BASE'] = apiBase;
+    const apiBase = openAiBase(ctx.providerEnv);
+    if (apiBase) {
+      env['OPENAI_API_BASE'] = apiBase;
+      env['OPENAI_API_KEY'] = ctx.providerEnv['ANTHROPIC_AUTH_TOKEN'] ?? ctx.providerEnv['ANTHROPIC_API_KEY'] ?? 'ollama';
+    }
 
     const args = [
       'mini',

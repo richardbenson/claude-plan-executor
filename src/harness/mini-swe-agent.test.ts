@@ -1,6 +1,6 @@
 import { test, expect } from 'bun:test';
 import {
-  ollamaApiBase,
+  openAiBase,
   miniModelArg,
   deriveMiniOutcome,
   miniRunArgs,
@@ -16,16 +16,16 @@ test('mini-swe-agent is registered as an opaque-mode harness', () => {
   expect(registry.list()).toContain('mini-swe-agent');
 });
 
-test('ollamaApiBase yields the endpoint root (strips trailing slash + /v1), null when unset', () => {
-  expect(ollamaApiBase({ ANTHROPIC_BASE_URL: 'http://192.168.1.3:11434' })).toBe('http://192.168.1.3:11434');
-  expect(ollamaApiBase({ ANTHROPIC_BASE_URL: 'http://192.168.1.3:11434/' })).toBe('http://192.168.1.3:11434');
-  expect(ollamaApiBase({ ANTHROPIC_BASE_URL: 'http://host/v1' })).toBe('http://host');
-  expect(ollamaApiBase({})).toBeNull();
+test('openAiBase yields the OpenAI-compatible /v1 base, idempotent, null when unset', () => {
+  expect(openAiBase({ ANTHROPIC_BASE_URL: 'http://192.168.1.3:11434' })).toBe('http://192.168.1.3:11434/v1');
+  expect(openAiBase({ ANTHROPIC_BASE_URL: 'http://192.168.1.3:11434/' })).toBe('http://192.168.1.3:11434/v1');
+  expect(openAiBase({ ANTHROPIC_BASE_URL: 'http://host/v1' })).toBe('http://host/v1');
+  expect(openAiBase({})).toBeNull();
 });
 
-test('miniModelArg prefixes ollama/ unless already provider-qualified', () => {
-  expect(miniModelArg('gemma4-cpe:31b')).toBe('ollama/gemma4-cpe:31b');
-  expect(miniModelArg('openai/gpt-5')).toBe('openai/gpt-5');
+test('miniModelArg uses the openai-compatible provider unless already provider-qualified', () => {
+  expect(miniModelArg('gemma4-cpe:31b')).toBe('openai/gemma4-cpe:31b');
+  expect(miniModelArg('ollama/x')).toBe('ollama/x');
 });
 
 test('deriveMiniOutcome maps exit code + diff to an outcome', () => {
@@ -44,7 +44,7 @@ test('miniRunArgs runs the non-interactive default agent and keeps the builtin c
     '-c', 'mini.yaml',
     '-c', 'agent.step_limit=40',
     '-c', 'agent.wall_time_limit_seconds=1800',
-    '-m', 'ollama/gemma4-cpe:31b',
+    '-m', 'openai/gemma4-cpe:31b',
     '-o', '/tmp/run.traj.json',
   ]);
 });

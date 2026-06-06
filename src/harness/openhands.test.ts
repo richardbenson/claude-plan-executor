@@ -18,14 +18,15 @@ test('openhands is registered as an opaque-mode harness', () => {
   expect(registry.list()).toContain('openhands');
 });
 
-test('openhandsModelArg prefixes ollama/ once', () => {
-  expect(openhandsModelArg('gemma4-cpe:31b')).toBe('ollama/gemma4-cpe:31b');
-  expect(openhandsModelArg('ollama/gemma4-cpe:31b')).toBe('ollama/gemma4-cpe:31b');
+test('openhandsModelArg uses the openai-compatible provider (native function-calling)', () => {
+  expect(openhandsModelArg('gemma4-cpe:31b')).toBe('openai/gemma4-cpe:31b');
+  expect(openhandsModelArg('openai/gpt-5')).toBe('openai/gpt-5');
 });
 
-test('baseUrlFrom returns the base url (trailing slash trimmed), else null', () => {
-  expect(baseUrlFrom({ ANTHROPIC_BASE_URL: 'http://192.168.1.3:11434' })).toBe('http://192.168.1.3:11434');
-  expect(baseUrlFrom({ ANTHROPIC_BASE_URL: 'http://192.168.1.3:11434/' })).toBe('http://192.168.1.3:11434');
+test('baseUrlFrom returns the OpenAI-compatible /v1 base, idempotent, else null', () => {
+  expect(baseUrlFrom({ ANTHROPIC_BASE_URL: 'http://192.168.1.3:11434' })).toBe('http://192.168.1.3:11434/v1');
+  expect(baseUrlFrom({ ANTHROPIC_BASE_URL: 'http://192.168.1.3:11434/' })).toBe('http://192.168.1.3:11434/v1');
+  expect(baseUrlFrom({ ANTHROPIC_BASE_URL: 'http://host/v1' })).toBe('http://host/v1');
   expect(baseUrlFrom({})).toBeNull();
 });
 

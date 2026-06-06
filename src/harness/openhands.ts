@@ -14,8 +14,8 @@ import type { Harness, HarnessContext, HarnessResult, HarnessOutcome } from './t
  *     --json                  stream JSONL event objects to stdout
  *     --override-with-envs    take LLM settings from env (LLM_API_KEY/_BASE_URL/_MODEL)
  *     --exit-without-confirmation   exit cleanly when done
- *   LLM wiring (LiteLLM under the hood): LLM_MODEL=ollama/<model>,
- *   LLM_BASE_URL=<ollama root> (cpe's ANTHROPIC_BASE_URL), LLM_API_KEY=<any>
+ *   LLM wiring (LiteLLM under the hood): LLM_MODEL=openai/<model> (OpenAI-compatible
+ *   provider, for native function-calling), LLM_BASE_URL=<base>/v1, LLM_API_KEY=<any>
  *   (Ollama ignores it but LiteLLM wants one set). OPENHANDS_SUPPRESS_BANNER=1
  *   silences the startup box.
  *
@@ -43,16 +43,24 @@ import type { Harness, HarnessContext, HarnessResult, HarnessOutcome } from './t
  * 0 for a local model so costUsd is omitted.
  */
 
-/** LiteLLM model id for openhands' Ollama provider. */
+/**
+ * LiteLLM model id for openhands. We route via the **OpenAI-compatible** provider
+ * (`openai/<model>`), NOT LiteLLM's `ollama/` provider: the latter does not perform
+ * native function-calling through openhands, so the model returns its tool call as
+ * a text blob that openhands never executes (observed: a silent no-op). Ollama's
+ * `/v1/chat/completions` does return native `tool_calls` (verified), so the OpenAI
+ * path makes openhands' tools actually fire.
+ */
 export function openhandsModelArg(model: string): string {
-  return model.startsWith('ollama/') ? model : `ollama/${model}`;
+  return model.includes('/') ? model : `openai/${model}`;
 }
 
-/** LLM_BASE_URL for openhands from cpe's provider env (ollama root, slash-trimmed). */
+/** LLM_BASE_URL for openhands: the OpenAI-compatible endpoint (`<base>/v1`). */
 export function baseUrlFrom(providerEnv: Record<string, string>): string | null {
   const base = providerEnv['ANTHROPIC_BASE_URL'];
   if (!base) return null;
-  return base.replace(/\/+$/, '');
+  const trimmed = base.replace(/\/+$/, '');
+  return trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`;
 }
 
 /** Strip cpe's ANTHROPIC_* keys so openhands never inherits them (it uses LLM_* vars). */
