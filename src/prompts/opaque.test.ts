@@ -1,8 +1,8 @@
 import { test, expect } from 'bun:test';
-import { buildOpaquePrompt, buildSummarizePrompt, buildBenchTask, BENCH_PROMPT_TEMPLATE, SINGLE_PROMPT_TEMPLATE } from './index.js';
+import { buildOpaquePrompt, buildSummarizePrompt, withAutonomy, BENCH_PROMPT_TEMPLATE, SINGLE_PROMPT_TEMPLATE } from './index.js';
 
-test('buildBenchTask prepends the autonomy preamble (no questions, produce concrete changes) to the task', () => {
-  const out = buildBenchTask('What is a good update procedure?');
+test('withAutonomy prepends the autonomy preamble (no questions, produce concrete changes) to any prompt', () => {
+  const out = withAutonomy('What is a good update procedure?');
   expect(out).toContain('What is a good update procedure?');
   expect(out.toLowerCase()).toMatch(/do not ask|no human/i);
   expect(out.toLowerCase()).toMatch(/concrete changes|files/i);

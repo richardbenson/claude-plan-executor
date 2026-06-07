@@ -10,7 +10,7 @@ import { handleRateLimit } from './limit.js';
 import { startJsonlTail } from './jsonl-tail.js';
 import { startOutputTail } from './output-tail.js';
 import { getHead } from '../git/repo.js';
-import { SINGLE_PROMPT_TEMPLATE, BENCH_PROMPT_TEMPLATE, SINGLE_PROMPT_RESULT_SCHEMA, buildOpaquePrompt, buildBenchTask } from '../prompts/index.js';
+import { SINGLE_PROMPT_TEMPLATE, BENCH_PROMPT_TEMPLATE, SINGLE_PROMPT_RESULT_SCHEMA, buildOpaquePrompt, withAutonomy } from '../prompts/index.js';
 import { acquireReport, excludeCpeArtifacts, summarizeReport } from './report.js';
 import { createClone, removeClone } from '../git/clone.js';
 import { captureRun } from './capture.js';
@@ -104,9 +104,11 @@ export async function runSinglePrompt(
   const githubIssueSection = meta.github_issue_number
     ? `Include \`Closes #${meta.github_issue_number}\` in the PR body so GitHub automatically closes the issue when the PR is merged.`
     : '';
-  const combined = SINGLE_PROMPT_TEMPLATE
-    .replace('{{USER_PROMPT}}', meta.prompt)
-    .replace('{{GITHUB_ISSUE_SECTION}}', githubIssueSection);
+  const combined = withAutonomy(
+    SINGLE_PROMPT_TEMPLATE
+      .replace('{{USER_PROMPT}}', meta.prompt)
+      .replace('{{GITHUB_ISSUE_SECTION}}', githubIssueSection),
+  );
 
   // STEP 3 — write combined prompt to temp file
   const tmpFile = path.join(os.tmpdir(), `cpe-single-prompt-${runId}.md`);
@@ -296,7 +298,7 @@ async function runOpaqueSinglePrompt(
   const base = `${meta.prompt}${githubIssueSection ? `\n\n${githubIssueSection}` : ''}`;
   // Only ask the agent to open a PR when there's actually a remote to push to;
   // otherwise it flails on `git push origin` (mirrors finalise's skipPushAndPr).
-  const prompt = buildOpaquePrompt(base, { withPr: Boolean(meta.remote) });
+  const prompt = withAutonomy(buildOpaquePrompt(base, { withPr: Boolean(meta.remote) }));
 
   updateMeta(runId, { status: 'executing' });
   bus.emit({ kind: 'phase', timestamp: new Date(), runId, phaseNumber: -1, phaseName: 'single-prompt' });
@@ -452,13 +454,14 @@ async function runBenchSinglePrompt(
   // the local baseline, so a push/PR request just makes the agent flail for ages
   // (observed: claude-code burning ~90 min on gh/tea PR attempts). Opaque adapters
   // have no envelope and get the raw user prompt; their outcome is exit + git diff.
-  // Every bench task is framed with the autonomy preamble (no human to answer
-  // questions; must produce concrete changes, not a chat reply). Structured
-  // harnesses additionally get the commit/no-PR/structured-output template.
-  const benchTask = buildBenchTask(meta.prompt ?? '');
-  const promptText = adapter.completionMode === 'structured'
-    ? BENCH_PROMPT_TEMPLATE.replace('{{USER_PROMPT}}', benchTask)
-    : benchTask;
+  // Structured harnesses get the commit/no-PR/structured-output template; opaque
+  // get the raw task. Both are then framed with the autonomy preamble (no human to
+  // answer questions; must produce concrete changes, not a chat reply).
+  const promptText = withAutonomy(
+    adapter.completionMode === 'structured'
+      ? BENCH_PROMPT_TEMPLATE.replace('{{USER_PROMPT}}', meta.prompt ?? '')
+      : (meta.prompt ?? ''),
+  );
   const tmpFile = path.join(os.tmpdir(), `cpe-bench-${runId}.md`);
   fs.writeFileSync(tmpFile, promptText);
 

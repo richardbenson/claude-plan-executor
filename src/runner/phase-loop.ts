@@ -10,7 +10,7 @@ import { handleRateLimit } from './limit.js';
 import { startJsonlTail } from './jsonl-tail.js';
 import { startOutputTail } from './output-tail.js';
 import { getHead } from '../git/repo.js';
-import { PHASE_RESULT_SCHEMA, buildOpaquePrompt } from '../prompts/index.js';
+import { PHASE_RESULT_SCHEMA, buildOpaquePrompt, withAutonomy } from '../prompts/index.js';
 import { acquireReport, excludeCpeArtifacts, summarizeReport } from './report.js';
 import { RunGuard, registerGuard, unregisterGuard, activitySignature } from './run-guard.js';
 import type { ResolvedProvider } from './provider.js';
@@ -112,20 +112,21 @@ export async function runPhase(
   const promptFile = path.join(meta.worktree_path, 'docs', meta.plan_folder ?? '', phaseEntry.prompt_file);
   const logPath = path.join(getLogsDir(runId), 'phase-' + String(phaseNumber).padStart(2, '0') + '.log');
 
-  // Prepend notes from the previous phase if present
+  // Build the effective prompt: the autonomy preamble (no human to answer; produce
+  // concrete changes), optional notes from the previous phase, then the phase body.
+  // Written to a temp file used by BOTH the structured (claude) and opaque paths.
   const prevPhase = phaseNumber > 1
     ? (meta.phases ?? []).find(p => p.number === phaseNumber - 1)
     : undefined;
   const prevNotes = prevPhase?.notes_for_next_phase?.trim();
-  let effectivePromptFile = promptFile;
-  if (prevNotes) {
-    const tmpDir = path.join(os.tmpdir(), 'cpe-phase-prompts');
-    fs.mkdirSync(tmpDir, { recursive: true });
-    const tmpPath = path.join(tmpDir, `${runId}-phase-${phaseNumber}.md`);
-    const originalContent = fs.readFileSync(promptFile, 'utf-8');
-    fs.writeFileSync(tmpPath, `## Notes from the previous phase\n\n${prevNotes}\n\n---\n\n${originalContent}`);
-    effectivePromptFile = tmpPath;
-  }
+  const originalContent = fs.readFileSync(promptFile, 'utf-8');
+  const body = prevNotes
+    ? `## Notes from the previous phase\n\n${prevNotes}\n\n---\n\n${originalContent}`
+    : originalContent;
+  const tmpDir = path.join(os.tmpdir(), 'cpe-phase-prompts');
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const effectivePromptFile = path.join(tmpDir, `${runId}-phase-${phaseNumber}.md`);
+  fs.writeFileSync(effectivePromptFile, withAutonomy(body));
 
   let provider;
   try {
