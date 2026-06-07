@@ -26,6 +26,28 @@ export const BOOTSTRAP_DETECT_PROMPT: string = _bootstrapDetect as unknown as st
 export const SINGLE_PROMPT_TEMPLATE: string = _singlePrompt as unknown as string;
 /** Bench variant of the single-prompt template: commit only, never push/PR (clone has no real forge). */
 export const BENCH_PROMPT_TEMPLATE: string = _benchPrompt as unknown as string;
+
+/**
+ * Autonomy framing prepended to EVERY bench task (structured and opaque alike).
+ * Headless benchmark runs have no human to answer questions, and an open-ended or
+ * question-style task otherwise risks the agent replying in chat and making no
+ * file changes (→ a no-op, since bench scores the git diff). This forces it to
+ * proceed autonomously and deliver concrete changes.
+ */
+export const BENCH_AUTONOMY_PREAMBLE: string =
+  'You are running fully autonomously in an automated benchmark — there is NO human ' +
+  'available to respond. Do NOT ask questions, request clarification, or wait for ' +
+  'confirmation or input, and do not stop partway expecting a reply. If the task is ' +
+  'open-ended or ambiguous, make reasonable assumptions, state them briefly, and ' +
+  'proceed to a complete solution. Deliver the task as concrete changes committed to ' +
+  'this repository — create and edit the actual files required (scripts, configs, ' +
+  'docs); a written explanation on its own does not count. Keep working until the ' +
+  'task is fully done.';
+
+/** Frame a bench user task with the autonomy preamble (applied to all harnesses). */
+export function buildBenchTask(userPrompt: string): string {
+  return `${BENCH_AUTONOMY_PREAMBLE}\n\n---\n\n${userPrompt.trim()}`;
+}
 export const OPAQUE_CONTRACT: string = _opaqueContract as unknown as string;
 
 /** The push/PR step injected into the opaque contract for single-prompt runs only. */

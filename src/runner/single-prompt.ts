@@ -10,7 +10,7 @@ import { handleRateLimit } from './limit.js';
 import { startJsonlTail } from './jsonl-tail.js';
 import { startOutputTail } from './output-tail.js';
 import { getHead } from '../git/repo.js';
-import { SINGLE_PROMPT_TEMPLATE, BENCH_PROMPT_TEMPLATE, SINGLE_PROMPT_RESULT_SCHEMA, buildOpaquePrompt } from '../prompts/index.js';
+import { SINGLE_PROMPT_TEMPLATE, BENCH_PROMPT_TEMPLATE, SINGLE_PROMPT_RESULT_SCHEMA, buildOpaquePrompt, buildBenchTask } from '../prompts/index.js';
 import { acquireReport, excludeCpeArtifacts, summarizeReport } from './report.js';
 import { createClone, removeClone } from '../git/clone.js';
 import { captureRun } from './capture.js';
@@ -452,9 +452,13 @@ async function runBenchSinglePrompt(
   // the local baseline, so a push/PR request just makes the agent flail for ages
   // (observed: claude-code burning ~90 min on gh/tea PR attempts). Opaque adapters
   // have no envelope and get the raw user prompt; their outcome is exit + git diff.
+  // Every bench task is framed with the autonomy preamble (no human to answer
+  // questions; must produce concrete changes, not a chat reply). Structured
+  // harnesses additionally get the commit/no-PR/structured-output template.
+  const benchTask = buildBenchTask(meta.prompt ?? '');
   const promptText = adapter.completionMode === 'structured'
-    ? BENCH_PROMPT_TEMPLATE.replace('{{USER_PROMPT}}', meta.prompt ?? '')
-    : (meta.prompt ?? '');
+    ? BENCH_PROMPT_TEMPLATE.replace('{{USER_PROMPT}}', benchTask)
+    : benchTask;
   const tmpFile = path.join(os.tmpdir(), `cpe-bench-${runId}.md`);
   fs.writeFileSync(tmpFile, promptText);
 
