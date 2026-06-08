@@ -84,9 +84,15 @@ export const claudeCodeHarness: Harness = {
     }
 
     const modelArgs = ctx.modelArgs ?? (ctx.model ? ['--model', ctx.model] : []);
+    // Local models can emit very long (or runaway) responses; claude-code hard-errors
+    // when a single response exceeds CLAUDE_CODE_MAX_OUTPUT_TOKENS (default 32k),
+    // which shows up as a spurious 'error' outcome. Raise the ceiling (overridable).
     const provider: ResolvedProvider = {
       name: ctx.model ?? 'claude-code',
-      env: ctx.providerEnv,
+      env: {
+        CLAUDE_CODE_MAX_OUTPUT_TOKENS: process.env['CLAUDE_CODE_MAX_OUTPUT_TOKENS'] ?? '64000',
+        ...ctx.providerEnv,
+      },
       modelArgs,
     };
 

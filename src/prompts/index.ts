@@ -39,9 +39,10 @@ export const AUTONOMY_PREAMBLE: string =
   'to respond. Do NOT ask questions, request clarification, or wait for confirmation ' +
   'or input, and do not stop partway expecting a reply. If the task is open-ended or ' +
   'ambiguous, make reasonable assumptions, state them briefly, and proceed to a ' +
-  'complete solution. Deliver the task as concrete changes to the repository — create ' +
-  'and edit the actual files required (scripts, configs, docs); a written explanation ' +
-  'on its own does not count. Keep working until the task is fully done.';
+  'complete solution. You MUST implement the task by editing files in the repository ' +
+  'right now — do NOT reply with a plan, checklist, to-do list, or a description of ' +
+  'what you would do; actually create and edit the real files (scripts, configs, ' +
+  'docs). Text output alone counts as a failure. Keep working until the task is done.';
 
 /** Prepend the autonomy preamble to a prompt (applied to all headless runs/harnesses). */
 export function withAutonomy(prompt: string): string {
