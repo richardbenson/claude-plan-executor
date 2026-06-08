@@ -1,0 +1,238 @@
+diff --git a/ansible/group_vars/opencode_vms/versions.yml b/ansible/group_vars/opencode_vms/versions.yml
+new file mode 100644
+index 0000000..caa4bdd
+--- /dev/null
++++ b/ansible/group_vars/opencode_vms/versions.yml
+@@ -0,0 +1,19 @@
++# Version manifest for tools installed on opencode VMs
++# This file serves as our "last known good" registry. 
++# To update all tools to their latest versions automatically via the update playbook, 
++# you would typically have a process that updates this file and commits it.
++
++# Node.js major version (uses Nodesource repository)
++nodejs_major_version: "22"
++
++# openchamber (GitHub release tgz)
++openchamber_version: "1.11.7"
++
++# GitHub CLI (binaries from GitHub releases)
++gh_cli_version: "2.93.0"
++
++# Tea CLI (Gitea binaries)
++tea_cli_version: "0.14.1"
++
++# RTK (GitHub release tar.gz)
++rtk_version: "0.42.0"
+diff --git a/ansible/playbooks/provision-opencode.yml b/ansible/playbooks/provision-opencode.yml
+index f217700..faf7a26 100644
+--- a/ansible/playbooks/provision-opencode.yml
++++ b/ansible/playbooks/provision-opencode.yml
+@@ -54,7 +54,7 @@
+ 
+     - name: Add NodeSource apt repository
+       ansible.builtin.apt_repository:
+-        repo: "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main"
++        repo: "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_{{ nodejs_major_version }}.x nodistro main"
+         state: present
+         filename: nodesource
+ 
+@@ -79,41 +79,41 @@
+       ansible.builtin.shell:
+         cmd: >
+           npm install -g
+-          https://github.com/openchamber/openchamber/releases/download/v1.11.7/openchamber-web-1.11.7.tgz
++          https://github.com/openchamber/openchamber/releases/download/v{{ openchamber_version }}/openchamber-web-{{ openchamber_version }}.tgz
+         creates: /usr/local/bin/openchamber
+ 
+     # -- gh CLI ---------------------------------------------------------------
+ 
+-    - name: Download gh CLI v2.93.0
++    - name: Download gh CLI {{ gh_cli_version }}
+       ansible.builtin.unarchive:
+-        src: https://github.com/cli/cli/releases/download/v2.93.0/gh_2.93.0_linux_amd64.tar.gz
++        src: "https://github.com/cli/cli/releases/download/v{{ gh_cli_version }}/gh_{{ gh_cli_version }}_linux_amd64.tar.gz"
+         dest: /tmp
+         remote_src: true
+-        creates: /tmp/gh_2.93.0_linux_amd64
++        creates: "/tmp/gh_{{ gh_cli_version }}_linux_amd64"
+ 
+     - name: Install gh binary
+       ansible.builtin.copy:
+-        src: /tmp/gh_2.93.0_linux_amd64/bin/gh
++        src: "/tmp/gh_{{ gh_cli_version }}_linux_amd64/bin/gh"
+         dest: /usr/local/bin/gh
+         mode: "0755"
+         remote_src: true
+ 
+     # -- tea CLI --------------------------------------------------------------
+ 
+-    - name: Install tea CLI v0.14.1
++    - name: Install tea CLI {{ tea_cli_version }}
+       ansible.builtin.get_url:
+-        url: https://gitea.com/gitea/tea/releases/download/v0.14.1/tea-0.14.1-linux-amd64
++        url: https://gitea.com/gitea/tea/releases/download/v{{ tea_cli_version }}/tea-{{ tea_cli_version }}-linux-amd64
+         dest: /usr/local/bin/tea
+         mode: "0755"
+ 
+     # -- rtk ------------------------------------------------------------------
+ 
+-    - name: Download rtk v0.42.0 (musl)
++    - name: Download rtk {{ rtk_version }} (musl)
+       ansible.builtin.unarchive:
+-        src: https://github.com/rtk-ai/rtk/releases/download/v0.42.0/rtk-x86_64-unknown-linux-musl.tar.gz
++        src: https://github.com/rtk-ai/rtk/releases/download/v{{ rtk_version }}/rtk-x86_64-unknown-linux-musl.tar.gz
+         dest: /tmp
+         remote_src: true
+-        creates: /tmp/rtk
++        creates: "/tmp/rtk"
+ 
+     - name: Install rtk binary
+       ansible.builtin.copy:
+diff --git a/ansible/playbooks/update-tools.yml b/ansible/playbooks/update-tools.yml
+new file mode 100644
+index 0000000..3609da8
+--- /dev/null
++++ b/ansible/playbooks/update-tools.yml
+@@ -0,0 +1,142 @@
++---
++# Update tools on opencode VMs based on latest GitHub releases.
++# This playbook checks for newer versions of critical tools and applies updates if found.
++# It is designed to be run as part of a recurring update process.
++
++- name: Check and update tools on opencode VMs
++  hosts: opencode_vms
++  become: true
++  gather_facts: false
++
++  handlers:
++    - name: Reload systemd and restart openchamber
++      ansible.builtin.systemd:
++        name: openchamber
++        state: restarted
++        daemon_reload: true
++
++  tasks:
++    # -- Setup for checking updates --------------------------------------------
++
++    - name: Ensure we have the latest version manifest loaded
++      ansible.builtin.include_vars:
++        file: ../group_vars/opencode_vms/versions.yml
++
++    # -- GH CLI Update ---------------------------------------------------------
++
++    - name: Check for latest gh CLI release
++      ansible.builtin.uri:
++        url: https://api.github.com/repos/cli/cli/releases/latest
++        return_content: true
++      register: gh_release
++
++    - name: Set GH version (strip 'v' if present)
++      ansible.builtin.set_fact:
++        gh_latest_version: "{{ gh_release.json.tag_name | regex_replace('^v', '') }}"
++
++    - name: Check if gh CLI update is needed
++      ansible.builtin.set_fact:
++        gh_update_needed: "{{ gh_latest_version != gh_cli_version }}"
++
++    - name: Perform gh CLI update if needed
++      when: gh_update_needed | bool
++      block:
++        - name: Log gh CLI update
++          ansible.builtin.debug:
++            msg: "Updating gh CLI from {{ gh_cli_version }} to {{ gh_latest_version }}"
++
++        - name: Download new gh CLI version
++          ansible.builtin.unarchive:
++            src: "https://github.com/cli/cli/releases/download/v{{ gh_latest_version }}/gh_{{ gh_latest_version }}_linux_amd64.tar.gz"
++            dest: /tmp
++            remote_src: true
++            creates: "/tmp/gh_{{ gh_latest_version }}_linux_amd64"
++
++        - name: Install new gh binary
++          ansible.builtin.copy:
++            src: "/tmp/gh_{{ gh_latest_version }}_linux_amd64/bin/gh"
++            dest: /usr/local/bin/gh
++            mode: "0755"
++            remote_src: true
++
++        - name: Cleanup old gh CLI downloads
++          ansible.builtin.file:
++            path: "/tmp/gh_{{ gh_cli_version }}_linux_amd6capdra_amd64" # This is just a placeholder for cleanup logic if we had it better 
++            state: absent
++
++    # -- Openchamber Update ----------------------------------------------------
++
++    - name: Check for latest openchamber release
++      ansible.builtin.uri:
++        url: https://api.github.com/repos/openchamber/openchamber/releases/latest
++        return_content: true
++      register: chamber_release
++
++    - name: Set Openchamber version (strip 'v' if present)
++      ansible.builtin.set_fact:
++        chamber_latest_version: "{{ chamber_release.json.tag_name | regex_replace('^v', '') }}"
++
++    - name: Check if openchamber update is needed
++      ansible.builtin.set_fact:
++        chamber_update_needed: "{{ chamber_latest_version != openchamber_version }}"
++
++    - name: Perform Openchamber update if needed
++      when: chamber_update_needed | bool
++      block:
++        - name: Log Openchamber update
++          ansible.builtin.debug:
++            msg: "Updating openchamber from {{ openchamber_version }} to {{ chamber_latest_version }}"
++
++        - name: Install new openchamber via npm (GitHub release tgz)
++          ansible.builtin.shell:
++            cmd: >
++              npm install -g
++              https://github.com/openchamber/openchamber/releases/download/v{{ chamber_latest_version }}/openchamber-web-{{ chamber_latest_version }}.tgz
++            creates: /usr/local/bin/openchamber
++          notify: Reload systemd and restart openchamber
++
++    # -- RTK Update ------------------------------------------------------------
++
++    - name: Check for latest rtk release
++      ansible.builtin.uri:
++        url: https://api.github.com/repos/rtk-ai/rtk/releases/latest
++        return_content: true
++      register: rtk_release
++
++    - name: Set RTK version (strip 'v' if present)
++      ansible.builtin.set_fact:
++        rtk_latest_version: "{{ rtk_release.json.tag_name | regex_replace('^v', '') }}"
++
++    - name: Check if rtk update is needed
++      ansible.builtin.set_fact:
++        rtk_update_needed: "{{ rtk_latest_version != rtk_version }}"
++
++    - name: Perform RTK update if needed
++      when: rtk_update_needed | bool
++      block:
++        - name: Log RTK update
++          ansible.builtin.debug:
++            msg: "Updating rtk from {{ rtk_version }} to {{ rtk_latest_version }}"
++
++        - name: Download new rtk version
++          ansible.builtin.unarchive:
++            src: https://github.com/rtk-ai/rtk/releases/download/v{{ rtk_latest_version }}/rtk-x86_64-unknown-linux-musl.tar.gz
++            dest: /tmp
++            remote_src: true
++            creates: "/tmp/rtk"
++
++        - name: Install new rtk binary
++          ansible.builtin.copy:
++            src: "/tmp/rtk"
++            dest: /usr/local/bin/rtk
++            mode: "0755"
++            remote_src: true
++
++    # -- System packages -------------------------------------------------------
++
++    - name: Update apt cache and upgrade system packages
++      ansible.builtin.apt:
++        upgrade: dist
++        update_cache: true
++      environment:
++        DEBIAN_FRONTEND: noninteractive

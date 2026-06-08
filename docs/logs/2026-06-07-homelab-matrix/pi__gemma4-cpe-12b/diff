@@ -1,0 +1,61 @@
+diff --git a/docs/004-update-management/DESIGN_UPDATE_MANAGEMENT.md b/docs/004-update-management/DESIGN_UPDATE_MANAGEMENT.md
+new file mode 100644
+index 0000000..9dde63b
+--- /dev/null
++++ b/docs/004-update-management/DESIGN_UPDATE_MANAGEMENT.md
+@@ -0,0 +1,32 @@
++# Update Management Strategy - Homelab Tools
++
++## Overview
++This document outlines the procedure for managing updates on homelab VMs that host specialized tools (like `opencode` and `openchamber`). Given our "infrastructure as code" approach, we prioritize reproducibility over complex configuration management. If a tool update bricks a VM, we treat it as an ephemeral failure: tear down via Terraform/Ansible and provision fresh hardware using the original scripts.
++
++## Strategy Components
++
++### 1. Base OS Maintenance
++- **Method:** `unattended-upgrades` for Debian/Ubuntu base images on all VMs (Proxmox LXCs and VMs).
++- **Frequency:** Daily security updates automatically applied by the kernel/system level.
++
++### 2. Tooling Lifecycle Management (`homelab-updater`)
++For bleeding-edge tools that require frequent manual intervention or dependency checks:
++- **State Tracking:** A JSON state file stores the "Last Known Good" (LKG) version for every high-level tool.
++- **Automated Updates:** A script runs periodically to check and apply updates.
++    - *Pre-update:* Record current version in `state.json`.
++    - *Execution:* Run update command (e.g., `pip install -U`, `npm update`, or custom curl scripts).
++    - *Post-update Health Check:* Verify the tool is active and responding to requests.
++- **Rollback/Alerting:** If health checks fail, the state file records a "BROKEN" status for that version pair. This signals to the operator that specific upgrade path failed.
++
++### 3. Version Pinning Policy
++- **No Hard Pinning in Code:** To leverage bleeding edge updates, we avoid hard pinning variables in Ansible roles unless specifically required by an API contract.
++- **Soft Tracking:** The `state.json` serves as our "virtual" pin - the first place a human looks to see what version is currently running before deciding whether to provision a new VM or continue with current state.
++
++### 4. Workflow for Bricked VMs
++1.  Observe failure in logs/monitoring (e.g., `homelab-updater` reports BROKEN).
++2.  Run Terraform plan and apply to recreate the entire VM from the existing configuration.
++3.  Optional: Modify update scripts or environment variables if a specific version is identified as incompatible during manual testing before re-provisioning.
++
++## Monitoring & Logging
++- Logs will be piped to `/var/log/homelab-updater.log`.
++- State file location: `/var/lib/homelab-updater/state.json` (persistent across VM rebuilds if using the same volume, or simply recreateable).
+diff --git a/services/tools_management/tools.yaml b/services/tools_management/tools.yaml
+new file mode 100644
+index 0000000..cac6ea6
+--- /dev/null
++++ b/services/tools_management/tools.yaml
+@@ -0,0 +1,17 @@
++---
++tool: opencode
++description: "Open source code analysis project"
++update_command: "pip install -U opencode"
++check_version_command: "opencode --version | head -n 1"
++health_check:
++  status_cmd: "systemctl is-active opencode || echo 'inactive'"
++  expected_output: "active"
++
++---
++tool: openchamber
++description: "Open source chamber environment tool"
++update_command: "pip install -U openchamber"
++check_version_command: "openchamber --version | head -n 1"
++health_check:
++  status_cmd: "systemctl is-active openchamber || echo 'inactive'"
++  expected_output: "active"

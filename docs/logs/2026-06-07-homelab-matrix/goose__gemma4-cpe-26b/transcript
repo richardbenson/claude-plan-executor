@@ -1,0 +1,406 @@
+
+    __( O)>  ● new session · ollama gemma4-cpe:26b
+   \____)    20260607_1 · /home/ubuntu/.local/state/cpe/clones/01KTGS5J7RGQW8TZSX81W6FKVS
+     L L     goose is ready
+
+  ────────────────────────────────────────
+  ▸ tree
+    path: .
+
+ansible/  [2K]
+  group_vars/  [14]
+    all/  [0]
+    k3s_cluster/  [0]
+    opencode_vms/  [0]
+    proxmox_nodes/  [0]
+    k3s_server.yml  [14]
+  playbooks/  [1K]
+    bootstrap-passwordless-sudo.yml  [24]
+    bootstrap-ssh-keys.yml  [70]
+    bootstrap-ubuntu02-ssh.yml  [36]
+    cleanup-ubuntu01.yml  [106]
+    create-debiantmpl.yml  [109]
+    deregister-gh-runners.yml  [163]
+    discovery.yml  [194]
+    disk-audit-ubuntu01.yml  [114]
+    fix-hostnames.yml  [33]
+    install-longhorn-prereqs.yml  [47]
+    install-nfs-client.yml  [25]
+    join-agent.yml  [180]
+    migrate-cilium.yml  [335]
+    prepare-longhorn-disk.yml  [96]
+    provision-opencode.yml  [266]
+    resize-longhorn-zvols.yml  [72]
+    restart-k3s-agents.yml  [35]
+    set-longhorn-disk-refreservation.yml  [41]
+    unprepare-longhorn-disk.yml  [44]
+  templates/  [97]
+    git-credentials.j2  [2]
+    k3s-server-config.yaml.j2  [36]
+    openchamber.service.j2  [15]
+    opencode.json.j2  [44]
+  ansible.cfg  [10]
+  inventory.yml  [71]
+network/  [193]
+  main.tf  [152]
+  terraform.tfvars.example  [13]
+  variables.tf  [28]
+proxmox/  [1K]
+  modules/  [0]
+    gh-runner/  [0]
+    k3s-node/  [0]
+    opencode-vm/  [0]
+  access.tf  [76]
+  backups.tf  [82]
+  cluster.tf  [15]
+  dns.tf  [58]
+  firewall.tf  [193]
+  homeassistant.tf  [92]
+  k3s-firewall.tf  [170]
+  k3s.tf  [163]
+  main.tf  [24]
+  network.tf  [91]
+  opencode.tf  [16]
+  outputs.tf  [26]
+  terraform.tfvars.example  [4]
+  time.tf  [28]
+  truenas01.tf  [91]
+  ubuntu01.tf  [83]
+  ubuntu02.tf  [88]
+  variables.tf  [11]
+proxmox-databases/  [484]
+  modules/  [0]
+    db-server/  [0]
+  scripts/  [156]
+    install-mariadb.sh.tpl  [24]
+    install-mongodb.sh.tpl  [60]
+    install-postgres.sh.tpl  [34]
+    install-valkey.sh.tpl  [38]
+  databases.tf  [216]
+  main.tf  [28]
+  outputs.tf  [22]
+  terraform.tfvars.example  [12]
+  variables.tf  [50]
+scripts/  [1K]
+  discover-all.sh  [113]
+  haos-discovery.py  [165]
+  media-orphan-finder.py  [457]
+  media-orphan.env.example  [32]
+  proxmox-discover.sh  [240]
+  truenas-discovery.py  [213]
+services/  [381]
+  k3s/  [381]
+    kubernetes/  [0]
+    migrate-gitea-to-postgres.md  [116]
+    migrate-gitea-to-postgres.sh  [265]
+terraform/  [179]
+  s3-backend/  [179]
+    main.tf  [88]
+    outputs.tf  [53]
+    terraform.tfvars.example  [9]
+    variables.tf  [29]
+CLAUDE.md  [107]
+README.md  [248]
+
+  ────────────────────────────────────────
+  ▸ todo_write todo
+    content: - [ ] Define update strategy (design phase)
+- [x] Analyze existing provision scripts for opencode
+- [ ] Create version tracking mechanism (state file on VM)
+- [ ] Implement an Ansible playbook for automated updates (`update-infrastructure.yml`)
+    - [ ] Check for updates (apt, git/binaries)
+    - [ ] Log current working versions before update
+    - [ ] Apply updates
+    - [ ] Verify service health
+- [ ] Update `provision_opencode.yml` to integrate with the new update mechanism if needed
+- [ ] Add documentation on how to use and maintain the update process
+
+
+  ────────────────────────────────────────
+  ▸ analyze
+    path: ansible/playbooks/provision-opencode.yml
+
+Error: could not analyze /home/ubuntu/.local/state/cpe/clones/01KTGS5J7RGQW8TZSX81W6FKVS/ansible/playbooks/provision-opencode.yml (unsupported language or binary file)
+  ────────────────────────────────────────
+  ▸ shell
+    command: cat ansible/playbooks/provision-opencode.yml
+
+---
+# Provisions opencode01: installs all tools, configures opencode.json,
+# authenticates VCS CLIs, and starts the openchamber systemd service.
+#
+# Usage (run from ansible/):
+#   ansible-playbook playbooks/provision-opencode.yml --ask-vault-pass
+#
+# Idempotent: safe to re-run. Re-authentication tasks always re-run (changed_when: true).
+
+- name: Provision opencode VM
+  hosts: opencode_vms
+  become: true
+  gather_facts: false
+
+  handlers:
+    - name: Reload systemd and restart openchamber
+      ansible.builtin.systemd:
+        name: openchamber
+        state: restarted
+        daemon_reload: true
+
+  tasks:
+
+    # -- System packages ------------------------------------------------------
+
+    - name: Install system packages
+      ansible.builtin.apt:
+        name:
+          - acl
+          - curl
+          - git
+          - jq
+          - unzip
+          - ca-certificates
+          - gnupg
+          - lsb-release
+        state: present
+        update_cache: true
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    # -- Node.js 22 -----------------------------------------------------------
+
+    - name: Download NodeSource GPG key
+      ansible.builtin.get_url:
+        url: https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key
+        dest: /tmp/nodesource.gpg.key
+        mode: "0644"
+
+    - name: Dearmor NodeSource GPG key
+      ansible.builtin.shell:
+        cmd: gpg --dearmor < /tmp/nodesource.gpg.key > /usr/share/keyrings/nodesource.gpg
+        creates: /usr/share/keyrings/nodesource.gpg
+
+    - name: Add NodeSource apt repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main"
+        state: present
+        filename: nodesource
+
+    - name: Install Node.js
+      ansible.builtin.apt:
+        name: nodejs
+        state: present
+        update_cache: true
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    # -- opencode -------------------------------------------------------------
+
+    - name: Install opencode globally via npm
+      ansible.builtin.shell:
+        cmd: npm install -g opencode-ai
+        creates: /usr/local/bin/opencode
+
+    # -- openchamber ----------------------------------------------------------
+
+    - name: Install openchamber via npm (GitHub release tgz)
+      ansible.builtin.shell:
+        cmd: >
+          npm install -g
+          https://github.com/openchamber/openchamber/releases/download/v1.11.7/openchamber-web-1.11.7.tgz
+        creates: /usr/local/bin/openchamber
+
+    # -- gh CLI ---------------------------------------------------------------
+
+    - name: Download gh CLI v2.93.0
+      ansible.builtin.unarchive:
+        src: https://github.com/cli/cli/releases/download/v2.93.0/gh_2.93.0_linux_amd64.tar.gz
+        dest: /tmp
+        remote_src: true
+        creates: /tmp/gh_2.93.0_linux_amd64
+
+    - name: Install gh binary
+      ansible.builtin.copy:
+        src: /tmp/gh_2.93.0_linux_amd64/bin/gh
+        dest: /usr/local/bin/gh
+        mode: "0755"
+        remote_src: true
+
+    # -- tea CLI --------------------------------------------------------------
+
+    - name: Install tea CLI v0.14.1
+      ansible.builtin.get_url:
+        url: https://gitea.com/gitea/tea/releases/download/v0.14.1/tea-0.14.1-linux-amd64
+        dest: /usr/local/bin/tea
+        mode: "0755"
+
+    # -- rtk ------------------------------------------------------------------
+
+    - name: Download rtk v0.42.0 (musl)
+      ansible.builtin.unarchive:
+        src: https://github.com/rtk-ai/rtk/releases/download/v0.42.0/rtk-x86_64-unknown-linux-musl.tar.gz
+        dest: /tmp
+        remote_src: true
+        creates: /tmp/rtk
+
+    - name: Install rtk binary
+      ansible.builtin.copy:
+        src: /tmp/rtk
+        dest: /usr/local/bin/rtk
+        mode: "0755"
+        remote_src: true
+
+    # -- opencode system user -------------------------------------------------
+
+    - name: Create opencode system user
+      ansible.builtin.user:
+        name: opencode
+        system: true
+        create_home: true
+        shell: /bin/bash
+
+    # -- bun (as opencode user) ------------------------------------------------
+
+    - name: Install bun as opencode user
+      ansible.builtin.shell:
+        cmd: curl -fsSL https://bun.sh/install | bash
+        creates: /home/opencode/.bun/bin/bun
+      become_user: opencode
+      environment:
+        HOME: /home/opencode
+
+    # -- opencode config -------------------------------------------------------
+
+    - name: Ensure opencode config directory exists
+      ansible.builtin.file:
+        path: /home/opencode/.config/opencode
+        state: directory
+        owner: opencode
+        group: opencode
+        mode: "0755"
+
+    - name: Template opencode.json
+      ansible.builtin.template:
+        src: ../templates/opencode.json.j2
+        dest: /home/opencode/.config/opencode/opencode.json
+        owner: opencode
+        group: opencode
+        mode: "0644"
+      notify: Reload systemd and restart openchamber
+
+    # -- RTK plugin ------------------------------------------------------------
+
+    - name: Initialize RTK opencode plugin
+      ansible.builtin.shell:
+        cmd: /usr/local/bin/rtk init -g --opencode
+        creates: /home/opencode/.config/opencode/plugins/rtk.ts
+      become_user: opencode
+      environment:
+        HOME: /home/opencode
+        PATH: /usr/local/bin:/usr/bin:/bin
+      async: 30
+      poll: 5
+
+    # -- Caveman plugin --------------------------------------------------------
+
+    - name: Install Caveman plugin
+      ansible.builtin.shell:
+        cmd: /home/opencode/.bun/bin/bunx github:JuliusBrussee/caveman --only opencode || true
+        creates: /home/opencode/.config/opencode/plugins/caveman
+      become_user: opencode
+      environment:
+        HOME: /home/opencode
+
+    # -- Caveman default mode --------------------------------------------------
+
+    - name: Ensure caveman config directory exists
+      ansible.builtin.file:
+        path: /home/opencode/.config/caveman
+        state: directory
+        owner: opencode
+        group: opencode
+        mode: "0755"
+
+    - name: Set caveman default mode to off (opt-in per session via /caveman)
+      ansible.builtin.copy:
+        content: '{"defaultMode":"off"}'
+        dest: /home/opencode/.config/caveman/config.json
+        owner: opencode
+        group: opencode
+        mode: "0644"
+
+    # -- VCS CLI authentication ------------------------------------------------
+
+    - name: Authenticate gh CLI
+      ansible.builtin.shell:
+        cmd: "echo '{{ opencode_github_token }}' | gh auth login --with-token"
+      become_user: opencode
+      environment:
+        HOME: /home/opencode
+        PATH: /usr/local/bin:/usr/bin:/bin
+      no_log: true
+      changed_when: true
+
+    - name: Authenticate tea CLI (Gitea)
+      ansible.builtin.shell:
+        cmd: |
+          tea login delete homelab 2>/dev/null || true
+          tea login add --name homelab \
+            --url https://{{ opencode_gitea_hostname }} \
+            --token "{{ opencode_gitea_token }}"
+      become_user: opencode
+      environment:
+        HOME: /home/opencode
+        PATH: /usr/local/bin:/usr/bin:/bin
+      no_log: true
+      changed_when: true
+
+    # -- Git credentials ------------------------------------------------------
+
+    - name: Template ~/.git-credentials
+      ansible.builtin.template:
+        src: ../templates/git-credentials.j2
+        dest: /home/opencode/.git-credentials
+        owner: opencode
+        group: opencode
+        mode: "0600"
+      no_log: true
+
+    - name: Configure git credential helper
+      community.general.git_config:
+        name: credential.helper
+        scope: global
+        value: store
+      become_user: opencode
+      environment:
+        HOME: /home/opencode
+
+    # -- openchamber systemd service -------------------------------------------
+
+    - name: Install openchamber systemd unit
+      ansible.builtin.template:
+        src: ../templates/openchamber.service.j2
+        dest: /etc/systemd/system/openchamber.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload systemd and restart openchamber
+
+    - name: Enable and start openchamber service
+      ansible.builtin.systemd:
+        name: openchamber
+        enabled: true
+        state: started
+        daemon_reload: true
+  ────────────────────────────────────────
+  ▸ todo_write todo
+    content: - [x] Analyze existing provision scripts for opencode (Found direct version pinning/hardcoded URLs)
+- [ ] Create version tracking mechanism (state file on VM, e.g., `/var/lib/opencode-updates/versions.json`)
+- [ ] Implement an Ansible playbook for automated updates (`update-infrastructure.py` or `ansible/playbooks/update-tools.yml`)
+    - [ ] Check for updates (apt, npm, GitHub releases)
+    - [ ] Log current working versions before update to `/var/lib/opencode-updates/last_known_good.json`
+    - [ ] Apply updates
+    - [ ] Verify service health
+- [ ] Refactor `provision-opencode.yml` to use the new dynamic approach where possible or at least move hardcoded versions into a variable file that can be updated by an automated process.
+- [ ] Add documentation on how to use and maintain the update process
+
+

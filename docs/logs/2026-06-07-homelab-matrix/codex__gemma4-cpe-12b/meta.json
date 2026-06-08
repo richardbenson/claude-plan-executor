@@ -1,0 +1,24 @@
+{
+  "run_id": "01KTGS5J7Y2P86AY7H22KWKB0H",
+  "harness": "codex",
+  "model": "gemma4-cpe:12b",
+  "provider": "desktop-ollama",
+  "isolation": "clone",
+  "baseline": {
+    "repo": "/home/ubuntu/Code/homelab",
+    "branch": "modeltests/sandbox-no-docs",
+    "base_ref": "cadab2ac07fad2e26bcb3962cfc45c62f27a4de4"
+  },
+  "outcome": "completed",
+  "duration_ms": 297402,
+  "exit_code": 0,
+  "tokens": {
+    "input_tokens": 352727,
+    "output_tokens": 13873,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0
+  },
+  "diffstat": "scripts/systemd/update-tools.service |  13 ++++\n scripts/systemd/update-tools.timer   |   9 +++\n scripts/tools_config.json            |  10 +++\n scripts/update-tools.sh              | 118 +++++++++++++++++++++++++++++++++++\n 4 files changed, 150 insertions(+)",
+  "branch_pushed": "harnesstests/codex__gemma4-cpe-12b",
+  "captured_at": "2026-06-08T08:21:51.697Z"
+}

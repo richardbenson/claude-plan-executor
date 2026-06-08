@@ -1,0 +1,52 @@
+diff --git a/ansible/group_vars/opencode_vms.yml b/ansible/group_vars/opencode_vms.yml
+new file mode 100644
+index 0000000..5aa816f
+--- /dev/null
++++ b/ansible/group_vars/opencode_vms.yml
+@@ -0,0 +1,19 @@
++---
++# Versions for opencode VMs
++# These are used by ansible/playbooks/provision-opencode.yml and 
++# monitored by ansible/playbooks/check-updates.yml
++
++# NPM packages (global install)
++opencode_ai_npm_package: "opencode-ai"
++
++# GitHub Releases / Binary Downloads
++openchamber_version: "v1.11.7"         # https://github.com/openchamber/openchamber
++gh_cli_version: "2.93.0"               # https://github.com/cli/cli
++tea_cli_version: "0.14.1"              # https://gitea.com/gitea/tea
++rtk_version: "0.42.0"                  # https://github.com/rtk-ai/rtk
++
++# NodeSource version (e.g., node_22.x)
++nodejs_major_version: "22.x"
++
++# Bun is usually installed via shell script, but we can track if needed
++bun_install_script: "https://bun.sh/install"
+diff --git a/ansible/playbooks/provision-opencode.yml b/ansible/playbooks/provision-opencode.yml
+index f217700..d1b8721 100644
+--- a/ansible/playbooks/provision-opencode.yml
++++ b/ansible/playbooks/provision-opencode.yml
+@@ -54,11 +54,11 @@
+ 
+     - name: Add NodeSource apt repository
+       ansible.builtin.apt_repository:
+-        repo: "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main"
++        repo: "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_{{ nodejs_major_version }} nodistro main"
+         state: present
+         filename: nodesource
+ 
+-    - name: Install Node.js
++    - name: Install Node.js (Updated)
+       ansible.builtin.apt:
+         name: nodejs
+         state: present
+@@ -70,7 +70,7 @@
+ 
+     - name: Install opencode globally via npm
+       ansible.builtin.shell:
+-        cmd: npm install -g opencode-ai
++        cmd: npm install -g {{ opencode_ai_npm_package }}
+         creates: /usr/local/bin/opencode
+ 
+     # -- openchamber ----------------------------------------------------------

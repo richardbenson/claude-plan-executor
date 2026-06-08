@@ -1,0 +1,24 @@
+{
+  "run_id": "01KTGS5J7QQRYWBV47CARKH2CE",
+  "harness": "aider",
+  "model": "gemma4-cpe:31b",
+  "provider": "desktop-ollama",
+  "isolation": "clone",
+  "baseline": {
+    "repo": "/home/ubuntu/Code/homelab",
+    "branch": "modeltests/sandbox-no-docs",
+    "base_ref": "cadab2ac07fad2e26bcb3962cfc45c62f27a4de4"
+  },
+  "outcome": "completed",
+  "duration_ms": 2097090,
+  "exit_code": 0,
+  "tokens": {
+    "input_tokens": 2000,
+    "output_tokens": 1000,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0
+  },
+  "diffstat": "ansible/playbooks/maintenance.yml  | 50 +++++++++++++++++++++++++++++++++++\n scripts/update-homelab-services.sh | 53 ++++++++++++++++++++++++++++++++++++++\n 2 files changed, 103 insertions(+)",
+  "branch_pushed": "harnesstests/aider__gemma4-cpe-31b",
+  "captured_at": "2026-06-07T14:01:04.800Z"
+}

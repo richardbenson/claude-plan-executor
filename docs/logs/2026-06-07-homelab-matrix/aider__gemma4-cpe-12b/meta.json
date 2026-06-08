@@ -1,0 +1,24 @@
+{
+  "run_id": "01KTGS5J7QN9G3K20F5W9X3A8E",
+  "harness": "aider",
+  "model": "gemma4-cpe:12b",
+  "provider": "desktop-ollama",
+  "isolation": "clone",
+  "baseline": {
+    "repo": "/home/ubuntu/Code/homelab",
+    "branch": "modeltests/sandbox-no-docs",
+    "base_ref": "cadab2ac07fad2e26bcb3962cfc45c62f27a4de4"
+  },
+  "outcome": "completed",
+  "duration_ms": 276022,
+  "exit_code": 0,
+  "tokens": {
+    "input_tokens": 5000,
+    "output_tokens": 801,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0
+  },
+  "diffstat": "path/to/ansible/roles/vm_updates/tasks/main.yml |  30 +++++++\n path/to/config/tools_metadata.json              |  24 ++++++\n path/to/scripts/update_manager.py               | 101 ++++++++++++++++++++++++\n 3 files changed, 155 insertions(+)",
+  "branch_pushed": "harnesstests/aider__gemma4-cpe-12b",
+  "captured_at": "2026-06-07T13:18:17.888Z"
+}

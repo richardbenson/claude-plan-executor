@@ -1,0 +1,115 @@
+diff --git a/ansible/playbooks/maintenance.yml b/ansible/playbooks/maintenance.yml
+new file mode 100644
+index 0000000..11afee3
+--- /dev/null
++++ b/ansible/playbooks/maintenance.yml
+@@ -0,0 +1,50 @@
++---
++- name: Homelab Bleeding Edge Maintenance
++  hosts: opencode_vm
++  become: true
++  vars:
++    # Define paths to the tools
++    opencode_path: "/opt/opencode"
++    openchamber_path: "/opt/openchamber"
++
++  tasks:
++    - name: Update system package cache
++      apt:
++        update_cache: yes
++
++    - name: Upgrade all system packages to latest
++      apt:
++        upgrade: dist
++        autoremove: yes
++
++    - name: Pull latest changes for OpenCode
++      git:
++        repo: 'https://github.com/example/opencode.git' # Replace with actual repo
++        dest: "{{ opencode_path }}"
++        version: main
++        force: yes
++
++    - name: Update OpenCode dependencies (Python)
++      pip:
++        requirements: "{{ opencode_path }}/requirements.txt"
++        state: latest
++
++    - name: Pull latest changes for OpenChamber
++      git:
++        repo: 'https://github.com/example/openchamber.git' # Replace with actual repo
++        dest: "{{ openchamber_path }}"
++        version: main
++        force: yes
++
++    - name: Update OpenChamber dependencies (Python)
++      pip:
++        requirements: "{{ openchamber_path }}/requirements.txt"
++        state: latest
++
++    - name: Restart services to apply updates
++      systemd:
++        name: "{{ item }}"
++        state: restarted
++      loop:
++        - opencode
++        - openchamber
+diff --git a/scripts/update-homelab-services.sh b/scripts/update-homelab-services.sh
+new file mode 100644
+index 0000000..bfaae6f
+--- /dev/null
++++ b/scripts/update-homelab-services.sh
+@@ -0,0 +1,53 @@
++#!/bin/bash
++
++# Configuration
++LOG_FILE="/var/log/homelab_updates.log"
++VERSION_SNAPSHOT="/opt/homelab/versions_last_known.txt"
++ANSIBLE_PLAYBOOK="ansible/playbooks/maintenance.yml"
++INVENTORY="ansible/inventory.ini"
++
++echo "[$(date)] Starting automated update sequence..." >> "$LOG_FILE"
++
++# 1. Capture current versions before updating
++# This allows us to know what was working if the update bricks the system
++echo "Capturing current version state..."
++{
++    echo "--- Snapshot $(date) ---"
++    echo "System Packages:"
++    dpkg -l | grep -E 'opencode|openchamber' || echo "No specific packages found"
++    echo "Python Packages:"
++    pip list 2>/dev/null || echo "Pip not installed"
++    echo "Git Commits:"
++    # Assuming tools are in /opt/
++    for dir in /opt/opencode /opt/openchamber; do
++        if [ -d "$dir/.git" ]; then
++            echo "$dir: $(git -C "$dir" rev-parse HEAD)"
++        fi
++    done
++} > "$VERSION_SNAPSHOT"
++
++# 2. Run the Ansible maintenance playbook
++echo "Applying updates via Ansible..."
++ansible-playbook -i "$INVENTORY" "$ANSIBLE_PLAYBOOK" >> "$LOG_FILE" 2>&1
++
++if [ $? -eq 0 ]; then
++    echo "[$(date)] Update applied successfully." >> "$LOG_FILE"
++else
++    echo "[$(date)] UPDATE FAILED. Check logs for details." >> "$LOG_FILE"
++    # In a fully autonomous setup, we log the failure. 
++    # Since infra is scripted, the user can rebuild using the snapshot in $VERSION_SNAPSHOT.
++    exit 1
++fi
++
++# 3. Post-update health check (Example: checking if services are active)
++echo "Verifying service health..."
++SERVICES=("opencode" "openchamber")
++for svc in "${SERVICES[@]}"; do
++    if systemctl is-active --quiet "$svc"; then
++        echo "[$(date)] Service $svc is healthy." >> "$LOG_FILE"
++    else
++        echo "[$(date)] WARNING: Service $svc failed to start after update!" >> "$LOG_FILE"
++    fi
++done
++
++echo "[$(date)] Update sequence complete." >> "$LOG_FILE"

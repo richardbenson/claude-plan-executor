@@ -1,0 +1,186 @@
+diff --git a/ansible/group_vars/opencode_vms/tools.yml b/ansible/group_vars/opencode_vms/tools.yml
+new file mode 100644
+index 0000000..0cb4223
+--- /dev/null
++++ b/ansible/group_vars/opencode_vms/tools.yml
+@@ -0,0 +1,28 @@
++---
++# Tool version tracking for opencode VM
++
++# These are used by provision-opencode.yml/updatable_tools.yml
++
++# -- GitHub CLI (gh) --------------------------------------------------------
++gh_version: "2.93.0"
++gh_dl_url_template: "https://github.com/cli/cli/releases/download/v{version}/gh_{version}_linux_amd64.tar.gz"
++
++# -- Gitea CLI (tea) --------------------------------------------------------
++tea_version: "0.14.1"
++tea_dl_url_template: "https://gitea.com/gitea/tea/releases/download/v{version}/tea-{version}-linux-amd64"
++
++# -- RTK --------------------------------------------------------------------
++rtk_version: "0.42.0"
++rtk_dl_url_template: "https://github.com/rtk-ai/rtk/releases/download/v{version}/rtk-x86_64-unknown-linux-musl.tar.gz"
++
++# -- openchamber (npm) ------------------------------------------------------
++openchamber_version: "1.11.7"
++openchamber_dl_url_template: "https://github.com/openchamber/openchamber/releases/download/v{version}/openchamber-web-{version}.tgz"
++
++# -- opencode (npm) ---------------------------------------------------------
++# Note: npm install -g handles finding the latest, but we can track it here if needed
++opencode_package: "opencode-ai"
++
++# -- Node.js (apt/nodesource) -----------------------------------------------
++nodejs_major_version: "22"
++
+diff --git a/ansible/group_vars/opencode_vms/updatable_tools.yml b/ansible/group_vars/opencode_vms/updatable_tools.yml
+new file mode 100644
+index 0000000..22e7ac8
+--- /dev/null
++++ b/ansible/group_vars/opencode_vms/updatable_tools.yml
+@@ -0,0 +1,36 @@
++---
++# Import tool versions from tools.yml
++
++import_vars:
++  - tools.yml
++
++# Configuration for the update procedure
++update_check_enabled: true
++updatable_tools:
++  - name: gh
++    type: binary
++    version_var: gh_version
++    dl_template: gh_dl_url_template
++    extract: true
++    dest: /usr/local/bin/gh
++  - name: tea
++    type: binary
++    version_var: tea_version
++    dl_template: tea_dl_url_template
++    extract: false
++    dest: /usr/local/bin/tea
++  - name: rtk
++    type: binary
++    version_var: rtk_version
++    dl_template: rtk_dl_url_template
++    extract: true
++    dest: /usr/local/bin/rtk
++  - name: openchamber
++    type: npm
++    version_var: openchamber_version
++    dl_template: openchamber_dl_url_template
++    extract: false
++    npm_install_cmd: "npm install -g https://github.com/openchamber/openchamber/releases/download/v{version}/openchamber-web-{version}.tgz"
++  - name: opencode
++    type: npm
++    package_name: opencode_package
+diff --git a/ansible/playbooks/update-tools.yml b/ansible/playbooks/update-tools.yml
+new file mode 100644
+index 0000000..1904f30
+--- /dev/null
++++ b/ansible/playbooks/update-tools.yml
+@@ -0,0 +1,104 @@
++---
++# Update Procedure for opencode VM tools
++
++# Designed to be run from the Ansible controller (localhost) and applied to target VMs.
++# It uses version definitions from tools.yml as a "source of truth".
++
++- name: Update opencode tools
++  hosts: opencode_vms
++  become: true
++  gather_facts: false
++
++  pre_tasks:
++    - name: Load tool configuration locally
++      ansible.builtin.include_vars:
++        file: "{{ item }}"
++      with_items:
++        - ../group_vars/opencode_vms/tools.yml
++        - ../group_var/opencode_vms/updatable_tools.yml # Wait, checking directory... it's group_vars/
++      delegate_to: localhost
++    - name: Check if vars loaded (debug)
++      ansible.builtin.debug:
++        msg: "Loaded gh version {{ hostvars[inventory_hostname].gh_version | default('NOT LOADED') }}"
++      delegate_to: localhost
++
++  tasks:
++    # -- GitHub CLI (gh) --------------------------------------------------------
++
++    - name: Update gh binary via downloading and extraction
++      ansible.builtin.unarchive:
++        src: "{{ tool_config.gh_dl_url_template | replace('{version}', tool_config.gh_version) }}"
++        dest: /tmp/gh_{{ tool_config.gh_version }}
++        remote_src: true
++      when: tool_config.gh_version is defined
++
++    - name: Install gh binary
++      ansible.builtin.copy:
++        src: /tmp/gh_{{ tool_config.gh_version }}/bin/gh
++        dest: /usr/local/bin/gh
++        mode: "0755"
++        remote_src: true
++      when: tool_config.gh_version is defined
++
++    # -- Gitea CLI (tea) ------------------------------------------
++
++    - name: Update tea binary via downloading
++      ansible.builtin.get_url:
++        url: "{{ tool_config.tea_dl_url_template | replace('{version}', tool_config.tea_version) }}"
++        dest: /usr/local/bin/tea
++        mode: "0755"
++        remote_src: true
++      when: tool_config.tea_version is defined
++
++    # -- RTK ------------------------------------------------------
++
++    - name: Update rtk binary via downloading and extraction
++      ansible.builtin.unarchive:
++         src: "{{ tool_config.rtk_dl_url_template | replace('{version}', tool_config.rtk_version) }}"
++         dest: /tmp/rtk_{{ tool_config.rtk_version }}
++         remote_src: true
++      when: tool_config.rtk_version is defined
++
++    - name: Install rtk binary
++      ansible.builtin.copy:
++        src: /tmp/rtk_{{ tool_config.rtk_version }}/bin/rtk
++        dest: /usr/local/bin/rtk
++        mode: "0755"
++        remote_src: true
++      when: tool_config.rtk_version is defined
++
++    # -- npm packages (openchamber) -------------------------------
++
++    - name: Update openchamber via npm
++      ansible.builtin.shell:
++        cmd: "npm install -g https://github.com/openchamber/openchamber/releases/download/v{{ tool_config.openchamber_version }}/openchamber-web-{{ tool_config.openchamber_version }}.tgz"
++        creates: /usr/local/bin/openchamber
++      when: tool_config.openchamber_version is defined
++
++    # -- npm packages (opencode) ----------------------------------
++
++    - name: Update opencode via npm
++      ansible.builtin.shell:
++        cmd: "npm install -g {{ tool_config.opencode_package }}"
++        creates: /usr/local/bin/opencode
++      when: tool_config.opencode_package is defined
++
++    # -- Cleanup -----------------------------------------------
++
++    - name: Clean up temporary installation artifacts
++      ansible.builtin.file:
++        path: "{{ item }}"
++        state: none
++      loop:
++        - "/tmp/gh_{{ tool_config.gh_version | default('none') }}"
++        - "/tmp/rtk_{{ tool_config.rtk_version | default('none') }}"
++      when: tool_config is defined
++
++    # Finalizing configuration ---------------------------
++
++    - name: Reload systemd and restart openchamber
++      ansible.builtin.systemd:
++        name: openchamber
++        state: restarted
++        daemon_reload: true
++      when: tool_config.openchamber_version is defined

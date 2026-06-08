@@ -1,0 +1,173 @@
+diff --git a/path/to/ansible/roles/vm_updates/tasks/main.yml b/path/to/ansible/roles/vm_updates/tasks/main.yml
+new file mode 100644
+index 0000000..40c7018
+--- /dev/null
++++ b/path/to/ansible/roles/vm_updates/tasks/main.yml
+@@ -0,0 +1,30 @@
++---
++- name: Ensure update manager configuration exists
++  copy:
++    dest: /etc/homelab/tools_metadata.json
++    content: "{{ lookup('file', 'files/tools_metadata.json') }}"
++
++- name: Create state directory
++  file:
++    path: /var/lib/homelab
++    state: directory
++    owner: root
++    group: root
++    mode: 0755
++
++- name: Deploy update manager script
++  copy:
++    dest: /usr/local/bin/update_manager.py
++    content: "{{ lookup('file', 'files/update_manager.py') }}"
++    mode: '0755'
++
++- name: Create systemd service for update manager
++  template:
++    src: vm_updates.service.j2
++    dest: /etc/systemd/system/vm_updates.service
++
++- name: Enable and start update manager timer
++  systemd:
++    name: vm_updates.timer
++    enabled: yes
++    state: started
+diff --git a/path/to/config/tools_metadata.json b/path/to/config/tools_metadata.json
+new file mode 100644
+index 0000000..c5067e4
+--- /dev/null
++++ b/path/to/config/tools_metadata.json
+@@ -0,0 +1,24 @@
++{
++  "system_updates": {
++    "enabled": true,
++    "command": "apt-get update && apt-get upgrade -y"
++  },
++  "tools": [
++    {
++      "name": "opencode",
++      "update_command": "pip install --upgrade opencode",
++      "check_version_command": "opencode --version",
++      "health_check_command": "curl -f http://localhost:8080/health || true",
++      "last_known_good_version": "unknown",
++      "update_frequency_days": 1
++    },
++    {
++      "name": "openchamber",
++      "update_command": "git pull && make install",
++      "check_version_command": "openchamber --version",
++      "health_check_command": "pgrep openchamber > /dev/null",
++      "last_known_good_version": "unknown",
++      "update_frequency_days": 1
++    }
++  ]
++}
+diff --git a/path/to/scripts/update_manager.py b/path/to/scripts/update_manager.py
+new file mode 100644
+index 0000000..00013ed
+--- /dev/null
++++ b/path/to/scripts/update_manager.py
+@@ -0,0 +1,101 @@
++import json
++import subprocess
++import logging
++import os
++from datetime import datetime
++import re
++
++# Configuration paths
++CONFIG_PATH = "/etc/homelab/tools_metadata.json"
++STATE_PATH = "/var/lib/homelab/update_state.json"
++LOG_FILE = "/var/log/update_manager.log"
++
++logging.basicConfig(
++    filename=LOG_FILE,
++    level=logging.INFO,
++    format='%(asctime)s - %(levelname)s - %(message)s'
++)
++
++def run_command(command):
++    try:
++        result = subprocess.run(
++            command, shell=True, capture_output=True, text=True, check=False
++        )
++        return result.stdout.strip(), result.stderr.strip()
++    except Exception as e:
++        logging.error(f"Exception running command '{command}': {str(e)}")
++        return "", str(e)
++
++def get_version(cmd):
++    stdout, _ = run_command(cmd)
++    # Simple regex to find version numbers (e.g., 1.2.3 or v1.0)
++    match = re.search(r'(\d+\.\d+\.\d+)', stdout)
++    return match.group(1) if match else "unknown"
++
++def load_json(path):
++    if not os.path.exists(path):
++        return {}
++    with open(path, 'r') as f:
++        return json.load(f)
++
++def save_json(path, data):
++    with open(path, 'w') as f:
++        json.dump(data, f, indent=2)
++
++def main():
++    config = load_json(CONFIG_PATH)
++    state = load_json(STATE_PATH)
++    if not state:
++        state = {"last_update": None}
++
++    logging.info("Starting update check cycle.")
++
++    # 1. System Updates
++    sys_cfg = config.get("system_updates", {})
++    if sys_cfg.get("enabled"):
++        logging.info("Running system package updates...")
++        out, err = run_command(sys_cfg["command"])
++        if out: logging.info(f"System update success: {out}")
++        else: logging.error(f"System update failed: {err}")
++
++    # 2. Tool Updates
++    for tool in config.get("tools", []):
++        name = tool["name"]
++        logging.info(f"Checking updates for {name}...")
++        
++        current_version = get_version(tool["check_version_command"])
++        lkg_version = state.get(name, {}).get("last_known_good", "unknown")
++
++        if current_version != lkg_version:
++            logging.info(f"New version detected for {name}: {current_version} (LKG: {lkg_version})")
++            
++            # Attempt Update
++            logging.info(f"Updating {name}...")
++            out, err = run_command(tool["update_command"])
++            
++            if out or not err: # Basic check if command didn't crash
++                # Health Check
++                h_out, h_err = run_command(tool["health_check_command"])
++                success = (h_out == "" and h_err == "") or "true" in h_out.lower()
++                
++                if success:
++                    logging.info(f"Update for {name} successful. New LKG set to {current_version}")
++                    state[name] = {
++                        "last_known_good": current_version,
++                        "updated_at": datetime.now().isoformat()
++                    }
++                else:
++                    logging.error(f"Update for {name} failed health check! Rolling back logic (keeping LKG: {lkg_version})")
++            else:
++                logging.error(f"Update command for {name} failed execution.")
++        else:
++            logging.info(f"{name} is up to date ({current_version}).")
++
++    save_json(STATE_PATH, state)
++    logging.info("Update cycle complete.")
++
++if __name__ == "__main__":
++    # Ensure directories exist
++    os.makedirs("/etc/homelab", exist_ok=True)
++    os.makedirs("/var/lib/homelab", exist_ok=True)
++    main()

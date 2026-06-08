@@ -1,0 +1,24 @@
+{
+  "run_id": "01KTGS5J7SAPMSVTVE0KNVB71S",
+  "harness": "goose",
+  "model": "gemma4-cpe:31b",
+  "provider": "desktop-ollama",
+  "isolation": "clone",
+  "baseline": {
+    "repo": "/home/ubuntu/Code/homelab",
+    "branch": "modeltests/sandbox-no-docs",
+    "base_ref": "cadab2ac07fad2e26bcb3962cfc45c62f27a4de4"
+  },
+  "outcome": "no-op",
+  "duration_ms": 1028732,
+  "exit_code": 0,
+  "tokens": {
+    "input_tokens": 9423,
+    "output_tokens": 919,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0
+  },
+  "diffstat": "",
+  "branch_pushed": "harnesstests/goose__gemma4-cpe-31b",
+  "captured_at": "2026-06-07T14:26:51.663Z"
+}

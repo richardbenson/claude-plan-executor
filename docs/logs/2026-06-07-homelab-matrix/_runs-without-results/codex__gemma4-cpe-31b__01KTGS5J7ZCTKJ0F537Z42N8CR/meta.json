@@ -1,0 +1,24 @@
+{
+  "id": "01KTGS5J7ZCTKJ0F537Z42N8CR",
+  "primary_repo_path": "/home/ubuntu/Code/homelab",
+  "worktree_path": "/home/ubuntu/.local/state/cpe/clones/01KTGS5J7ZCTKJ0F537Z42N8CR",
+  "feature_branch": "harnesstests/codex__gemma4-cpe-31b",
+  "target_branch": "modeltests/sandbox-no-docs",
+  "remote": {
+    "host": "gitea.lab.richardbenson.co.uk",
+    "owner": "richard",
+    "repo": "homelab",
+    "type": "other"
+  },
+  "status": "executing",
+  "total_cost_usd": 0,
+  "prompt": "This repo contains a homelab setup. The most recent addition being a a VM that runs opencode and openchamber, deployed on proxmox with terraform and ansible.\n\nWhat would be a good system/procedure for managing updates to system dependencies as well as the various tools installed on it?\n\nNow we need to consider this all in the context that this is a personal use homelab with fully scripted infra, meaning we can essentially just rebuild a bricked box. Also consider that these tools are all bleeding edge and receiving frequent updates, therefore we should probably avoid version pinning or at least have the script check for latest, log the last working version and then update (so we know where to pin if it does need a rebuild). I'd also like this to be as automated as possible, the whole thing is just always up to date.",
+  "prompt_source": "free-text",
+  "harness": "codex",
+  "model": "gemma4-cpe:31b",
+  "isolation": "clone",
+  "bench_repo": "/home/ubuntu/Code/homelab",
+  "bench_branch": "modeltests/sandbox-no-docs",
+  "provider": "desktop-ollama",
+  "base_ref": "cadab2ac07fad2e26bcb3962cfc45c62f27a4de4"
+}

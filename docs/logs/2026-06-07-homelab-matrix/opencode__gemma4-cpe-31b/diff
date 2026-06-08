@@ -1,0 +1,178 @@
+diff --git a/ansible/files/opencode-updates.service b/ansible/files/opencode-updates.service
+new file mode 100644
+index 0000000..641289a
+--- /dev/null
++++ b/ansible/files/opencode-updates.service
+@@ -0,0 +1,13 @@
++[Unit]
++Description=Daily Update of System Tools for opencode VM
++After=network-online.target
++Wants=network-online.target
++
++[Service]
++Type=oneshot
++ExecStart=/usr/local/bin/update-tools.sh
++StandardOutput=append:/var/log/tool-updates.log
++StandardError=append:/var/log/tool-updates.log
++
++[Install]
++WantedBy=multi-user.target
+diff --git a/ansible/files/opencode-updates.timer b/ansible/files/opencode-updates.timer
+new file mode 100644
+index 0000000..b462b37
+--- /dev/null
++++ b/ansible/files/opencode-updates.timer
+@@ -0,0 +1,9 @@
++[Unit]
++Description=Run opencode updates daily
++
++[Timer]
++OnCalendar=daily
++Persistent=true
++
++[Install]
++WantedBy=timers.target
+diff --git a/ansible/files/update-tools.sh b/ansible/files/update-tools.sh
+new file mode 100644
+index 0000000..31ad240
+--- /dev/null
++++ b/ansible/files/update-tools.sh
+@@ -0,0 +1,94 @@
++#!/bin/bash
++set -e
++
++LOG_FILE="/var/log/tool-updates.json"
++TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
++
++# Helper to get latest GitHub release tag
++get_latest_tag() {
++    local repo=$1
++    curl -s "https://api.github.com/repos/${repo}/releases/latest" | jq -r '.tag_name'
++}
++
++log_update() {
++    local tool=$1
++    local old_version=$2
++    local new_version=$3
++    echo "Updating ${tool}: ${old_version} -> ${new_version}"
++    # Append to JSON log: simple line-delimited JSON for easy parsing/appending
++    printf '{"timestamp": "%s", "tool": "%s", "from": "%s", "to": "%s"}\n' \
++        "$TIMESTAMP" "$tool" "$old_version" "$new_version" >> "$LOG_FILE"
++}
++
++# 1. System Updates (Apt)
++echo "Running apt-get update and upgrade..."
++apt-get update -y && apt-get upgrade -y
++
++# 2. Node modules / Global NPM tools (opencode, openchamber)
++# opencode is updated via npm install -g which always gets latest unless pinned
++echo "Updating opencode..."
++npm install -g opencode-ai@latest
++
++# Openchamber is installed from a tgz release. We need the latest tag.
++OC_REPO="openchamber/openchamber"
++OC_LATEST=$(get_latest_tag "$OC_REPO")
++OC_CURRENT=$(openchamber --version 2>/dev/null || echo "unknown")
++
++if [ "$OC_LATEST" != "$OC_CURRENT" ]; then
++    # The filename pattern seems to be openchamber-web-${TAG}.tgz (removing 'v' from tag)
++    VERSION_NUM=${OC_LATEST#v}
++    URL="https://github.com/${OC_REPO}/releases/download/${OC_LATEST}/openchamber-web-${VERSION_NUM}.tgz"
++    npm install -g "$URL"
++    log_update "openchamber" "$OC_CURRENT" "$OC_LATEST"
++fi
++
++# 3. GH CLI
++GH_REPO="cli/cli"
++GH_LATEST=$(get_latest_tag "$GH_REPO")
++GH_CURRENT=$(gh --version | head -n1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
++
++if [ "$GH_LATEST" != "v${GH_CURRENT}" ]; then
++    VERSION_NUM=${GH_LATEST#v}
++    URL="https://github.com/${GH_REPO}/releases/download/${GH_LATEST}/gh_${VERSION_NUM}_linux_amd64.tar.gz"
++    curl -sL "$URL" | tar -xz -C /tmp gh_${VERSION_NUM}_linux_amd64
++    cp "/tmp/gh_${VERSION_NUM}_linux_amd64/bin/gh" /usr/local/bin/gh
++    rm -rf "/tmp/gh_${VERSION_NUM}_linux_amd64"
++    log_update "gh" "$GH_CURRENT" "$GH_LATEST"
++fi
++
++# 4. Tea CLI
++TEA_REPO="gitea/tea"
++TEA_LATEST=$(get_latest_tag "$TEA_REPO")
++TEA_CURRENT=$(tea --version | head -n1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
++
++if [ "$TEA_LATEST" != "v${TEA_CURRENT}" ]; then
++    VERSION_NUM=${TEA_LATEST#v}
++    URL="https://gitea.com/${TEA_REPO}/releases/download/${TEA_LATEST}/tea-${VERSION_NUM}-linux-amd64"
++    curl -sL "$URL" -o /usr/local/bin/tea
++    chmod +x /usr/local/bin/tea
++    log_update "tea" "$TEA_CURRENT" "$TEA_LATEST"
++fi
++
++# 5. RTK
++RTK_REPO="rtk-ai/rtk"
++RTK_LATEST=$(get_latest_tag "$RTK_REPO")
++RTK_CURRENT=$(rtk --version | head -n1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
++
++if [ "$RTK_LATEST" != "v${RTK_CURRENT}" ]; then
++    VERSION_NUM=${RTK_LATEST#v}
++    URL="https://github.com/${RTK_REPO}/releases/download/${RTK_LATEST}/rtk-x86_64-unknown-linux-musl.tar.gz"
++    curl -sL "$URL" | tar -xz -C /tmp rtk
++    cp "/tmp/rtk" /usr/local/bin/rtk
++    chmod +x /usr/local/bin/rtk
++    rm -rf "/tmp/rtk"
++    log_update "rtk" "$RTK_CURRENT" "$RTK_LATEST"
++fi
++
++# 6. Bun (Self-updating)
++echo "Updating bun..."
++su - opencode -c "curl -fsSL https://bun.sh/install | bash"
++
++# Restart openchamber to pick up updates if necessary
++systemctl restart openchamber || true
++
++echo "Update process completed at $TIMESTAMP"
+diff --git a/ansible/playbooks/provision-opencode.yml b/ansible/playbooks/provision-opencode.yml
+index f217700..acf4609 100644
+--- a/ansible/playbooks/provision-opencode.yml
++++ b/ansible/playbooks/provision-opencode.yml
+@@ -21,6 +21,39 @@
+ 
+   tasks:
+ 
++    # -- update system --------------------------------------------------------
++
++    - name: Copy tool updater script
++      ansible.builtin.copy:
++        src: ../files/update-tools.sh
++        dest: /usr/local/bin/update-tools.sh
++        mode: "0755"
++        owner: root
++        group: root
++
++    - name: Copy update systemd service
++      ansible.builtin.copy:
++        src: ../files/opencode-updates.service
++        dest: /etc/systemd/system/opencode-updates.service
++        mode: "0644"
++        owner: root
++        group: root
++
++    - name: Copy update systemd timer
++      ansible.builtin.copy:
++        src: ../files/opencode-updates.timer
++        dest: /etc/systemd/system/opencode-updates.timer
++        mode: "0644"
++        owner: root
++        group: root
++
++    - name: Enable and start update timer
++      ansible.builtin.systemd:
++        name: opencode-updates.timer
++        enabled: true
++        state: started
++        daemon_reload: true
++
+     # -- System packages ------------------------------------------------------
+ 
+     - name: Install system packages

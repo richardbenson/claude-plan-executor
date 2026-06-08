@@ -1,0 +1,25 @@
+{
+  "run_id": "01KTGS5J7NFBQRZGQY1G8J78KK",
+  "harness": "opencode",
+  "model": "gemma4-cpe:12b",
+  "provider": "desktop-ollama",
+  "isolation": "clone",
+  "baseline": {
+    "repo": "/home/ubuntu/Code/homelab",
+    "branch": "modeltests/sandbox-no-docs",
+    "base_ref": "cadab2ac07fad2e26bcb3962cfc45c62f27a4de4"
+  },
+  "outcome": "no-op",
+  "duration_ms": 45538,
+  "exit_code": 0,
+  "tokens": {
+    "input_tokens": 38577,
+    "output_tokens": 1008,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0
+  },
+  "cost_usd": 0,
+  "diffstat": "",
+  "branch_pushed": "harnesstests/opencode__gemma4-cpe-12b",
+  "captured_at": "2026-06-07T12:08:01.707Z"
+}

@@ -1,0 +1,139 @@
+
+Aider v0.86.2
+Model: openai/gemma4-cpe:31b with whole edit format
+Git repo: .git with 134 files
+Repo-map: using 1024 tokens, auto refresh
+
+Initial repo scan can be slow in larger repos, but only happens once.
+Scanning repo:   0%|          | 0/134 [00:00<?, ?it/s]Scanning repo:  31%|███       | 41/134 [00:00<00:00, 236.61it/s]Scanning repo:  49%|████▊     | 65/134 [00:00<00:00, 215.24it/s]Scanning repo:  65%|██████▍   | 87/134 [00:00<00:00, 172.31it/s]Scanning repo:  78%|███████▊  | 105/134 [00:00<00:00, 163.57it/s]Scanning repo:  91%|█████████ | 122/134 [00:00<00:00, 156.44it/s]Scanning repo: 100%|██████████| 134/134 [00:00<00:00, 176.48it/s]
+To implement a system that balances "always up to date" with the ability to recover from failures in a fully scripted environment, I will introduce an automated maintenance pipeline. 
+
+Since you have a rebuildable infrastructure, we don't need complex blue-green deployments for a personal homelab. Instead, we will use a **Versioned Update Loop**:
+1. **Snapshot/Log State**: Before updating, the system logs current versions of tools and dependencies to a persistent log file.
+2. **Automated Application**: An Ansible playbook is used to pull the latest commits from bleeding-edge repositories and update system packages without strict pinning.
+3. **Health Check**: The script verifies that services are running after the update.
+4. **Audit Trail**: If the box bricks, you can check the logs to see exactly which version was installed last before the failure, allowing you to pin a specific commit in your main infra code for the rebuild.
+
+I am creating two new files: a bash orchestrator and an Ansible maintenance playbook.
+
+scripts/update-homelab-services.sh
+```bash
+#!/bin/bash
+
+# Configuration
+LOG_FILE="/var/log/homelab_updates.log"
+VERSION_SNAPSHOT="/opt/homelab/versions_last_known.txt"
+ANSIBLE_PLAYBOOK="ansible/playbooks/maintenance.yml"
+INVENTORY="ansible/inventory.ini"
+
+echo "[$(date)] Starting automated update sequence..." >> "$LOG_FILE"
+
+# 1. Capture current versions before updating
+# This allows us to know what was working if the update bricks the system
+echo "Capturing current version state..."
+{
+    echo "--- Snapshot $(date) ---"
+    echo "System Packages:"
+    dpkg -l | grep -E 'opencode|openchamber' || echo "No specific packages found"
+    echo "Python Packages:"
+    pip list 2>/dev/null || echo "Pip not installed"
+    echo "Git Commits:"
+    # Assuming tools are in /opt/
+    for dir in /opt/opencode /opt/openchamber; do
+        if [ -d "$dir/.git" ]; then
+            echo "$dir: $(git -C "$dir" rev-parse HEAD)"
+        fi
+    done
+} > "$VERSION_SNAPSHOT"
+
+# 2. Run the Ansible maintenance playbook
+echo "Applying updates via Ansible..."
+ansible-playbook -i "$INVENTORY" "$ANSIBLE_PLAYBOOK" >> "$LOG_FILE" 2>&1
+
+if [ $? -eq 0 ]; then
+    echo "[$(date)] Update applied successfully." >> "$LOG_FILE"
+else
+    echo "[$(date)] UPDATE FAILED. Check logs for details." >> "$LOG_FILE"
+    # In a fully autonomous setup, we log the failure. 
+    # Since infra is scripted, the user can rebuild using the snapshot in $VERSION_SNAPSHOT.
+    exit 1
+fi
+
+# 3. Post-update health check (Example: checking if services are active)
+echo "Verifying service health..."
+SERVICES=("opencode" "openchamber")
+for svc in "${SERVICES[@]}"; do
+    if systemctl is-active --quiet "$svc"; then
+        echo "[$(date)] Service $svc is healthy." >> "$LOG_FILE"
+    else
+        echo "[$(date)] WARNING: Service $svc failed to start after update!" >> "$LOG_FILE"
+    fi
+done
+
+echo "[$(date)] Update sequence complete." >> "$LOG_FILE"
+```
+
+ansible/playbooks/maintenance.yml
+```yaml
+---
+- name: Homelab Bleeding Edge Maintenance
+  hosts: opencode_vm
+  become: true
+  vars:
+    # Define paths to the tools
+    opencode_path: "/opt/opencode"
+    openchamber_path: "/opt/openchamber"
+
+  tasks:
+    - name: Update system package cache
+      apt:
+        update_cache: yes
+
+    - name: Upgrade all system packages to latest
+      apt:
+        upgrade: dist
+        autoremove: yes
+
+    - name: Pull latest changes for OpenCode
+      git:
+        repo: 'https://github.com/example/opencode.git' # Replace with actual repo
+        dest: "{{ opencode_path }}"
+        version: main
+        force: yes
+
+    - name: Update OpenCode dependencies (Python)
+      pip:
+        requirements: "{{ opencode_path }}/requirements.txt"
+        state: latest
+
+    - name: Pull latest changes for OpenChamber
+      git:
+        repo: 'https://github.com/example/openchamber.git' # Replace with actual repo
+        dest: "{{ openchamber_path }}"
+        version: main
+        force: yes
+
+    - name: Update OpenChamber dependencies (Python)
+      pip:
+        requirements: "{{ openchamber_path }}/requirements.txt"
+        state: latest
+
+    - name: Restart services to apply updates
+      systemd:
+        name: "{{ item }}"
+        state: restarted
+      loop:
+        - opencode
+        - openchamber
+```
+Tokens: 2.0k sent, 1.0k received.
+
+scripts/update-homelab-services.sh
+
+ansible/playbooks/maintenance.yml
+Applied edit to ansible/playbooks/maintenance.yml
+Applied edit to scripts/update-homelab-services.sh
+Commit bc50537 feat: implement automated update pipeline for homelab services
+Summarization failed for model openai/gemma4-cpe:31b: cannot schedule new futures after shutdown
+Summarization failed for model openai/gemma4-cpe:31b: cannot schedule new futures after shutdown
+summarizer unexpectedly failed for all models

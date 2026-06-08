@@ -1,0 +1,24 @@
+{
+  "run_id": "01KTGS5J7WDG0VBAPKY74HPEMF",
+  "harness": "pi",
+  "model": "gemma4-cpe:12b",
+  "provider": "desktop-ollama",
+  "isolation": "clone",
+  "baseline": {
+    "repo": "/home/ubuntu/Code/homelab",
+    "branch": "modeltests/sandbox-no-docs",
+    "base_ref": "cadab2ac07fad2e26bcb3962cfc45c62f27a4de4"
+  },
+  "outcome": "completed",
+  "duration_ms": 112044,
+  "exit_code": 0,
+  "tokens": {
+    "input_tokens": 24230,
+    "output_tokens": 5555,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0
+  },
+  "diffstat": ".../DESIGN_UPDATE_MANAGEMENT.md                    | 32 ++++++++++++++++++++++\n services/tools_management/tools.yaml               | 17 ++++++++++++\n 2 files changed, 49 insertions(+)",
+  "branch_pushed": "harnesstests/pi__gemma4-cpe-12b",
+  "captured_at": "2026-06-07T16:17:09.205Z"
+}
