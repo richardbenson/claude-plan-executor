@@ -1,7 +1,6 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { Database } from 'bun:sqlite';
 import { groupWrap, killTree } from '../runner/proc-tree.js';
 import type { Harness, HarnessContext, HarnessResult, HarnessOutcome } from './types.js';
 
@@ -53,10 +52,10 @@ import type { Harness, HarnessContext, HarnessResult, HarnessOutcome } from './t
  *   exit 0 + changes  => 'completed'
  *   exit 0 + no diff  => 'no-op'
  *   non-zero exit     => 'error'
- * (timeout / bail are owned by the dispatch's RunGuard.) Token usage is read from
- * crush's own SQLite store (<data-dir>/crush.db `sessions` table:
- * prompt_tokens / completion_tokens / cost), summed across sessions; cost is 0
- * for a local model so costUsd is omitted unless reported > 0.
+ * (timeout / bail are owned by the dispatch's RunGuard.) Token usage is summed from
+ * the per-request OpenAI `usage` in crush's `--debug` HTTP log
+ * (<data-dir>/logs/crush.log) — crush.db only keeps the last turn's snapshot, which
+ * badly under-reports output (see parseCrushUsage). Cost is 0 for a local model, omitted.
  */
 
 const PROVIDER_ID = 'ollama';
@@ -114,6 +113,10 @@ export function crushRunArgs(model: string, cwd: string, dataDir: string): strin
   return [
     '--data-dir', dataDir,
     '--cwd', cwd,
+    // --debug makes crush log full HTTP round-trips to <data-dir>/logs/crush.log,
+    // whose response bodies carry the per-request OpenAI `usage` — the only accurate
+    // token source (crush.db only keeps the LAST turn's snapshot; see parseCrushUsage).
+    '--debug',
     'run',
     '--quiet',
     '-m', `${PROVIDER_ID}/${model}`,
@@ -121,42 +124,48 @@ export function crushRunArgs(model: string, cwd: string, dataDir: string): strin
 }
 
 /**
- * Read token/cost totals from crush's SQLite store. The `sessions` table carries
- * per-session prompt_tokens / completion_tokens / cost; we sum across sessions
- * (the per-run data dir holds only this run's session). Exported for unit testing
- * against a fixture db. Returns {} when the db/table is missing or empty.
+ * Sum crush's token usage from its `--debug` HTTP round-trip log. crush does NOT
+ * persist cumulative usage anywhere usable — its crush.db `sessions` row only holds
+ * the LAST turn's snapshot (e.g. completion_tokens: 6 for a multi-turn run), and the
+ * `messages` table has no token columns. With `--debug` it logs each provider
+ * response body, which carries the OpenAI `usage` ({prompt_tokens, completion_tokens})
+ * per request; we sum those across all requests. prompt_tokens / completion_tokens
+ * each appear once per response (streaming chunks log `usage: null`), so summing each
+ * independently is order-agnostic and correct. Exported for unit testing against a
+ * fixture log. Returns {} when the log is missing or has no usage. Cost is not in the
+ * usage (local model) so costUsd is omitted.
  */
-export function parseCrushUsage(dbPath: string): {
+export function parseCrushUsage(logPath: string): {
   costUsd?: number;
   tokens?: { input_tokens: number; output_tokens: number; cache_read_input_tokens: number; cache_creation_input_tokens: number };
 } {
-  if (!fs.existsSync(dbPath)) return {};
-  let db: Database | null = null;
+  let text: string;
   try {
-    db = new Database(dbPath, { readonly: true });
-    const row = db.query(
-      'SELECT COALESCE(SUM(prompt_tokens),0) AS p, COALESCE(SUM(completion_tokens),0) AS c, COALESCE(SUM(cost),0) AS cost FROM sessions',
-    ).get() as { p: number; c: number; cost: number } | null;
-    if (!row) return {};
-    const input = Number(row.p) || 0;
-    const output = Number(row.c) || 0;
-    const cost = Number(row.cost) || 0;
-    if (input === 0 && output === 0 && cost === 0) return {};
-    const result: ReturnType<typeof parseCrushUsage> = {
-      tokens: {
-        input_tokens: input,
-        output_tokens: output,
-        cache_read_input_tokens: 0,
-        cache_creation_input_tokens: 0,
-      },
-    };
-    if (cost > 0) result.costUsd = cost;
-    return result;
+    text = fs.readFileSync(logPath, 'utf8');
   } catch {
     return {};
-  } finally {
-    try { db?.close(); } catch { /* ignore */ }
   }
+  // Tolerate both escaped (\"prompt_tokens\":) and plain ("prompt_tokens":) forms.
+  const sumOf = (key: string): [number, boolean] => {
+    let sum = 0;
+    let saw = false;
+    for (const m of text.matchAll(new RegExp(`${key}\\\\?"\\s*:\\s*(\\d+)`, 'g'))) {
+      sum += Number(m[1]);
+      saw = true;
+    }
+    return [sum, saw];
+  };
+  const [input, sawIn] = sumOf('prompt_tokens');
+  const [output, sawOut] = sumOf('completion_tokens');
+  if (!sawIn && !sawOut) return {};
+  return {
+    tokens: {
+      input_tokens: input,
+      output_tokens: output,
+      cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 0,
+    },
+  };
 }
 
 /** True when the working tree (clone) has any change vs HEAD (crush doesn't auto-commit). */
@@ -238,8 +247,8 @@ export const crushHarness: Harness = {
     const changed = hasChanges(ctx.cwd);
     const outcome = deriveCrushOutcome(exitCode, changed);
 
-    // Read usage from the isolated db BEFORE removing the temp dir.
-    const usage = parseCrushUsage(path.join(dataDir, 'crush.db'));
+    // Read usage from the --debug HTTP log BEFORE removing the temp dir.
+    const usage = parseCrushUsage(path.join(dataDir, 'logs', 'crush.log'));
     try { fs.rmSync(root, { recursive: true, force: true }); } catch { /* ignore */ }
 
     return {

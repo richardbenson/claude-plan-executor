@@ -2,7 +2,6 @@ import { test, expect } from 'bun:test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { Database } from 'bun:sqlite';
 import {
   crushBaseUrl,
   deriveCrushOutcome,
@@ -38,6 +37,7 @@ test('crushRunArgs builds a headless run against the ollama provider, isolated d
   expect(crushRunArgs('gemma4-cpe:31b', '/clone', '/tmp/dd')).toEqual([
     '--data-dir', '/tmp/dd',
     '--cwd', '/clone',
+    '--debug',
     'run',
     '--quiet',
     '-m', 'ollama/gemma4-cpe:31b',
@@ -60,35 +60,40 @@ test('buildCrushConfig declares an openai-compat ollama provider + allows all bu
   );
 });
 
-test('parseCrushUsage sums prompt/completion tokens (and cost) from the sessions table', () => {
+test('parseCrushUsage sums per-request usage across crush --debug HTTP log entries (escaped JSON)', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crush-test-'));
-  const dbPath = path.join(dir, 'crush.db');
-  const db = new Database(dbPath);
-  db.run('CREATE TABLE sessions (id TEXT, prompt_tokens INTEGER, completion_tokens INTEGER, cost REAL)');
-  db.run("INSERT INTO sessions VALUES ('a', 10333, 6, 0)");
-  db.run("INSERT INTO sessions VALUES ('b', 200, 50, 0.0021)");
-  db.close();
+  const logPath = path.join(dir, 'crush.log');
+  // Mimics crush's --debug round-trip log: escaped response bodies, with streaming
+  // chunks that carry `usage: null` (no numbers) plus the final usage per request.
+  fs.writeFileSync(logPath, [
+    '{"level":"DEBUG","body":"data: {\\"choices\\":[],\\"usage\\":null}"}',
+    '{"level":"DEBUG","body":"...\\"usage\\":{\\"prompt_tokens\\":170,\\"completion_tokens\\":40,\\"total_tokens\\":210}"}',
+    '{"level":"DEBUG","body":"...\\"usage\\":{\\"prompt_tokens\\":10268,\\"completion_tokens\\":140,\\"total_tokens\\":10408}"}',
+    '{"level":"DEBUG","body":"...\\"usage\\":{\\"prompt_tokens\\":10338,\\"completion_tokens\\":13,\\"total_tokens\\":10351}"}',
+  ].join('\n'));
 
-  const out = parseCrushUsage(dbPath);
+  const out = parseCrushUsage(logPath);
   expect(out.tokens).toEqual({
-    input_tokens: 10333 + 200,
-    output_tokens: 6 + 50,
+    input_tokens: 170 + 10268 + 10338,
+    output_tokens: 40 + 140 + 13, // 193 — not the bogus 6 the crush.db sessions row holds
     cache_read_input_tokens: 0,
     cache_creation_input_tokens: 0,
   });
-  expect(out.costUsd).toBeCloseTo(0.0021, 6);
+  expect(out.costUsd).toBeUndefined();
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('parseCrushUsage returns {} for a missing db or all-zero usage', () => {
-  expect(parseCrushUsage('/nonexistent/crush.db')).toEqual({});
+test('parseCrushUsage also handles plain (unescaped) usage and returns {} for a missing/usage-less log', () => {
+  expect(parseCrushUsage('/nonexistent/crush.log')).toEqual({});
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crush-test-'));
-  const dbPath = path.join(dir, 'crush.db');
-  const db = new Database(dbPath);
-  db.run('CREATE TABLE sessions (id TEXT, prompt_tokens INTEGER, completion_tokens INTEGER, cost REAL)');
-  db.run("INSERT INTO sessions VALUES ('z', 0, 0, 0)");
-  db.close();
-  expect(parseCrushUsage(dbPath)).toEqual({});
+  const logPath = path.join(dir, 'crush.log');
+  fs.writeFileSync(logPath, '{"usage":{"prompt_tokens":5,"completion_tokens":7}}\nno tokens here\n');
+  expect(parseCrushUsage(logPath).tokens).toEqual({
+    input_tokens: 5, output_tokens: 7, cache_read_input_tokens: 0, cache_creation_input_tokens: 0,
+  });
+
+  fs.writeFileSync(logPath, 'just logs, no usage at all\n');
+  expect(parseCrushUsage(logPath)).toEqual({});
   fs.rmSync(dir, { recursive: true, force: true });
 });
