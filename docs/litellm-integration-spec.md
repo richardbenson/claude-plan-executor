@@ -205,6 +205,15 @@ discovered by running real matrices (see `docs/logs/2026-06-10-vague-prompt/`):
    PR ships in a release** (re-verify on every LiteLLM upgrade with a streamed
    tools call: the final chunk must say `finish_reason: "tool_calls"`).
 
+**Non-prerequisite (investigated, closed):** LiteLLM "prompt caching" is a
+passthrough of cloud-provider cache accounting; Ollama isn't supported, so there
+is nothing to enable and `cache_read_input_tokens` stays 0 for Ollama-backed
+models. Ollama's own KV/prefix cache already delivers the latency benefit
+silently (verified ~27× faster prompt eval on a repeated prefix) with no usage
+accounting — so spend-log tokens are the honest cross-harness comparison metric
+but overstate local compute for harnesses with large constant prefixes
+(claude-code re-sends ~21.5k tokens of tool definitions per turn).
+
 ## 5. Code changes (as built)
 
 - **config** ([types/meta.ts](src/types/meta.ts)): `ProviderEntry.type: 'litellm'`
