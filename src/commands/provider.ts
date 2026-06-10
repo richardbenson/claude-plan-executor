@@ -286,12 +286,15 @@ export async function providerTestCommand(name?: string): Promise<void> {
   }
 
   for (const provider of targets) {
-    if (!provider.health_check_url) {
+    // litellm entries default to the gateway's readiness probe (see checkProvider).
+    const healthUrl = provider.health_check_url
+      ?? (provider.type === 'litellm' ? '/health/readiness' : undefined);
+    if (!healthUrl) {
       process.stdout.write(`  ${provider.name}: (no check — assumed available)\n`);
       continue;
     }
     const ok = await checkProvider(provider);
-    const url = provider.health_check_url;
+    const url = healthUrl;
     if (ok) {
       process.stdout.write(`  ${provider.name}: ✓ available  [${url}]\n`);
     } else {
