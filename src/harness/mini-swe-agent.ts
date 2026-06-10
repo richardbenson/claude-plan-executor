@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { groupWrap, killTree } from '../runner/proc-tree.js';
 import type { Harness, HarnessContext, HarnessResult, HarnessOutcome } from './types.js';
+import { headSha, runChanged } from './git-changes.js';
 
 /*
  * mini-swe-agent (Princeton / SWE-agent) adapter — OPAQUE completion mode.
@@ -175,12 +176,6 @@ function parseUsage(trajPath: string): ReturnType<typeof parseMiniUsage> {
   }
 }
 
-/** True when the working tree (clone) has any change vs HEAD (mini doesn't auto-commit). */
-function hasChanges(cwd: string): boolean {
-  const proc = Bun.spawnSync(['git', 'status', '--porcelain'], { cwd });
-  return proc.exitCode === 0 && proc.stdout.toString().trim().length > 0;
-}
-
 export const miniSweAgentHarness: Harness = {
   name: 'mini-swe-agent',
   completionMode: 'opaque',
@@ -194,6 +189,8 @@ export const miniSweAgentHarness: Harness = {
     if (!ctx.model) {
       throw new Error('mini-swe-agent harness requires a model (provider/model selection)');
     }
+
+    const headBefore = headSha(ctx.cwd);
 
     // Per-run isolated global config dir so the user's real ~/.config/mini-swe-agent
     // is never touched and no mini state lands in the captured clone diff.
@@ -252,7 +249,7 @@ export const miniSweAgentHarness: Harness = {
     if (ctx.signal && onAbort) ctx.signal.removeEventListener('abort', onAbort);
     await new Promise<void>(resolve => logStream.close(() => resolve()));
 
-    const changed = hasChanges(ctx.cwd);
+    const changed = runChanged(ctx.cwd, headBefore);
     const outcome = deriveMiniOutcome(exitCode, changed);
 
     // Read usage from the trajectory BEFORE removing the temp dir.

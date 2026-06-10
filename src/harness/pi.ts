@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { groupWrap, killTree } from '../runner/proc-tree.js';
 import type { Harness, HarnessContext, HarnessResult, HarnessOutcome } from './types.js';
+import { headSha, runChanged } from './git-changes.js';
 
 /*
  * pi (pi.dev / @earendil-works/pi-coding-agent) adapter — OPAQUE completion mode.
@@ -193,12 +194,6 @@ function parseUsage(logPath: string): ReturnType<typeof parsePiUsage> {
   }
 }
 
-/** True when the working tree (clone) has any change vs HEAD (pi doesn't auto-commit). */
-function hasChanges(cwd: string): boolean {
-  const proc = Bun.spawnSync(['git', 'status', '--porcelain'], { cwd });
-  return proc.exitCode === 0 && proc.stdout.toString().trim().length > 0;
-}
-
 export const piHarness: Harness = {
   name: 'pi',
   completionMode: 'opaque',
@@ -212,6 +207,8 @@ export const piHarness: Harness = {
     if (!ctx.model) {
       throw new Error('pi harness requires a model (provider/model selection)');
     }
+
+    const headBefore = headSha(ctx.cwd);
 
     // Per-run isolated config/session dir so the user's real ~/.pi is never
     // touched and no pi state lands in the captured clone diff.
@@ -265,7 +262,7 @@ export const piHarness: Harness = {
     if (ctx.signal && onAbort) ctx.signal.removeEventListener('abort', onAbort);
     await new Promise<void>(resolve => logStream.close(() => resolve()));
 
-    const changed = hasChanges(ctx.cwd);
+    const changed = runChanged(ctx.cwd, headBefore);
     const outcome = derivePiOutcome(exitCode, changed);
 
     const usage = parseUsage(ctx.logPath);

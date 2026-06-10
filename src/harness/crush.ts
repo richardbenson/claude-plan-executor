@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { groupWrap, killTree } from '../runner/proc-tree.js';
 import type { Harness, HarnessContext, HarnessResult, HarnessOutcome } from './types.js';
+import { headSha, runChanged } from './git-changes.js';
 
 /*
  * crush (Charmbracelet / @charmland/crush) adapter — OPAQUE completion mode.
@@ -168,12 +169,6 @@ export function parseCrushUsage(logPath: string): {
   };
 }
 
-/** True when the working tree (clone) has any change vs HEAD (crush doesn't auto-commit). */
-function hasChanges(cwd: string): boolean {
-  const proc = Bun.spawnSync(['git', 'status', '--porcelain'], { cwd });
-  return proc.exitCode === 0 && proc.stdout.toString().trim().length > 0;
-}
-
 export const crushHarness: Harness = {
   name: 'crush',
   completionMode: 'opaque',
@@ -187,6 +182,8 @@ export const crushHarness: Harness = {
     if (!ctx.model) {
       throw new Error('crush harness requires a model (provider/model selection)');
     }
+
+    const headBefore = headSha(ctx.cwd);
 
     // Per-run isolated config + data dir so the user's real ~/.config/crush is
     // never touched and no crush state lands in the captured clone diff.
@@ -244,7 +241,7 @@ export const crushHarness: Harness = {
     if (ctx.signal && onAbort) ctx.signal.removeEventListener('abort', onAbort);
     await new Promise<void>(resolve => logStream.close(() => resolve()));
 
-    const changed = hasChanges(ctx.cwd);
+    const changed = runChanged(ctx.cwd, headBefore);
     const outcome = deriveCrushOutcome(exitCode, changed);
 
     // Read usage from the --debug HTTP log BEFORE removing the temp dir.

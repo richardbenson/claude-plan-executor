@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { groupWrap, killTree } from '../runner/proc-tree.js';
 import type { Harness, HarnessContext, HarnessResult, HarnessOutcome } from './types.js';
+import { headSha, runChanged } from './git-changes.js';
 
 /*
  * plandex adapter — OPAQUE completion mode. CLIENT/SERVER tool.
@@ -81,12 +82,6 @@ export function derivePlandexOutcome(exitCode: number, changed: boolean): Harnes
   return exitCode === 0 ? (changed ? 'completed' : 'no-op') : 'error';
 }
 
-/** True when the working tree (clone) has any change vs HEAD (plandex applies, --skip-commit). */
-function hasChanges(cwd: string): boolean {
-  const proc = Bun.spawnSync(['git', 'status', '--porcelain'], { cwd });
-  return proc.exitCode === 0 && proc.stdout.toString().trim().length > 0;
-}
-
 export const plandexHarness: Harness = {
   name: 'plandex',
   completionMode: 'opaque',
@@ -100,6 +95,8 @@ export const plandexHarness: Harness = {
     if (!ctx.model) {
       throw new Error('plandex harness requires a model (provider/model selection)');
     }
+
+    const headBefore = headSha(ctx.cwd);
 
     const env = cleanEnv();
 
@@ -140,7 +137,7 @@ export const plandexHarness: Harness = {
 
     await new Promise<void>(resolve => logStream.close(() => resolve()));
 
-    const changed = hasChanges(ctx.cwd);
+    const changed = runChanged(ctx.cwd, headBefore);
     const outcome = derivePlandexOutcome(exitCode, changed);
 
     return { exitCode, outcome };

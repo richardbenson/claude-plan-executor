@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { groupWrap, killTree } from '../runner/proc-tree.js';
 import type { Harness, HarnessContext, HarnessResult, HarnessOutcome } from './types.js';
+import { headSha, runChanged } from './git-changes.js';
 
 /*
  * openhands (All-Hands) adapter — OPAQUE completion mode.
@@ -82,12 +83,6 @@ export function deriveOpenhandsOutcome(exitCode: number, changed: boolean): Harn
   return exitCode === 0 ? (changed ? 'completed' : 'no-op') : 'error';
 }
 
-/** True when the working tree (clone) has any change vs HEAD (openhands doesn't auto-commit). */
-function hasChanges(cwd: string): boolean {
-  const proc = Bun.spawnSync(['git', 'status', '--porcelain'], { cwd });
-  return proc.exitCode === 0 && proc.stdout.toString().trim().length > 0;
-}
-
 /**
  * Sum token usage from openhands' persisted conversation state under a HOME dir:
  * `<home>/.openhands/conversations/<id>/base_state.json` carries
@@ -154,6 +149,8 @@ export const openhandsHarness: Harness = {
       throw new Error('openhands harness requires a model (provider/model selection)');
     }
 
+    const headBefore = headSha(ctx.cwd);
+
     // Per-run isolated HOME so ~/.openhands state never touches the user's home
     // and never leaks into the clone diff.
     const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cpe-openhands-'));
@@ -208,7 +205,7 @@ export const openhandsHarness: Harness = {
     if (ctx.signal && onAbort) ctx.signal.removeEventListener('abort', onAbort);
     await new Promise<void>(resolve => logStream.close(() => resolve()));
 
-    const changed = hasChanges(ctx.cwd);
+    const changed = runChanged(ctx.cwd, headBefore);
     const outcome = deriveOpenhandsOutcome(exitCode, changed);
 
     // Parse usage from the isolated HOME state BEFORE removing it.

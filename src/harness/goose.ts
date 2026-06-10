@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { groupWrap, killTree } from '../runner/proc-tree.js';
 import type { Harness, HarnessContext, HarnessResult, HarnessOutcome } from './types.js';
+import { headSha, runChanged } from './git-changes.js';
 
 /*
  * goose (Block) adapter — OPAQUE completion mode.
@@ -103,12 +104,6 @@ export function deriveGooseOutcome(exitCode: number, changed: boolean): HarnessO
   return exitCode === 0 ? (changed ? 'completed' : 'no-op') : 'error';
 }
 
-/** True when the working tree (clone) has any change vs HEAD (goose doesn't auto-commit). */
-function hasChanges(cwd: string): boolean {
-  const proc = Bun.spawnSync(['git', 'status', '--porcelain'], { cwd });
-  return proc.exitCode === 0 && proc.stdout.toString().trim().length > 0;
-}
-
 /**
  * Sum token usage from goose's per-request logs under an isolated state dir.
  * Each `<state>/goose/logs/llm_request.N.jsonl` ends with a line carrying a
@@ -174,6 +169,8 @@ export const gooseHarness: Harness = {
       throw new Error('goose harness requires a model (provider/model selection)');
     }
 
+    const headBefore = headSha(ctx.cwd);
+
     // Per-run isolated config/state/cache so the user's real goose config is
     // never touched and goose state never lands in the captured clone diff.
     const xdgRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cpe-goose-'));
@@ -226,7 +223,7 @@ export const gooseHarness: Harness = {
     if (ctx.signal && onAbort) ctx.signal.removeEventListener('abort', onAbort);
     await new Promise<void>(resolve => logStream.close(() => resolve()));
 
-    const changed = hasChanges(ctx.cwd);
+    const changed = runChanged(ctx.cwd, headBefore);
     const outcome = deriveGooseOutcome(exitCode, changed);
 
     // Parse usage from the isolated logs BEFORE removing the temp dir.

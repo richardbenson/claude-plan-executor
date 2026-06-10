@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { groupWrap, killTree } from '../runner/proc-tree.js';
 import type { Harness, HarnessContext, HarnessResult, HarnessOutcome } from './types.js';
+import { headSha, runChanged } from './git-changes.js';
 
 /*
  * opencode adapter — OPAQUE completion mode.
@@ -142,12 +143,6 @@ function parseUsage(logPath: string): ReturnType<typeof parseOpencodeUsage> {
   }
 }
 
-/** True when the working tree (clone) has any change vs HEAD. */
-function hasChanges(cwd: string): boolean {
-  const proc = Bun.spawnSync(['git', 'status', '--porcelain'], { cwd });
-  return proc.exitCode === 0 && proc.stdout.toString().trim().length > 0;
-}
-
 export const opencodeHarness: Harness = {
   name: 'opencode',
   completionMode: 'opaque',
@@ -161,6 +156,8 @@ export const opencodeHarness: Harness = {
     if (!ctx.model) {
       throw new Error('opencode harness requires a model (provider/model selection)');
     }
+
+    const headBefore = headSha(ctx.cwd);
 
     // Translate cpe provider env → opencode config (kept out of the clone).
     const baseURL = openAiBaseFrom(ctx.providerEnv);
@@ -229,7 +226,7 @@ export const opencodeHarness: Harness = {
     await new Promise<void>(resolve => logStream.close(() => resolve()));
     if (configPath) { try { fs.unlinkSync(configPath); } catch { /* ignore */ } }
 
-    const changed = hasChanges(ctx.cwd);
+    const changed = runChanged(ctx.cwd, headBefore);
     const outcome = deriveOpencodeOutcome(exitCode, changed);
 
     const usage = parseUsage(ctx.logPath);

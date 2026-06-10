@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { groupWrap, killTree } from '../runner/proc-tree.js';
 import type { Harness, HarnessContext, HarnessResult, HarnessOutcome } from './types.js';
+import { headSha, runChanged } from './git-changes.js';
 
 /*
  * aider adapter — OPAQUE completion mode.
@@ -152,21 +153,6 @@ function parseUsage(logPath: string): ReturnType<typeof parseAiderUsage> {
   }
 }
 
-function gitOut(args: string[], cwd: string): string {
-  const proc = Bun.spawnSync(['git', ...args], { cwd });
-  return proc.exitCode === 0 ? proc.stdout.toString().trim() : '';
-}
-
-/** Current HEAD sha, or '' if it can't be resolved. */
-function headSha(cwd: string): string {
-  return gitOut(['rev-parse', 'HEAD'], cwd);
-}
-
-/** True when the working tree has any uncommitted change vs HEAD (incl. untracked). */
-function treeDirty(cwd: string): boolean {
-  return gitOut(['status', '--porcelain'], cwd).length > 0;
-}
-
 /**
  * Keep aider's own dotfiles (`.aider*`) out of the captured diff WITHOUT a
  * committed `.gitignore` change: add a local-only pattern to the clone's
@@ -278,11 +264,7 @@ export const aiderHarness: Harness = {
     if (ctx.signal && onAbort) ctx.signal.removeEventListener('abort', onAbort);
     await new Promise<void>(resolve => logStream.close(() => resolve()));
 
-    // aider auto-commits, so "changes" = HEAD advanced since entry (committed
-    // work) OR a dirty tree (uncommitted edits, e.g. if a future run disables
-    // auto-commit). `git status --porcelain` alone is clean after an auto-commit.
-    const headAfter = headSha(ctx.cwd);
-    const changed = (!!headAfter && headAfter !== headBefore) || treeDirty(ctx.cwd);
+    const changed = runChanged(ctx.cwd, headBefore);
     const outcome = deriveAiderOutcome(exitCode, changed);
 
     const usage = parseUsage(ctx.logPath);
