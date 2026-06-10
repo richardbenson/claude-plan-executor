@@ -1,0 +1,4 @@
+Warning: Input is not a terminal (fd=0).
+Building agent config from specs: ['mini.yaml', 'agent.step_limit=40', 
+'agent.wall_time_limit_seconds=600']
+Saved trajectory to '/tmp/cpe-mini-XBb3Gc/run.traj.json'
