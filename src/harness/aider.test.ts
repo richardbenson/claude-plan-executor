@@ -70,12 +70,21 @@ test('parseAiderUsage returns empty object when no tally is present', () => {
   expect(parseAiderUsage('Aider v0.86.2\nApplied edit to note.txt')).toEqual({});
 });
 
-test('excludeAiderArtifacts adds .aider* to .git/info/exclude once, idempotently', () => {
+function gitT(args: string[], cwd: string): void {
+  const proc = Bun.spawnSync(['git', ...args], { cwd });
+  if (proc.exitCode !== 0) throw new Error(`git ${args.join(' ')}: ${proc.stderr.toString()}`);
+}
+
+function statusNames(cwd: string): string[] {
+  const proc = Bun.spawnSync(['git', 'status', '--porcelain'], { cwd });
+  return proc.stdout.toString().trim().split('\n').filter(Boolean);
+}
+
+test('excludeAiderArtifacts adds .aider* to info/exclude once, idempotently', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cpe-aider-excl-'));
   try {
-    fs.mkdirSync(path.join(dir, '.git', 'info'), { recursive: true });
+    gitT(['init', '-q', '-b', 'main'], dir);
     const excludePath = path.join(dir, '.git', 'info', 'exclude');
-    fs.writeFileSync(excludePath, '# git ls-files --others --exclude-from=.git/info/exclude\n');
 
     excludeAiderArtifacts(dir);
     excludeAiderArtifacts(dir); // second call must not duplicate
@@ -83,6 +92,33 @@ test('excludeAiderArtifacts adds .aider* to .git/info/exclude once, idempotently
     const body = fs.readFileSync(excludePath, 'utf8');
     const matches = body.split('\n').filter(l => l.trim() === '.aider*');
     expect(matches.length).toBe(1);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('excludeAiderArtifacts works in a WORKTREE (where .git is a file)', () => {
+  // 2026-06-10 regression: the hardcoded <cwd>/.git/info/exclude write failed
+  // silently in worktrees, so aider's own .aider* droppings counted as a dirty
+  // tree and a zero-edit run was reported 'completed'.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cpe-aider-wt-'));
+  try {
+    const repo = path.join(dir, 'repo');
+    fs.mkdirSync(repo);
+    gitT(['init', '-q', '-b', 'main'], repo);
+    gitT(['config', 'user.email', 't@t'], repo);
+    gitT(['config', 'user.name', 't'], repo);
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'x\n');
+    gitT(['add', '-A'], repo);
+    gitT(['commit', '-qm', 'base'], repo);
+    const wt = path.join(dir, 'wt');
+    gitT(['worktree', 'add', '-q', wt, '-b', 'feature/test', 'main'], repo);
+
+    excludeAiderArtifacts(wt);
+    fs.writeFileSync(path.join(wt, '.aider.chat.history.md'), 'log\n');
+    fs.mkdirSync(path.join(wt, '.aider.tags.cache.v4'), { recursive: true });
+
+    expect(statusNames(wt)).toEqual([]); // .aider* hidden -> honest no-op detection
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

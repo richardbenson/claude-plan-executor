@@ -155,15 +155,21 @@ function parseUsage(logPath: string): ReturnType<typeof parseAiderUsage> {
 
 /**
  * Keep aider's own dotfiles (`.aider*`) out of the captured diff WITHOUT a
- * committed `.gitignore` change: add a local-only pattern to the clone's
- * `.git/info/exclude` (never committed, honoured by `git add -A`). Paired with
- * `--no-gitignore` so aider doesn't modify the tracked `.gitignore`. Best-effort:
- * if the clone has no standard `.git/info` (e.g. a worktree), aider's files just
- * remain untracked and the existing capture handles them.
+ * committed `.gitignore` change: add a local-only pattern to the repo's
+ * `info/exclude` (never committed, honoured by `git add -A`). Paired with
+ * `--no-gitignore` so aider doesn't modify the tracked `.gitignore`. The path
+ * is resolved via `git rev-parse --git-path` because in a WORKTREE `.git` is a
+ * file — the old hardcoded `<cwd>/.git/info/exclude` silently failed there,
+ * leaving `.aider*` untracked and (observed 2026-06-10) flipping a zero-edit
+ * run to a false 'completed' via the dirty-tree check.
  */
 export function excludeAiderArtifacts(cwd: string): void {
   try {
-    const excludePath = path.join(cwd, '.git', 'info', 'exclude');
+    const proc = Bun.spawnSync(['git', 'rev-parse', '--git-path', 'info/exclude'], { cwd });
+    if (proc.exitCode !== 0) return;
+    const rel = proc.stdout.toString().trim();
+    if (!rel) return;
+    const excludePath = path.isAbsolute(rel) ? rel : path.join(cwd, rel);
     let body = '';
     try { body = fs.readFileSync(excludePath, 'utf8'); } catch { /* not created yet */ }
     if (body.split('\n').some(l => l.trim() === '.aider*')) return;
