@@ -177,9 +177,20 @@ export async function fetchSpendTotals(runKey: LitellmRunKey): Promise<SpendTota
   }
 }
 
+/** True when two spend snapshots carry the same rows (count + summed tokens). */
+function sameTotals(a: SpendTotals, b: SpendTotals): boolean {
+  return a.calls === b.calls
+    && a.tokens.input_tokens === b.tokens.input_tokens
+    && a.tokens.output_tokens === b.tokens.output_tokens;
+}
+
 /**
  * Poll /spend/logs until the run's rows have flushed (or the budget runs out).
- * The first attempt is immediate, so an already-flushed run returns fast.
+ * Rows flush in batches, so the first non-empty read can be PARTIAL — a short
+ * run's title-generation row landed a poll before its main agent rows, under-
+ * reporting 10.9k tokens as 375 (observed 2026-06-10, crush). A result is only
+ * trusted once two consecutive polls agree; on budget exhaustion the best
+ * snapshot seen is returned rather than nothing.
  */
 export async function collectSpendTotals(
   runKey: LitellmRunKey,
@@ -188,11 +199,13 @@ export async function collectSpendTotals(
   const budgetMs = opts?.budgetMs ?? DEFAULT_COLLECT_BUDGET_MS;
   const intervalMs = opts?.intervalMs ?? DEFAULT_COLLECT_INTERVAL_MS;
   const deadline = Date.now() + budgetMs;
+  let last: SpendTotals | null = null;
   for (;;) {
     const totals = await fetchSpendTotals(runKey);
-    if (totals) return totals;
+    if (totals && last && sameTotals(totals, last)) return totals;
+    if (totals) last = totals;
     const remaining = deadline - Date.now();
-    if (remaining <= 0) return null;
+    if (remaining <= 0) return last;
     await Bun.sleep(Math.min(intervalMs, remaining));
   }
 }

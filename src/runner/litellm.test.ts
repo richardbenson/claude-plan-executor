@@ -17,7 +17,7 @@ import type { ProviderEntry } from '../types/meta.js';
  * (2026-06-09): /key/generate -> {key}, /key/delete -> {deleted_keys},
  * /spend/logs -> bare array of rows with split prompt/completion tokens.
  */
-function fakeGateway(opts?: { spendEmptyPolls?: number; failKeyGen?: boolean }) {
+function fakeGateway(opts?: { spendEmptyPolls?: number; spendPartialPolls?: number; failKeyGen?: boolean }) {
   const state = {
     keyGenBodies: [] as Record<string, unknown>[],
     deletedKeys: [] as string[],
@@ -44,16 +44,22 @@ function fakeGateway(opts?: { spendEmptyPolls?: number; failKeyGen?: boolean }) 
       if (url.pathname === '/spend/logs') {
         state.spendCalls += 1;
         state.lastSpendApiKey = url.searchParams.get('api_key') ?? '';
-        if (state.spendCalls <= (opts?.spendEmptyPolls ?? 0)) return Response.json([]);
+        const empty = opts?.spendEmptyPolls ?? 0;
+        if (state.spendCalls <= empty) return Response.json([]);
         // 3-turn shape mirroring the real crush validation run (21312 in / 51 out).
-        return Response.json([
+        const rows = [
           { prompt_tokens: 10614, completion_tokens: 3 },
           { prompt_tokens: 157, completion_tokens: 8 },
           {
             prompt_tokens: 10541, completion_tokens: 40,
             metadata: { usage_object: { prompt_tokens_details: { cached_tokens: 25 } } },
           },
-        ]);
+        ];
+        // Partially-flushed batch: early polls only see the first (small) row.
+        if (state.spendCalls <= empty + (opts?.spendPartialPolls ?? 0)) {
+          return Response.json(rows.slice(1, 2));
+        }
+        return Response.json(rows);
       }
       return new Response('not found', { status: 404 });
     },
@@ -152,7 +158,7 @@ test('collectSpendTotals polls past the flush window and queries by the PLAINTEX
     expect(totals?.tokens.input_tokens).toBe(21312);
     expect(totals?.tokens.output_tokens).toBe(51);
     expect(totals?.calls).toBe(3);
-    expect(state.spendCalls).toBe(3); // two empty polls, then rows
+    expect(state.spendCalls).toBe(4); // two empty polls, then two agreeing reads
     expect(state.lastSpendApiKey).toBe('sk-run-ephemeral-1');
   } finally {
     server.stop(true);
@@ -167,6 +173,40 @@ test('collectSpendTotals gives up after the budget (tokens fall back to the adap
       { budgetMs: 30, intervalMs: 5 },
     );
     expect(totals).toBeNull();
+  } finally {
+    server.stop(true);
+  }
+});
+
+test('collectSpendTotals waits out a partial flush instead of trusting the first rows', async () => {
+  // The 2026-06-10 crush regression: the title-generation row flushed a poll
+  // before the agent rows, and the first non-empty read (375 tokens) was
+  // recorded as the run total (truth: 10.9k). Totals must be stable across
+  // two consecutive polls before they're trusted.
+  const { server, gateway } = fakeGateway({ spendPartialPolls: 1 });
+  try {
+    const totals = await collectSpendTotals(
+      { gateway, key: 'sk-run-ephemeral-1' },
+      { budgetMs: 2000, intervalMs: 5 },
+    );
+    expect(totals?.calls).toBe(3);
+    expect(totals?.tokens.input_tokens).toBe(21312);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test('collectSpendTotals returns the best snapshot when the budget ends mid-flush', async () => {
+  // Rows keep growing past the budget: better to report the last partial
+  // snapshot (with its calls count) than nothing at all.
+  const { server, gateway } = fakeGateway({ spendPartialPolls: 1000 });
+  try {
+    const totals = await collectSpendTotals(
+      { gateway, key: 'sk-run-ephemeral-1' },
+      { budgetMs: 30, intervalMs: 100 },
+    );
+    expect(totals?.calls).toBe(1);
+    expect(totals?.tokens.input_tokens).toBe(157);
   } finally {
     server.stop(true);
   }
@@ -188,7 +228,7 @@ test('settleLitellmRun collects then revokes; collect:false revokes only; no key
     );
     expect(skipped).toBeNull();
     expect(state.deletedKeys).toEqual(['sk-run-ephemeral-1', 'sk-run-ephemeral-2']);
-    expect(state.spendCalls).toBe(1); // collect:false made no spend query
+    expect(state.spendCalls).toBe(2); // two agreeing reads; collect:false made no spend query
   } finally {
     server.stop(true);
   }
