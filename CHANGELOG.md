@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+- **Pluggable harnesses** — every run carries a `{ provider, model, harness }` triple. Ten harness adapters (claude-code structured; opencode, aider, goose, openhands, plandex, pi, crush, codex, mini-swe-agent opaque) behind a single contract, with install detection (`cpe harness check` / `list`) and hard gating on uninstalled selections.
+- **Any harness runs the full job** — not just benchmarks: headless phases, single-prompt tasks, and the summarise→push→PR finalise all work on opaque harnesses via a hybrid result contract (agent self-report → model summarisation → git-derived), with claude-code's structured path preserved unchanged.
+- **`cpe bench`** — harness×model matrix runs of one prompt in throwaway clone isolation, with capture (`diff`/`transcript`/`meta.json`), `harnesstests/*` branch pushes, a bounded live TUI, and `cpe bench summary`.
+- **LiteLLM gateway integration** — a provider with `type: "litellm"` routes any harness through a self-hosted LiteLLM proxy and records **wire-accurate split input/output tokens** from the gateway's spend logs, attributed by an ephemeral per-run virtual key (minted at run start, revoked at settlement). Recorded totals carry a `token_source` of `litellm` or `adapter`.
+- **Provider management** — decoupled endpoint + model catalogue (`models[]`, `default_model`), `cpe provider refresh` to re-fetch catalogues, auto-detected health checks, and local-model wiring per harness (Anthropic-native Ollama for claude-code, OpenAI-compatible/Responses/LiteLLM paths for the rest).
+- **Activity guard for non-bench runs** — inactivity timeout + max-runtime cap + manual bail now also protect opaque worktree runs.
+
+### Fixed
+
+- **Opaque outcome mislabelling** — agents that committed their work left a clean tree and were reported as `no-op`; "changed" is now HEAD-moved-since-entry OR dirty tree, shared across all opaque adapters.
+- **crush token under-reporting** — crush.db only keeps the last turn's snapshot; usage is now summed from the `--debug` HTTP log across all turns.
+- **Spend-log collection race** — gateway spend rows flush in batches, so the first non-empty poll could record a fraction of a short run's tokens; totals now require two consecutive agreeing polls.
+- **codex helper binaries** — CODEX_HOME moved out of /tmp (codex refuses to install its bundled `rg` there, which broke its discovery searches).
+- **Autonomy preamble vs harness protocols** — the "do not stop partway" instruction no longer conflicts with harnesses whose own workflow names files before editing (aider's repo-map protocol).
+
 ## v0.4.0
 
 ### Features

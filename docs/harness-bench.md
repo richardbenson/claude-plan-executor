@@ -181,5 +181,9 @@ inter-turn stdout, so a slow run *looks* stuck but isn't. This completed adapter
 - **plandex is the architectural outlier** (server-is-the-engine, can't use cpe's provider
   abstraction). Its live validation is parked until a server is stood up; for cpe's eventual
   orchestrator, evolve cpe's own pipeline rather than adopting plandex's server.
-- **Still deferred / open:** plandex live validation; the full matrix run; making opaque harnesses work
-  in **normal (non-bench)** runs (the "circle back once all harnesses exist" item — now unblocked).
+- **Status update (2026-06-10):** the full matrix run happened — three of them, archived with
+  findings under `docs/logs/` (`2026-06-07-homelab-matrix`, `2026-06-10-litellm-synthetic`,
+  `2026-06-10-vague-prompt`). Opaque harnesses now work in **normal (non-bench)** runs via the
+  hybrid `PhaseReport` contract (`src/runner/report.ts`). Accurate per-run tokens come from the
+  LiteLLM gateway integration (`docs/litellm-integration-spec.md`). Still parked: plandex live
+  validation (needs a server).

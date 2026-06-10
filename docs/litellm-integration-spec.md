@@ -124,11 +124,15 @@ existing model wiring.
 A `TokenSource` abstraction with two backends:
 
 - **litellm** (when a `litellm` provider is active): after the run completes, poll
-  `GET /spend/logs?api_key=<run key>` — retry over the flush window (bounded at
-  **~3 min**) until rows appear; **sum** `prompt_tokens` / `completion_tokens` across
-  all rows. This **fully replaces** the per-adapter tokens (it's the more accurate
-  option). Only the summed in/out totals are stored — per-turn detail is left to
-  Langfuse (§4.5).
+  `GET /spend/logs?api_key=<run key>` over the flush window (bounded at **~3 min**)
+  and **sum** `prompt_tokens` / `completion_tokens` across all rows. Rows flush in
+  batches, so the first non-empty read can be **partial** (observed 2026-06-10: a
+  short crush run's title-generation row flushed a poll ahead of its agent rows,
+  recording 375 tokens instead of 10.9k) — totals are only trusted once **two
+  consecutive polls agree**; on budget exhaustion the best snapshot seen is used.
+  This **fully replaces** the per-adapter tokens (it's the more accurate option).
+  Only the summed in/out totals are stored — per-turn detail is left to Langfuse
+  (§4.5).
 - **per-adapter** (fallback only): today's `HarnessResult.tokens` (incl. the crush
   `--debug` fix). Used when no LiteLLM provider is configured, or when spend-logs
   stays empty past the ~3 min retry budget.
@@ -180,6 +184,26 @@ is simpler. (Tags remain useful for *cross-run* grouping, e.g. the existing `cpe
   token source accordingly (not a run failure).
 - **Key revoke fails** → log + ignore (auto-expires).
 - The admin key is never written to a tracked file and never logged.
+
+### 4.8 Gateway prerequisites (found the hard way, 2026-06-10)
+
+Two LiteLLM-side settings are required for the full harness set; both were
+discovered by running real matrices (see `docs/logs/2026-06-10-vague-prompt/`):
+
+1. **`litellm_settings: drop_params: true`** — codex sends `parallel_tool_calls`
+   and `web_search_options` on every request; `ollama_chat` rejects them with an
+   instant 400 (`UnsupportedParamsError`) unless the gateway drops unsupported
+   params.
+2. **Streaming `finish_reason` fix for `ollama_chat`** — Ollama sends tool_calls
+   and `done: true` in separate chunks, and LiteLLM (≤ 1.88.1, still open in
+   1.89.0-rc.1) reports the final streamed chunk as `finish_reason: "stop"` even
+   when tool calls were emitted. Strict OpenAI clients (crush) end the turn
+   without executing the tool — a silent no-op. Non-streaming is unaffected.
+   The deployed gateway carries a local patch of the open upstream fix
+   ([BerriAI/litellm#20585](https://github.com/BerriAI/litellm/pull/20585),
+   `litellm/llms/ollama/chat/transformation.py`); **drop the override once that
+   PR ships in a release** (re-verify on every LiteLLM upgrade with a streamed
+   tools call: the final chunk must say `finish_reason: "tool_calls"`).
 
 ## 5. Code changes (as built)
 

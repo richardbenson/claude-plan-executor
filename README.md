@@ -299,7 +299,7 @@ than silently falling back to another endpoint.
 A **harness** is the coding agent that actually edits code. **Any harness can run the full job** — interactive planning, headless phases, single-prompt tasks, benchmarking, and the summarise → push → PR finalise step — on whatever model you point it at, including local models at zero API cost. `cpe` ships an adapter per harness behind a small contract (headless invocation, model wiring, and a *completion mode*):
 
 - **structured** — the agent returns a parseable result envelope (outcome, tokens, cost). Only `claude-code` is structured.
-- **opaque** — the agent gives no machine-readable result. cpe gets a structured result anyway via a **hybrid**: the agent writes a `.cpe/result.json` self-report; if it doesn't, cpe asks the model to summarise the run from its git diff + transcript; failing that, it derives the outcome from the exit code + git diff. Commit/PR mechanics run through the harness itself. All the alternative harnesses are opaque.
+- **opaque** — the agent gives no machine-readable result. cpe gets a structured result anyway via a **hybrid**: the agent writes a `.cpe/result.json` self-report; if it doesn't, cpe asks the model to summarise the run from its git diff + transcript; failing that, it derives the outcome from the exit code + whether the run changed the repo (a commit since run entry **or** a dirty tree — agents that commit their work still count). Commit/PR mechanics run through the harness itself. All the alternative harnesses are opaque.
 
 Set the harness per run with `--harness`, or as a default with `harness_for_planning` / `harness_for_phases` in config.
 
@@ -311,12 +311,12 @@ Set the harness per run with `--harness`, or as a default with `harness_for_plan
 | opencode | `opencode` | opaque | OpenAI-compatible | [opencode.ai](https://opencode.ai) |
 | Aider | `aider` | opaque | LiteLLM / OpenAI-compatible | [aider.chat](https://aider.chat) |
 | goose | `goose` | opaque | Ollama provider | [block.github.io/goose](https://block.github.io/goose) |
-| OpenHands | `openhands` | opaque | LiteLLM (`ollama/…`) | [docs.all-hands.dev](https://docs.all-hands.dev) |
+| OpenHands | `openhands` | opaque | LiteLLM (`openai/…`) | [docs.all-hands.dev](https://docs.all-hands.dev) |
 | Plandex | `plandex` | opaque | server-side (needs a Plandex server) | [plandex.ai](https://plandex.ai) |
 | pi | `pi` | opaque | OpenAI-compatible | [pi.dev](https://pi.dev) |
 | Crush | `crush` | opaque | OpenAI-compatible | [github.com/charmbracelet/crush](https://github.com/charmbracelet/crush) |
 | Codex CLI | `codex` | opaque | OpenAI Responses API (Ollama serves it natively) | [github.com/openai/codex](https://github.com/openai/codex) |
-| mini-swe-agent | `mini-swe-agent` | opaque | LiteLLM (`ollama/…`) | [github.com/SWE-agent/mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent) |
+| mini-swe-agent | `mini-swe-agent` | opaque | LiteLLM (`openai/…`) | [github.com/SWE-agent/mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent) |
 
 Only `claude-code` is required. Each alternative harness is its own CLI you install separately — `cpe` does **not** bundle them.
 
