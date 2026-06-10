@@ -191,8 +191,14 @@ export const codexHarness: Harness = {
     const headBefore = headSha(ctx.cwd);
 
     // Per-run isolated CODEX_HOME so the user's real ~/.codex is never touched and
-    // no codex state (sessions/logs/auth) lands in the captured clone diff.
-    const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cpe-codex-'));
+    // no codex state (sessions/logs/auth) lands in the captured clone diff. NOT
+    // under os.tmpdir(): codex refuses to install its helper binaries (incl. its
+    // bundled rg) into a CODEX_HOME under /tmp, which left exec shells with a
+    // broken rg (observed 2026-06-10: `command not found: rg` while /usr/bin/rg
+    // existed, derailing the model's discovery).
+    const cacheBase = path.join(os.homedir(), '.cache');
+    fs.mkdirSync(cacheBase, { recursive: true });
+    const codexHome = fs.mkdtempSync(path.join(cacheBase, 'cpe-codex-'));
 
     const baseURL = codexBaseUrl(ctx.providerEnv);
     const token = ctx.providerEnv['ANTHROPIC_AUTH_TOKEN'] ?? ctx.providerEnv['ANTHROPIC_API_KEY'];
