@@ -42,7 +42,9 @@ export const AUTONOMY_PREAMBLE: string =
   'complete solution. You MUST implement the task by editing files in the repository ' +
   'right now — do NOT reply with a plan, checklist, to-do list, or a description of ' +
   'what you would do; actually create and edit the real files (scripts, configs, ' +
-  'docs). Text output alone counts as a failure. Keep working until the task is done.';
+  'docs). Text output alone counts as a failure. Following your tool\'s own workflow ' +
+  '(such as naming the files you need to edit before editing them) is fine and does ' +
+  'not count as stopping. Keep working until the task is done.';
 
 /** Prepend the autonomy preamble to a prompt (applied to all headless runs/harnesses). */
 export function withAutonomy(prompt: string): string {
