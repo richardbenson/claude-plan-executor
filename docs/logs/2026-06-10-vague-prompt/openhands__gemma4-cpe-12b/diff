@@ -1,0 +1,13 @@
+diff --git a/greet.py b/greet.py
+index b2dd4bb..179800c 100644
+--- a/greet.py
++++ b/greet.py
+@@ -1,6 +1,6 @@
+ def greet(name):
+-    # BUG: ignores the name argument
+-    return "Hello, !"
++    
++    return f"Hello, {name}!"
+ 
+ 
+ if __name__ == "__main__":

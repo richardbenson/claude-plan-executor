@@ -1,0 +1,23 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+new file mode 100644
+index 0000000..7e3d875
+--- /dev/null
++++ b/CHANGELOG.md
+@@ -0,0 +1,5 @@
++# Changelog
++
++## [Unreleased]
++### Fixed
++- Fixed bug in `greet.py` where the name argument was being ignored in the greeting string.
+diff --git a/greet.py b/greet.py
+index b2dd4bb..110c807 100644
+--- a/greet.py
++++ b/greet.py
+@@ -1,6 +1,5 @@
+ def greet(name):
+-    # BUG: ignores the name argument
+-    return "Hello, !"
++    return f"Hello, {name}!"
+ 
+ 
+ if __name__ == "__main__":

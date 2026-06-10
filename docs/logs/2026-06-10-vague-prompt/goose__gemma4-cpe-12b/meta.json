@@ -1,0 +1,25 @@
+{
+  "run_id": "01KTRZXP0R1QK2Y8NZ533ZQVW5",
+  "harness": "goose",
+  "model": "gemma4-cpe:12b",
+  "provider": "homelab-litellm",
+  "isolation": "clone",
+  "baseline": {
+    "repo": "/tmp/cpe-bench-baseline",
+    "branch": "main",
+    "base_ref": "836b6f8a8e64cb324ff381e87de907c0ea520aac"
+  },
+  "outcome": "completed",
+  "duration_ms": 48040,
+  "exit_code": 0,
+  "tokens": {
+    "input_tokens": 61112,
+    "output_tokens": 1519,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0
+  },
+  "token_source": "litellm",
+  "diffstat": "CHANGELOG.md | 5 +++++\n greet.py     | 6 +++---\n 2 files changed, 8 insertions(+), 3 deletions(-)",
+  "branch_pushed": null,
+  "captured_at": "2026-06-10T15:04:43.620Z"
+}
