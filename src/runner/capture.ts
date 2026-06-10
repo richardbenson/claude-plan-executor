@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import type { RunMeta } from '../types/meta.js';
+import type { RunMeta, TokenUsage, TokenSource } from '../types/meta.js';
 import type { HarnessResult } from '../harness/types.js';
 
 /** Base dir for captured bench results, alongside the worktree/clone convention. */
@@ -49,6 +49,10 @@ export interface CaptureInput {
   durationMs: number;
   /** Path to the run transcript/log to archive. */
   transcriptPath?: string;
+  /** Gateway-collected token totals; override the adapter's own (LiteLLM spend logs). */
+  tokens?: TokenUsage;
+  /** Where the recorded tokens came from (litellm vs adapter parsing). */
+  tokenSource?: TokenSource;
 }
 
 export interface CaptureResult {
@@ -110,7 +114,8 @@ export function captureRun(input: CaptureInput): CaptureResult {
     outcome_reason: input.outcomeReason,
     duration_ms: input.durationMs,
     exit_code: result.exitCode,
-    tokens: result.tokens,
+    tokens: input.tokens ?? result.tokens,
+    token_source: input.tokenSource ?? (input.tokens ? 'litellm' : result.tokens ? 'adapter' : undefined),
     cost_usd: result.costUsd,
     diffstat: stat.ok ? stat.stdout.trim() : null,
     branch_pushed: pushed ? branch : null,

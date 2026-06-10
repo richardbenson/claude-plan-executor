@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { readMeta, updateMeta, updatePhase, getLogsDir } from '../storage/meta.js';
 import { resolveProvider } from './provider.js';
+import { settleLitellmRun, runKeyDurationSeconds } from './litellm.js';
 import * as harnessRegistry from '../harness/registry.js';
 import { assertHarnessInstalled } from '../harness/detect.js';
 import { classifyEnvelope } from './envelope.js';
@@ -16,7 +17,7 @@ import { RunGuard, registerGuard, unregisterGuard, activitySignature } from './r
 import type { ResolvedProvider } from './provider.js';
 import type { Harness } from '../harness/types.js';
 import type { ActivityBus } from '../events/bus.js';
-import type { AppConfig, RunMeta } from '../types/meta.js';
+import type { AppConfig, RunMeta, TokenSource } from '../types/meta.js';
 
 export interface PhaseResult {
   completed: boolean;
@@ -135,6 +136,7 @@ export async function runPhase(
       'phase',
       meta.provider ?? appConfig.provider_for_phases,
       meta.model,
+      { litellmKeySeconds: runKeyDurationSeconds(appConfig.max_runtime_seconds), runId },
     );
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
@@ -266,7 +268,10 @@ export async function runPhase(
     commitSha = headAfter;
   }
 
-  // STEP 10 — mark complete
+  // STEP 10 — mark complete. Settle the gateway key first: spend-log totals
+  // (wire-accurate, all turns) replace the envelope's numbers when a LiteLLM
+  // run key was minted; failure paths above leave their key to auto-expire.
+  const ltTotals = await settleLitellmRun(provider?.litellm);
   await updatePhase(runId, phaseNumber, {
     status: 'complete',
     completed_at: new Date().toISOString(),
@@ -276,7 +281,8 @@ export async function runPhase(
     notes_for_next_phase: phaseResult.notes_for_next_phase ?? '',
     blockers: phaseResult.blockers ?? [],
     cost_usd: result.envelope.total_cost_usd,
-    tokens: result.envelope.usage,
+    tokens: ltTotals?.tokens ?? result.envelope.usage,
+    token_source: (ltTotals ? 'litellm' : 'adapter') as TokenSource,
   });
 
   const freshMeta = readMeta(runId);
@@ -407,6 +413,10 @@ async function runOpaquePhase(args: {
     text: `phase result via ${source}: ${report.summary}`,
   });
 
+  // Settle the gateway key: spend-log totals replace adapter-parsed tokens
+  // (opaque adapters often can't report usage at all); key revoked either way.
+  const ltTotals = await settleLitellmRun(provider?.litellm);
+  const tokens = ltTotals?.tokens ?? harnessResult.tokens;
   await updatePhase(runId, phaseNumber, {
     status: 'complete',
     completed_at: new Date().toISOString(),
@@ -416,7 +426,9 @@ async function runOpaquePhase(args: {
     notes_for_next_phase: report.notes_for_next_phase ?? '',
     blockers: report.blockers,
     ...(harnessResult.costUsd !== undefined ? { cost_usd: harnessResult.costUsd } : {}),
-    ...(harnessResult.tokens ? { tokens: harnessResult.tokens } : {}),
+    ...(tokens
+      ? { tokens, token_source: (ltTotals ? 'litellm' : 'adapter') as TokenSource }
+      : {}),
   });
 
   const freshMeta = readMeta(runId);

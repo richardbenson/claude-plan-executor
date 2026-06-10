@@ -81,3 +81,107 @@ test('healthCheckPath returns a base-relative path under the base url, else the 
   expect(healthCheckPath('', 'https://api.anthropic.com/v1/models')).toBe('https://api.anthropic.com/v1/models');
   expect(healthCheckPath('http://a', 'http://b/v1/models')).toBe('http://b/v1/models');
 });
+
+// --- LiteLLM gateway resolution -------------------------------------------
+
+/** Minimal fake gateway: readiness + key mint (see litellm.test.ts for the full client suite). */
+function fakeLitellmServer(opts?: { failKeyGen?: boolean; unhealthy?: boolean }) {
+  const state = { keyGenBodies: [] as Record<string, unknown>[] };
+  const server = Bun.serve({
+    port: 0,
+    async fetch(req) {
+      const url = new URL(req.url);
+      if (url.pathname === '/health/readiness') {
+        return opts?.unhealthy
+          ? new Response('down', { status: 503 })
+          : Response.json({ status: 'healthy' });
+      }
+      if (url.pathname === '/key/generate') {
+        state.keyGenBodies.push(await req.json() as Record<string, unknown>);
+        if (opts?.failKeyGen) return new Response('boom', { status: 500 });
+        return Response.json({ key: 'sk-run-from-provider' });
+      }
+      return new Response('not found', { status: 404 });
+    },
+  });
+  return { server, baseUrl: `http://localhost:${server.port}`, state };
+}
+
+test('resolveProvider mints a per-run key for a litellm provider and builds the gateway env', async () => {
+  const { server, baseUrl, state } = fakeLitellmServer();
+  try {
+    const providers: ProviderEntry[] = [
+      { name: 'gw', type: 'litellm', anthropic_base_url: baseUrl, admin_key: 'sk-admin' },
+    ];
+    const r = await resolveProvider(providers, 'phase', 'gw', 'gemma4-cpe:31b', {
+      litellmKeySeconds: 10800,
+      runId: '01RUN',
+    });
+    expect(r?.litellm?.key).toBe('sk-run-from-provider');
+    expect(r?.litellm?.gateway.baseUrl).toBe(baseUrl);
+    // Env: existing adapter shape (base + key in both ANTHROPIC vars) + the
+    // gateway hint that flips goose to its OpenAI-compatible provider.
+    expect(r?.env['ANTHROPIC_BASE_URL']).toBe(baseUrl);
+    expect(r?.env['ANTHROPIC_API_KEY']).toBe('sk-run-from-provider');
+    expect(r?.env['ANTHROPIC_AUTH_TOKEN']).toBe('sk-run-from-provider');
+    expect(r?.env['CPE_GATEWAY']).toBe('openai-compat');
+    expect(r?.modelArgs).toEqual(['--model', 'gemma4-cpe:31b']);
+    expect(state.keyGenBodies[0]?.['models']).toEqual(['gemma4-cpe:31b']);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test('resolveProvider degrades to admin-key routing when key minting fails (no litellm handle)', async () => {
+  const { server, baseUrl } = fakeLitellmServer({ failKeyGen: true });
+  try {
+    const providers: ProviderEntry[] = [
+      { name: 'gw', type: 'litellm', anthropic_base_url: baseUrl, admin_key: 'sk-admin' },
+    ];
+    const r = await resolveProvider(providers, 'phase', 'gw', 'm:1b', { litellmKeySeconds: 60 });
+    expect(r?.litellm).toBeUndefined();
+    expect(r?.env['ANTHROPIC_API_KEY']).toBe('sk-admin');
+  } finally {
+    server.stop(true);
+  }
+});
+
+test('resolveProvider routes auxiliary calls (no litellmKeySeconds) with the admin key, no mint', async () => {
+  const { server, baseUrl, state } = fakeLitellmServer();
+  try {
+    const providers: ProviderEntry[] = [
+      { name: 'gw', type: 'litellm', anthropic_base_url: baseUrl, admin_key: 'sk-admin' },
+    ];
+    const r = await resolveProvider(providers, 'phase', 'gw', 'm:1b');
+    expect(r?.litellm).toBeUndefined();
+    expect(r?.env['ANTHROPIC_API_KEY']).toBe('sk-admin');
+    expect(state.keyGenBodies.length).toBe(0);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test('an explicitly selected litellm gateway that is unreachable fails loudly (no silent fallthrough)', async () => {
+  const { server, baseUrl } = fakeLitellmServer({ unhealthy: true });
+  try {
+    const providers: ProviderEntry[] = [
+      { name: 'gw', type: 'litellm', anthropic_base_url: baseUrl, admin_key: 'sk-admin' },
+      { name: 'other', anthropic_base_url: 'http://host:11434', default_model: 'm:1b' },
+    ];
+    await expect(resolveProvider(providers, 'phase', 'gw', 'm:1b')).rejects.toThrow(/unreachable/);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test('a litellm provider with no model fails fast like any custom endpoint', async () => {
+  const { server, baseUrl } = fakeLitellmServer();
+  try {
+    const providers: ProviderEntry[] = [
+      { name: 'gw', type: 'litellm', anthropic_base_url: baseUrl, admin_key: 'sk-admin' },
+    ];
+    await expect(resolveProvider(providers, 'phase', 'gw')).rejects.toThrow(/no model is selected/);
+  } finally {
+    server.stop(true);
+  }
+});

@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import {
   ollamaHostFrom,
+  gooseProviderEnv,
   deriveGooseOutcome,
   gooseMaxTurns,
   parseGooseUsage,
@@ -22,6 +23,25 @@ test('ollamaHostFrom returns the base url (trailing slash trimmed), else null', 
   expect(ollamaHostFrom({ ANTHROPIC_BASE_URL: 'http://192.168.1.3:11434' })).toBe('http://192.168.1.3:11434');
   expect(ollamaHostFrom({ ANTHROPIC_BASE_URL: 'http://192.168.1.3:11434/' })).toBe('http://192.168.1.3:11434');
   expect(ollamaHostFrom({})).toBeNull();
+});
+
+test('gooseProviderEnv: Ollama-native by default, OpenAI provider behind a gateway', () => {
+  // Direct Ollama endpoint -> goose's native ollama provider.
+  expect(gooseProviderEnv({ ANTHROPIC_BASE_URL: 'http://192.168.1.3:11434' })).toEqual({
+    GOOSE_PROVIDER: 'ollama',
+    OLLAMA_HOST: 'http://192.168.1.3:11434',
+  });
+  // LiteLLM gateway (CPE_GATEWAY hint) serves OpenAI-compat /v1, not the
+  // Ollama-native /api/* — switch to goose's openai provider with the run key.
+  expect(gooseProviderEnv({
+    ANTHROPIC_BASE_URL: 'https://litellm.example',
+    ANTHROPIC_AUTH_TOKEN: 'sk-run-key',
+    CPE_GATEWAY: 'openai-compat',
+  })).toEqual({
+    GOOSE_PROVIDER: 'openai',
+    OPENAI_HOST: 'https://litellm.example',
+    OPENAI_API_KEY: 'sk-run-key',
+  });
 });
 
 test('deriveGooseOutcome maps exit code + diff to an outcome', () => {

@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { readMeta, updateMeta, getLogsDir } from '../storage/meta.js';
 import { resolveProvider } from './provider.js';
+import { settleLitellmRun, runKeyDurationSeconds } from './litellm.js';
 import * as harnessRegistry from '../harness/registry.js';
 import { assertHarnessInstalled } from '../harness/detect.js';
 import { classifyEnvelope } from './envelope.js';
@@ -16,7 +17,7 @@ import { createClone, removeClone } from '../git/clone.js';
 import { captureRun } from './capture.js';
 import { RunGuard, registerGuard, unregisterGuard, activitySignature } from './run-guard.js';
 import type { ActivityBus } from '../events/bus.js';
-import type { AppConfig, RunMeta } from '../types/meta.js';
+import type { AppConfig, RunMeta, TokenSource } from '../types/meta.js';
 import type { Harness } from '../harness/types.js';
 
 export interface SinglePromptResult {
@@ -144,6 +145,7 @@ export async function runSinglePrompt(
     'phase',
     meta.provider ?? appConfig.provider_for_phases,
     meta.model,
+    { litellmKeySeconds: runKeyDurationSeconds(appConfig.max_runtime_seconds), runId },
   );
   const sessionPromise = adapter.run({
     cwd: meta.worktree_path,
@@ -248,11 +250,19 @@ export async function runSinglePrompt(
     commitSha = headAfter;
   }
 
-  // STEP 14 — update metadata and emit result
+  // STEP 14 — update metadata and emit result. Settle the gateway key first:
+  // spend-log totals (wire-accurate, all turns) replace the envelope's numbers
+  // when a LiteLLM run key was minted; the key is revoked either way. Failure
+  // paths above skip this — their keys simply auto-expire.
+  const ltTotals = await settleLitellmRun(provider?.litellm);
+  const tokens = ltTotals?.tokens ?? result.envelope.usage;
   const status = promptResult.pr_created ? 'pr-created' : 'complete';
   updateMeta(runId, {
     status,
     total_cost_usd: result.envelope.total_cost_usd,
+    ...(tokens
+      ? { tokens, token_source: (ltTotals ? 'litellm' : 'adapter') as TokenSource }
+      : {}),
     ...(promptResult.pr_url ? { pr_url: promptResult.pr_url } : {}),
   });
 
@@ -312,6 +322,7 @@ async function runOpaqueSinglePrompt(
     'phase',
     meta.provider ?? appConfig.provider_for_phases,
     meta.model,
+    { litellmKeySeconds: runKeyDurationSeconds(appConfig.max_runtime_seconds), runId },
   );
 
   // Activity-based timeout + manual bail (off unless inactivity/max-runtime are
@@ -379,10 +390,17 @@ async function runOpaqueSinglePrompt(
   const headAfter = getHead(meta.worktree_path);
   const committed = headAfter !== headBefore;
 
+  // Settle the gateway key: spend-log totals replace adapter-parsed tokens
+  // (opaque adapters often can't report usage at all); key revoked either way.
+  const ltTotals = await settleLitellmRun(provider?.litellm);
+  const tokens = ltTotals?.tokens ?? harnessResult.tokens;
   const status = report.pr_created ? 'pr-created' : 'complete';
   updateMeta(runId, {
     status,
     ...(harnessResult.costUsd !== undefined ? { total_cost_usd: harnessResult.costUsd } : {}),
+    ...(tokens
+      ? { tokens, token_source: (ltTotals ? 'litellm' : 'adapter') as TokenSource }
+      : {}),
     ...(report.pr_url ? { pr_url: report.pr_url } : {}),
   });
 
@@ -475,6 +493,7 @@ async function runBenchSinglePrompt(
     'phase',
     meta.provider ?? appConfig.provider_for_phases,
     meta.model,
+    { litellmKeySeconds: runKeyDurationSeconds(appConfig.max_runtime_seconds), runId },
   );
   const modelArgs = provider?.modelArgs ?? (meta.model ? ['--model', meta.model] : []);
 
@@ -552,6 +571,11 @@ async function runBenchSinglePrompt(
     : guard.reason === 'bailed' ? 'manually bailed'
     : undefined;
 
+  // Gateway settlement on ANY outcome — a timed-out/errored run still consumed
+  // real tokens, and the matrix wants them. Collects spend-log totals (poll for
+  // the flush) then revokes the per-run key.
+  const ltTotals = await settleLitellmRun(provider?.litellm);
+
   // 5 — capture (diff/transcript/meta + optional harnesstests push) on any outcome.
   const cap = captureRun({
     runId,
@@ -563,6 +587,7 @@ async function runBenchSinglePrompt(
     outcomeReason,
     durationMs,
     transcriptPath: logPath,
+    ...(ltTotals ? { tokens: ltTotals.tokens, tokenSource: 'litellm' as TokenSource } : {}),
   });
 
   // A 'no-op' (the harness ran cleanly to exit 0 but produced no git diff) is a

@@ -1,4 +1,5 @@
 import type { ProviderEntry } from '../types/meta.js';
+import { litellmGateway, generateRunKey, type LitellmRunKey } from './litellm.js';
 
 export interface ResolvedProvider {
   name: string;
@@ -7,6 +8,23 @@ export interface ResolvedProvider {
   model?: string;
   /** CLI args selecting the model (`['--model', <id>]`), or [] when none is resolved. */
   modelArgs: string[];
+  /**
+   * Present when resolved through a LiteLLM gateway with a per-run virtual key.
+   * The dispatch settles it after the run (collect spend-log tokens + revoke);
+   * absent on degraded routing (key mint failed → admin key, adapter tokens).
+   */
+  litellm?: LitellmRunKey;
+}
+
+export interface ResolveProviderOptions {
+  /**
+   * Mint a per-run LiteLLM virtual key with this lifetime. Omit on auxiliary
+   * model calls (summarise/finalise) — those route with the admin key and
+   * collect nothing. Ignored for non-litellm providers.
+   */
+  litellmKeySeconds?: number;
+  /** Run id stamped into the minted key's metadata (Langfuse/debug convenience). */
+  runId?: string;
 }
 
 /**
@@ -35,14 +53,18 @@ function authHeaders(opts?: { apiKey?: string; authToken?: string }): Record<str
 }
 
 export async function checkProvider(provider: ProviderEntry): Promise<boolean> {
-  if (!provider.health_check_url) return true;
+  // LiteLLM gateways expose an unauthenticated readiness probe; default to it
+  // so a litellm entry is health-gated even without an explicit health URL.
+  const healthPath = provider.health_check_url
+    ?? (provider.type === 'litellm' ? '/health/readiness' : undefined);
+  if (!healthPath) return true;
 
   let url: string;
-  if (provider.health_check_url.startsWith('http://') || provider.health_check_url.startsWith('https://')) {
-    url = provider.health_check_url;
+  if (healthPath.startsWith('http://') || healthPath.startsWith('https://')) {
+    url = healthPath;
   } else {
     if (!provider.anthropic_base_url) return false;
-    url = provider.anthropic_base_url.replace(/\/$/, '') + provider.health_check_url;
+    url = provider.anthropic_base_url.replace(/\/$/, '') + healthPath;
   }
 
   try {
@@ -149,11 +171,29 @@ export function buildProviderArgs(provider: ProviderEntry, requestedModel?: stri
   return model ? ['--model', model] : [];
 }
 
+/**
+ * Provider env for a LiteLLM gateway run. Every adapter already derives its
+ * endpoint from ANTHROPIC_BASE_URL (appending /v1 itself for OpenAI-compat) and
+ * its key from ANTHROPIC_AUTH_TOKEN/ANTHROPIC_API_KEY, so the gateway slots
+ * into the existing shape. CPE_GATEWAY signals adapters whose default protocol
+ * is Ollama-native (goose) to switch to their OpenAI-compatible mode — LiteLLM
+ * serves /v1/* + /v1/messages, not the Ollama-native /api/* API.
+ */
+export function buildLitellmEnv(baseUrl: string, key: string): Record<string, string> {
+  return {
+    ANTHROPIC_BASE_URL: baseUrl,
+    ANTHROPIC_API_KEY: key,
+    ANTHROPIC_AUTH_TOKEN: key,
+    CPE_GATEWAY: 'openai-compat',
+  };
+}
+
 export async function resolveProvider(
   providers: ProviderEntry[],
   role: 'planning' | 'phase',
   nameOverride?: string,
   requestedModel?: string,
+  opts?: ResolveProviderOptions,
 ): Promise<ResolvedProvider | null> {
   void role;
 
@@ -174,12 +214,15 @@ export async function resolveProvider(
       // Fail fast: a healthy custom endpoint with no resolvable model would
       // otherwise let the harness fall back to its built-in default model
       // (e.g. claude-opus-4-8), which a local/OpenAI-compatible backend 404s.
-      if (isCustomEndpoint(candidate) && !model) {
+      if ((isCustomEndpoint(candidate) || candidate.type === 'litellm') && !model) {
         throw new Error(
           `Provider '${candidate.name}' points at a custom endpoint ` +
           `(${candidate.anthropic_base_url}) but no model is selected. Pass ` +
           `--model <id>, or set "default_model" (or "models") on the provider.`,
         );
+      }
+      if (candidate.type === 'litellm') {
+        return resolveLitellm(candidate, model, opts);
       }
       return {
         name: candidate.name,
@@ -187,8 +230,45 @@ export async function resolveProvider(
         ...(model ? { model } : {}),
         modelArgs: model ? ['--model', model] : [],
       };
+    } else if (candidate.type === 'litellm' && candidate.name === nameOverride) {
+      // An explicitly selected gateway that's down must fail the run loudly,
+      // not silently fall through to another provider / the real Anthropic API.
+      throw new Error(
+        `LiteLLM gateway '${candidate.name}' is unreachable ` +
+        `(${candidate.anthropic_base_url ?? 'no base URL'})`,
+      );
     }
   }
 
   return null;
+}
+
+/**
+ * Resolve a healthy litellm entry: mint the per-run virtual key when the caller
+ * asked for one (litellmKeySeconds), otherwise — or when minting fails — route
+ * with the admin key (degraded: requests still flow, tokens fall back to the
+ * adapter's own numbers since admin-key spend logs include unrelated traffic).
+ */
+async function resolveLitellm(
+  candidate: ProviderEntry,
+  model: string | undefined,
+  opts?: ResolveProviderOptions,
+): Promise<ResolvedProvider> {
+  const gateway = litellmGateway(candidate); // throws a descriptive config error
+  let litellm: LitellmRunKey | undefined;
+  if (opts?.litellmKeySeconds) {
+    const key = await generateRunKey(gateway, {
+      durationSeconds: opts.litellmKeySeconds,
+      ...(model ? { model } : {}),
+      ...(opts.runId ? { runId: opts.runId } : {}),
+    });
+    if (key) litellm = { gateway, key };
+  }
+  return {
+    name: candidate.name,
+    env: buildLitellmEnv(gateway.baseUrl, litellm?.key ?? gateway.adminKey),
+    ...(model ? { model } : {}),
+    modelArgs: model ? ['--model', model] : [],
+    ...(litellm ? { litellm } : {}),
+  };
 }

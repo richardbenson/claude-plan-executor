@@ -13,6 +13,13 @@ export interface TokenUsage {
   cache_creation_input_tokens: number;
 }
 
+/**
+ * Where a run's token counts came from. 'litellm' = summed from the gateway's
+ * spend logs (authoritative, wire-accurate); 'adapter' = the harness adapter's
+ * own parsing (envelope / CLI log scraping — fallback).
+ */
+export type TokenSource = 'litellm' | 'adapter';
+
 export interface PhaseEntry {
   number: number;
   prompt_file: string;
@@ -26,6 +33,7 @@ export interface PhaseEntry {
   session_id?: string;
   cost_usd?: number;
   tokens?: TokenUsage;
+  token_source?: TokenSource;
   summary?: string;
   commit_message?: string;
   notes_for_next_phase?: string;
@@ -62,6 +70,9 @@ export interface RunMeta {
   harness?: string;
   model?: string;
   provider?: string;
+  /** Whole-run token totals (single-prompt runs; phases carry theirs per-entry). */
+  tokens?: TokenUsage;
+  token_source?: TokenSource;
   // --- bench / clone-isolation fields (Phase 04) ---
   /** Isolation mode for this run. Defaults to 'worktree' (existing behaviour). */
   isolation?: 'worktree' | 'clone';
@@ -110,6 +121,20 @@ export interface ProviderEntry {
   default_model?: string;
   /** @deprecated Legacy single-model field; still read as the default. Use default_model/models. */
   model?: string;
+  /**
+   * Provider kind. 'litellm' marks a LiteLLM gateway: runs get an ephemeral
+   * virtual key (minted via /key/generate) and token totals are summed from the
+   * gateway's /spend/logs (see src/runner/litellm.ts and
+   * docs/litellm-integration-spec.md). `anthropic_base_url` is the gateway root.
+   */
+  type?: 'litellm';
+  /**
+   * Env var holding the gateway admin key (default CPE_LITELLM_KEY). The key
+   * needs /key/generate, /key/delete and /spend/logs access.
+   */
+  admin_key_env?: string;
+  /** Inline admin key. Discouraged — prefer admin_key_env. */
+  admin_key?: string;
 }
 
 /** Cached result of probing whether a harness's binary is installed on the host. */

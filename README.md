@@ -184,6 +184,9 @@ Providers let you route `cpe` sessions through alternative Claude endpoints or m
 | `anthropic_api_key` | no | Sets `ANTHROPIC_API_KEY` in the session environment |
 | `anthropic_auth_token` | no | Sets `ANTHROPIC_AUTH_TOKEN` in the session environment |
 | `health_check_url` | no | A full URL or a path relative to `anthropic_base_url`. `cpe` GETs this before each run (5 s timeout, must return 2xx). Providers without a health check are assumed always available. |
+| `type` | no | `"litellm"` marks the provider as a [LiteLLM gateway](#litellm-gateway-accurate-token-tracking) (per-run keys + spend-log token tracking). |
+| `admin_key_env` | no | (litellm) Env var holding the gateway admin key. Default `CPE_LITELLM_KEY`. |
+| `admin_key` | no | (litellm) Inline admin key — discouraged, prefer `admin_key_env`. |
 
 ### Resolution behaviour
 
@@ -243,6 +246,53 @@ cpe provider add
 ```
 
 The opaque harnesses reach local models through their own native/OpenAI-compatible/LiteLLM paths (see the [Supported harnesses](#supported-harnesses) table); `cpe` translates the provider's base URL into whatever each harness expects. A LiteLLM proxy is only needed for backends that don't speak the Anthropic API natively.
+
+### LiteLLM gateway (accurate token tracking)
+
+A provider with `type: "litellm"` routes runs through a self-hosted
+[LiteLLM proxy](https://docs.litellm.ai/docs/simple_proxy) and turns on
+wire-accurate token accounting (see `docs/litellm-integration-spec.md`):
+
+```json
+{
+  "providers": [
+    {
+      "name": "homelab-litellm",
+      "type": "litellm",
+      "anthropic_base_url": "https://litellm.example.com",
+      "models": ["gemma4-cpe:31b", "qwen3-coder-cpe:30b"],
+      "default_model": "gemma4-cpe:31b"
+    }
+  ]
+}
+```
+
+The admin key is read from `$CPE_LITELLM_KEY` (override the var name with
+`admin_key_env`); it needs `/key/generate`, `/key/delete` and `/spend/logs`
+access and is never written to any file.
+
+Per run, `cpe`:
+
+1. **mints an ephemeral virtual key** (lifetime 2× `max_runtime_seconds`) and
+   injects it as the harness's API key — all harnesses work through the one
+   gateway (OpenAI-compatible `/v1` for most, Anthropic `/v1/messages` for
+   claude-code; goose is switched to its OpenAI provider automatically);
+2. runs the harness unchanged;
+3. **sums split input/output tokens from `/spend/logs`** filtered by that key —
+   covering every request across every turn, regardless of how (or whether) the
+   harness reports usage itself — polling up to ~3 min for the gateway's log
+   flush, then revokes the key (it also auto-expires).
+
+Recorded token totals carry a `token_source` of `litellm` (spend logs) or
+`adapter` (the harness's own numbers — the fallback when no gateway is
+configured or the spend logs don't materialise). Token collection failures are
+never run failures. If the gateway also forwards traces to
+[Langfuse](https://langfuse.com), every run's full per-turn history (prompts,
+tool calls, latencies) is available there for diagnosis.
+
+Health-gating defaults to the gateway's unauthenticated `/health/readiness`;
+an explicitly selected gateway that is down **fails the run loudly** rather
+than silently falling back to another endpoint.
 
 ## Harnesses
 

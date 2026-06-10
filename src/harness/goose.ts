@@ -24,7 +24,13 @@ import type { Harness, HarnessContext, HarnessResult, HarnessOutcome } from './t
  *   GOOSE_MODEL=<ctx.model>
  *   OLLAMA_HOST=<provider base url>   (full URL; goose prepends http:// if absent)
  * cpe's ANTHROPIC_BASE_URL maps directly to OLLAMA_HOST. We strip ANTHROPIC_*
- * from the spawn env so goose can't inherit cpe's own credentials. (Verified:
+ * from the spawn env so goose can't inherit cpe's own credentials.
+ *
+ * GATEWAY MODE: when the provider env carries CPE_GATEWAY=openai-compat (a
+ * LiteLLM gateway — see src/runner/provider.ts buildLitellmEnv), the endpoint
+ * speaks OpenAI-compatible /v1, NOT the Ollama-native /api/* that goose's
+ * `ollama` provider uses. We switch to goose's `openai` provider instead:
+ *   GOOSE_PROVIDER=openai, OPENAI_HOST=<gateway root>, OPENAI_API_KEY=<run key>. (Verified:
  * `goose info` honours XDG_CONFIG_HOME; a run with the override wrote only to the
  * temp dirs and left the real ~/.config/goose untouched.) The temp dir is removed
  * after the run, so none of goose's state lands in the captured clone diff.
@@ -55,6 +61,27 @@ export function ollamaHostFrom(providerEnv: Record<string, string>): string | nu
   const base = providerEnv['ANTHROPIC_BASE_URL'];
   if (!base) return null;
   return base.replace(/\/+$/, '');
+}
+
+/**
+ * Provider env vars for the spawned goose process. Ollama-native by default;
+ * OpenAI-compatible when the provider env signals a gateway (CPE_GATEWAY).
+ * Exported for unit testing.
+ */
+export function gooseProviderEnv(providerEnv: Record<string, string>): Record<string, string> {
+  const host = ollamaHostFrom(providerEnv);
+  if (providerEnv['CPE_GATEWAY'] === 'openai-compat') {
+    const out: Record<string, string> = {
+      GOOSE_PROVIDER: 'openai',
+      OPENAI_API_KEY:
+        providerEnv['ANTHROPIC_AUTH_TOKEN'] ?? providerEnv['ANTHROPIC_API_KEY'] ?? 'cpe',
+    };
+    if (host) out['OPENAI_HOST'] = host;
+    return out;
+  }
+  const out: Record<string, string> = { GOOSE_PROVIDER: 'ollama' };
+  if (host) out['OLLAMA_HOST'] = host;
+  return out;
 }
 
 /** Strip cpe's ANTHROPIC_* keys so goose never inherits them (it uses GOOSE_ / OLLAMA_ vars). */
@@ -157,10 +184,8 @@ export const gooseHarness: Harness = {
     env['XDG_DATA_HOME'] = path.join(xdgRoot, 'data');
     env['XDG_STATE_HOME'] = stateDir;
     env['XDG_CACHE_HOME'] = path.join(xdgRoot, 'cache');
-    env['GOOSE_PROVIDER'] = 'ollama';
     env['GOOSE_MODEL'] = ctx.model;
-    const host = ollamaHostFrom(ctx.providerEnv);
-    if (host) env['OLLAMA_HOST'] = host;
+    Object.assign(env, gooseProviderEnv(ctx.providerEnv));
 
     const args = [
       'goose', 'run',
