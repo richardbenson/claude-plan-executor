@@ -196,6 +196,10 @@ export const aiderHarness: Harness = {
 
     // Translate cpe provider env → OpenAI-compatible vars (kept off ANTHROPIC_*).
     const env = cleanEnv();
+    // aider's stdout is a pipe here, so python block-buffers it — output then
+    // arrives in multi-minute bursts and the live tail looks dead while the
+    // agent works (observed on a 31b run). Force line-buffered output.
+    env['PYTHONUNBUFFERED'] = '1';
     const baseURL = openAiBaseFrom(ctx.providerEnv);
     let modelArg: string;
     if (baseURL) {

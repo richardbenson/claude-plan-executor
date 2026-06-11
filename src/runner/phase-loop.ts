@@ -12,7 +12,8 @@ import { startJsonlTail } from './jsonl-tail.js';
 import { startOutputTail } from './output-tail.js';
 import { getHead } from '../git/repo.js';
 import { PHASE_RESULT_SCHEMA, buildOpaquePrompt, withAutonomy } from '../prompts/index.js';
-import { acquireReport, excludeCpeArtifacts, summarizeReport } from './report.js';
+import { acquireReport, excludeCpeArtifacts, readSelfReport, summarizeReport } from './report.js';
+import type { PhaseReport, ReportSource } from './report.js';
 import { RunGuard, registerGuard, unregisterGuard, activitySignature } from './run-guard.js';
 import type { ResolvedProvider } from './provider.js';
 import type { Harness } from '../harness/types.js';
@@ -47,7 +48,7 @@ async function markPhaseFailed(
   reason: string,
   bus: ActivityBus,
 ): Promise<void> {
-  updatePhase(runId, phaseNumber, { status: 'failed' });
+  updatePhase(runId, phaseNumber, { status: 'failed', failure_reason: reason });
   updateMeta(runId, { status: 'failed' });
   bus.emit({
     kind: 'error',
@@ -365,17 +366,34 @@ async function runOpaquePhase(args: {
     try { fs.unlinkSync(basePromptFile); } catch { /* ignore */ }
   }
 
-  // Guard fired (timeout/bail) → terminal; killing-and-retrying would just hang again.
+  let report: PhaseReport;
+  let source: ReportSource;
   if (guard.outcome) {
-    const reason = guard.reason === 'bailed' ? 'manually bailed'
-      : guard.reason === 'timeout-maxruntime' ? 'exceeded max runtime'
-      : 'no new output within inactivity window';
-    await markPhaseFailed(runId, phaseNumber, `${adapter.name}: ${reason}`, bus);
-    return { outcome: 'failed', reason };
-  }
-
-  // The only other hard failure for an opaque harness is a non-zero exit; retry it.
-  if (harnessResult.exitCode !== 0) {
+    // Guard fired (timeout/bail) → normally terminal; killing-and-retrying would
+    // just hang again. But the kill can RACE a finished phase (observed twice on
+    // slow local models: the agent committed and wrote its self-report seconds
+    // before the cap). If there is a completed self-report AND a commit since
+    // phase entry, the work is done — record it instead of discarding it.
+    const salvaged = readSelfReport(meta.worktree_path);
+    if (salvaged?.completed && getHead(meta.worktree_path) !== headBefore) {
+      report = salvaged;
+      source = 'self-report';
+      bus.emit({
+        kind: 'text',
+        timestamp: new Date(),
+        runId,
+        phaseNumber,
+        text: `guard fired (${guard.reason}) after the phase had finished — salvaged self-report + commit`,
+      });
+    } else {
+      const reason = guard.reason === 'bailed' ? 'manually bailed'
+        : guard.reason === 'timeout-maxruntime' ? 'exceeded max runtime'
+        : 'no new output within inactivity window';
+      await markPhaseFailed(runId, phaseNumber, `${adapter.name}: ${reason}`, bus);
+      return { outcome: 'failed', reason };
+    }
+  } else if (harnessResult.exitCode !== 0) {
+    // The only other hard failure for an opaque harness is a non-zero exit; retry it.
     const fresh = readMeta(runId);
     const entry = (fresh.phases ?? []).find(p => p.number === phaseNumber)!;
     const retryCount = entry.retry_count + 1;
@@ -385,20 +403,20 @@ async function runOpaquePhase(args: {
     }
     await updatePhase(runId, phaseNumber, { status: 'retrying', retry_count: retryCount });
     return runPhase(runId, phaseNumber, appConfig, bus);
-  }
-
-  const { report, source } = await acquireReport({
-    worktree: meta.worktree_path,
-    headBefore,
-    exitCode: harnessResult.exitCode,
-    summarize: () => summarizeReport({
+  } else {
+    ({ report, source } = await acquireReport({
       worktree: meta.worktree_path,
       headBefore,
-      transcriptPath: logPath,
-      providerEnv: provider?.env ?? {},
-      model: provider?.model ?? meta.model,
-    }),
-  });
+      exitCode: harnessResult.exitCode,
+      summarize: () => summarizeReport({
+        worktree: meta.worktree_path,
+        headBefore,
+        transcriptPath: logPath,
+        providerEnv: provider?.env ?? {},
+        model: provider?.model ?? meta.model,
+      }),
+    }));
+  }
 
   // Commit truth from git, not the self-report.
   const headAfter = getHead(meta.worktree_path);

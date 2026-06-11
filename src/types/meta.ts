@@ -38,6 +38,7 @@ export interface PhaseEntry {
   commit_message?: string;
   notes_for_next_phase?: string;
   blockers?: string[];
+  failure_reason?: string;
 }
 
 export interface RunRemote {
