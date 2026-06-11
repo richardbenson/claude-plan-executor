@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { readMeta, updateMeta, getLogsDir } from '../storage/meta.js';
 import { SUMMARISE_PROMPT } from '../prompts/index.js';
+import { startOutputTail } from './output-tail.js';
 import { resolveProvider } from './provider.js';
 import { excludeCpeArtifacts } from './report.js';
 import * as harnessRegistry from '../harness/registry.js';
@@ -72,19 +73,27 @@ export async function finaliseRun(runId: string, bus: ActivityBus, appConfig?: A
     try { fs.closeSync(logFd); } catch { /* ignore */ }
     try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
   } else {
-    // Route the summarise step through the opaque harness.
+    // Route the summarise step through the opaque harness. Tail the log into
+    // the activity bus like phases do — without this the TUI goes silent for
+    // the whole finalise even though the harness is working (observed on a pi
+    // 31b run, 2026-06-11).
     excludeCpeArtifacts(worktreePath);
-    const result = await adapter.run({
-      cwd: worktreePath,
-      prompt,
-      sessionId: crypto.randomUUID(),
-      logPath,
-      dangerouslySkipPermissions: appConfig?.dangerously_skip_permissions,
-      providerEnv: provider?.env ?? {},
-      model: provider?.model ?? meta.model,
-      modelArgs: provider?.modelArgs ?? [],
-    });
-    exitCode = result.exitCode;
+    const stopTail = startOutputTail(logPath, runId, -1, bus);
+    try {
+      const result = await adapter.run({
+        cwd: worktreePath,
+        prompt,
+        sessionId: crypto.randomUUID(),
+        logPath,
+        dangerouslySkipPermissions: appConfig?.dangerously_skip_permissions,
+        providerEnv: provider?.env ?? {},
+        model: provider?.model ?? meta.model,
+        modelArgs: provider?.modelArgs ?? [],
+      });
+      exitCode = result.exitCode;
+    } finally {
+      stopTail();
+    }
   }
 
   if (exitCode !== 0) {
