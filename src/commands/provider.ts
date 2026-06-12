@@ -2,6 +2,23 @@ import * as fs from 'fs';
 import type { ProviderEntry } from '../types/meta.js';
 import { readConfig, writeConfig } from '../storage/config.js';
 import { checkProvider, fetchProviderModels, healthCheckPath } from '../runner/provider.js';
+import { litellmGateway } from '../runner/litellm.js';
+
+/**
+ * Credentials for querying a provider's model endpoint. LiteLLM gateways
+ * require auth on /v1/models and keep their admin key in an env var
+ * (admin_key_env), not in the inline anthropic_* fields.
+ */
+function modelFetchAuth(p: ProviderEntry): { apiKey?: string; authToken?: string } {
+  if (p.type === 'litellm') {
+    try {
+      return { authToken: litellmGateway(p).adminKey };
+    } catch {
+      // unresolvable admin key — fall through to the inline fields
+    }
+  }
+  return { apiKey: p.anthropic_api_key, authToken: p.anthropic_auth_token };
+}
 
 function readLine(): string {
   const buf = Buffer.alloc(4096);
@@ -213,10 +230,7 @@ export async function providerRefreshCommand(options?: { provider?: string }): P
       process.stdout.write(`  ${p.name}: skipped (no endpoint or key to query)\n`);
       continue;
     }
-    const result = await fetchProviderModels(p.anthropic_base_url, {
-      apiKey: p.anthropic_api_key,
-      authToken: p.anthropic_auth_token,
-    });
+    const result = await fetchProviderModels(p.anthropic_base_url, modelFetchAuth(p));
     if (!result || result.models.length === 0) {
       process.stdout.write(`  ${p.name}: ✗ could not fetch models\n`);
       continue;
