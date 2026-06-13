@@ -1,0 +1,38 @@
+{
+  "run_id": "01KV0HBNP1YDZ54ZH5F0XYYZKG",
+  "harness": "claude-code",
+  "model": "ls/granite4.1:8b",
+  "provider": "homelab-litellm",
+  "isolation": "clone",
+  "baseline": {
+    "repo": "/tmp/cpe-bench-baseline",
+    "branch": "main",
+    "base_ref": "836b6f8a8e64cb324ff381e87de907c0ea520aac"
+  },
+  "outcome": "completed",
+  "duration_ms": 248609,
+  "exit_code": 0,
+  "tokens": {
+    "input_tokens": 149998,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 439,
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "",
+    "iterations": [],
+    "speed": "standard"
+  },
+  "token_source": "adapter",
+  "cost_usd": 0.766135,
+  "diffstat": "DONE.md  | 1 +\n greet.py | 2 +-\n 2 files changed, 2 insertions(+), 1 deletion(-)",
+  "branch_pushed": null,
+  "captured_at": "2026-06-13T13:31:27.431Z"
+}
