@@ -1,0 +1,2 @@
+3fa3721 feat: phase 02 — self-update core: version check, verified install, state management
+16f61dc feat: implement updater core for version checking and binary installation

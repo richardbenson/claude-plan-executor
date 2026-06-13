@@ -1,0 +1,109 @@
+{
+  "id": "01KTVQ00WGFCHD94SCPCGT7494",
+  "primary_repo_path": "/home/ubuntu/Code/cpe-exp/armB-opencode",
+  "worktree_path": "/home/ubuntu/.local/state/cpe/worktrees/01KTVQ00WGFCHD94SCPCGT7494",
+  "plan_folder": "self-update",
+  "feature_branch": "feature/self-update",
+  "target_branch": "main",
+  "status": "complete",
+  "total_cost_usd": 0,
+  "bootstrapped": true,
+  "sandboxed": true,
+  "skip_permissions": true,
+  "phases": [
+    {
+      "number": 1,
+      "prompt_file": "PHASE_01.prompt.md",
+      "title": "Release checksums (SHA256SUMS)",
+      "status": "complete",
+      "retry_count": 0,
+      "started_at": "2026-06-12T23:16:12.195Z",
+      "head_before": "f7b99ee26f214fed29f061eda8a541696986ae73",
+      "session_id": "82ee1c62-9ddd-427d-8963-c590553e0eee",
+      "completed_at": "2026-06-12T23:45:58.322Z",
+      "commit_sha": "fcc6ceefceefa4e3e8461d5ad7a254b516419403",
+      "summary": "Added SHA256 checksum generation to the release workflow and integrated verification into the remote installation script.",
+      "commit_message": "feat: phase 01 — publish SHA256SUMS with releases and verify in install.sh",
+      "notes_for_next_phase": "",
+      "blockers": [],
+      "cost_usd": 0,
+      "tokens": {
+        "input_tokens": 284048,
+        "output_tokens": 4032,
+        "cache_read_input_tokens": 260712,
+        "cache_creation_input_tokens": 0
+      },
+      "token_source": "litellm"
+    },
+    {
+      "number": 2,
+      "prompt_file": "PHASE_02.prompt.md",
+      "title": "Updater core module (src/update/)",
+      "status": "complete",
+      "retry_count": 0,
+      "started_at": "2026-06-12T23:45:58.323Z",
+      "head_before": "fcc6ceefceefa4e3e8461d5ad7a254b516419403",
+      "session_id": "7080060c-c24b-4c20-9106-582c58531a86",
+      "completed_at": "2026-06-13T02:13:34.130Z",
+      "commit_sha": "f7b99ee26f214fed29f061eda8a541696986ae73",
+      "summary": "Changes: 4 files changed, 10 insertions(+), 53 deletions(-)",
+      "notes_for_next_phase": "",
+      "blockers": [],
+      "cost_usd": 0,
+      "tokens": {
+        "input_tokens": 550294,
+        "output_tokens": 17681,
+        "cache_read_input_tokens": 521874,
+        "cache_creation_input_tokens": 0
+      },
+      "token_source": "litellm"
+    },
+    {
+      "number": 3,
+      "prompt_file": "PHASE_03.prompt.md",
+      "title": "CLI surface: `cpe update`, config flag, nudge",
+      "status": "complete",
+      "retry_count": 0,
+      "started_at": "2026-06-13T02:13:34.133Z",
+      "head_before": "f7b99ee26f214fed29f061eda8a541696986ae73",
+      "session_id": "6fbff80f-7ca2-44d0-a9bd-88cb66adc3b1",
+      "completed_at": "2026-06-13T03:06:02.181Z",
+      "summary": "Changes: 2 files changed, 12 insertions(+), 6 deletions(-)",
+      "notes_for_next_phase": "",
+      "blockers": [],
+      "cost_usd": 0,
+      "tokens": {
+        "input_tokens": 303954,
+        "output_tokens": 5674,
+        "cache_read_input_tokens": 274988,
+        "cache_creation_input_tokens": 0
+      },
+      "token_source": "litellm"
+    },
+    {
+      "number": 4,
+      "prompt_file": "PHASE_04.prompt.md",
+      "title": "TUI auto-update loop + footer badge",
+      "status": "complete",
+      "retry_count": 0,
+      "started_at": "2026-06-13T03:06:02.184Z",
+      "head_before": "f7b99ee26f214fed29f061eda8a541696986ae73",
+      "session_id": "36467b1e-baa5-47df-bb8c-eeb735dad347",
+      "completed_at": "2026-06-13T05:23:00.352Z",
+      "summary": "Changes: 3 files changed, 17 insertions(+), 9 deletions(-)",
+      "notes_for_next_phase": "",
+      "blockers": [],
+      "cost_usd": 0,
+      "tokens": {
+        "input_tokens": 752717,
+        "output_tokens": 12412,
+        "cache_read_input_tokens": 701548,
+        "cache_creation_input_tokens": 0
+      },
+      "token_source": "litellm"
+    }
+  ],
+  "harness": "opencode",
+  "model": "ls/gemma4-cpe:31b",
+  "provider": "homelab-litellm"
+}

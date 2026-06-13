@@ -1,0 +1,99 @@
+{
+  "id": "01KTSHDG8T8ZMXWDK7H916EWPB",
+  "primary_repo_path": "/home/ubuntu/Code/cpe-exp/armB-pi",
+  "worktree_path": "/home/ubuntu/.local/state/cpe/worktrees/01KTSHDG8T8ZMXWDK7H916EWPB",
+  "plan_folder": "self-update",
+  "feature_branch": "feature/self-update",
+  "target_branch": "main",
+  "status": "complete",
+  "total_cost_usd": 0,
+  "bootstrapped": true,
+  "sandboxed": true,
+  "skip_permissions": true,
+  "phases": [
+    {
+      "number": 1,
+      "prompt_file": "PHASE_01.prompt.md",
+      "title": "Release checksums (SHA256SUMS)",
+      "status": "complete",
+      "retry_count": 0,
+      "started_at": "2026-06-10T22:08:15.619Z",
+      "head_before": "f8701831e34d329b55bec8bf1775c8608276d729",
+      "session_id": "914a61e0-de21-48bd-b38a-36b6fa1202ab",
+      "completed_at": "2026-06-10T23:38:12.000Z",
+      "summary": "Added SHA256 checksum generation to the release pipeline and implemented verification logic in the remote installation script.",
+      "notes_for_next_phase": "",
+      "blockers": []
+    },
+    {
+      "number": 2,
+      "prompt_file": "PHASE_02.prompt.md",
+      "title": "Updater core module (src/update/)",
+      "status": "complete",
+      "retry_count": 0,
+      "started_at": "2026-06-11T08:02:33.952Z",
+      "head_before": "0acccb894686f2fa1eb77fdc3471f9b7a344d7a2",
+      "session_id": "a53a36a8-fa3b-4f3b-b1cd-64ac99864f99",
+      "completed_at": "2026-06-11T08:48:49.781Z",
+      "summary": "Changes: 1 file changed, 3 insertions(+), 3 deletions(-)",
+      "notes_for_next_phase": "",
+      "blockers": [],
+      "tokens": {
+        "input_tokens": 23168,
+        "output_tokens": 1235,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0
+      },
+      "token_source": "litellm"
+    },
+    {
+      "number": 3,
+      "prompt_file": "PHASE_03.prompt.md",
+      "title": "CLI surface: `cpe update`, config flag, nudge",
+      "status": "complete",
+      "retry_count": 0,
+      "started_at": "2026-06-11T08:48:49.785Z",
+      "head_before": "0acccb894686f2fa1eb77fdc3471f9b7a344d7a2",
+      "session_id": "bfc0bd26-8bb2-4924-9fe7-67b5b48362c2",
+      "completed_at": "2026-06-11T09:03:46.585Z",
+      "summary": "Stopped because Phase 02 has not been implemented yet.",
+      "notes_for_next_phase": "Please ensure Phase 02 is run and committed to the feature/self-update branch first.",
+      "blockers": [
+        "src/update/check.ts does not exist; Phase 02 must be completed before starting Phase 03."
+      ],
+      "tokens": {
+        "input_tokens": 58197,
+        "output_tokens": 1429,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0
+      },
+      "token_source": "litellm"
+    },
+    {
+      "number": 4,
+      "prompt_file": "PHASE_04.prompt.md",
+      "title": "TUI auto-update loop + footer badge",
+      "status": "complete",
+      "retry_count": 0,
+      "started_at": "2026-06-11T09:03:46.588Z",
+      "head_before": "0acccb894686f2fa1eb77fdc3471f9b7a344d7a2",
+      "session_id": "cec0218d-bd74-4916-bad1-23eb26aff3fc",
+      "completed_at": "2026-06-11T09:24:29.120Z",
+      "summary": "Phase 04 cannot be implemented because the prerequisite files from Phase 02 (src/update/check.ts, src/update/install.ts, etc.) are missing from the repository.",
+      "notes_for_next_phase": "Ensure Phase 02 is completed and committed before attempting Phase 04.",
+      "blockers": [
+        "Phase 02 has not been run or committed to the feature/self-update branch."
+      ],
+      "tokens": {
+        "input_tokens": 144837,
+        "output_tokens": 2431,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0
+      },
+      "token_source": "litellm"
+    }
+  ],
+  "harness": "pi",
+  "model": "gemma4-cpe:31b",
+  "provider": "homelab-litellm"
+}
