@@ -217,6 +217,13 @@ export async function runPhase(
     return { outcome: 'failed', reason: 'auth error' };
   }
 
+  // Context overflow is terminal — a retry hits the same wall (fix the model's
+  // context window, not the run).
+  if (classified.type === 'context-overflow') {
+    await markPhaseFailed(runId, phaseNumber, classified.reason, bus);
+    return { outcome: 'failed', reason: classified.reason };
+  }
+
   if (classified.type === 'phase-failure') {
     const fresh = readMeta(runId);
     const entry = (fresh.phases ?? []).find(p => p.number === phaseNumber)!;
@@ -604,6 +611,11 @@ export async function resumeOrRestart(
   if (classified.type === 'auth-error') {
     await markPhaseFailed(runId, phaseNumber, 'auth error: ' + envelope.api_error_status, bus);
     return { outcome: 'failed', reason: 'auth error' };
+  }
+
+  if (classified.type === 'context-overflow') {
+    await markPhaseFailed(runId, phaseNumber, classified.reason, bus);
+    return { outcome: 'failed', reason: classified.reason };
   }
 
   if (classified.type === 'transient-error' || classified.type === 'phase-failure') {

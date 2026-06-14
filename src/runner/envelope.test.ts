@@ -53,9 +53,42 @@ describe('classifyEnvelope', () => {
     expect(outcome.type).toBe('auth-error');
   });
 
-  it('returns auth-error for 400', () => {
-    const outcome = classifyEnvelope(makeEnvelope({ is_error: true, api_error_status: 400 }));
+  it('returns auth-error for 403', () => {
+    const outcome = classifyEnvelope(makeEnvelope({ is_error: true, api_error_status: 403 }));
     expect(outcome.type).toBe('auth-error');
+  });
+
+  it('400 is a bad request, NOT auth-error', () => {
+    const outcome = classifyEnvelope(makeEnvelope({ is_error: true, api_error_status: 400, result: 'some bad request' }));
+    expect(outcome.type).toBe('phase-failure');
+    if (outcome.type === 'phase-failure') expect(outcome.reason).toContain('400');
+  });
+
+  it('classifies a context-overflow 400 as context-overflow, not auth-error', () => {
+    const outcome = classifyEnvelope(makeEnvelope({
+      is_error: true,
+      api_error_status: 400,
+      result: 'litellm.BadRequestError: OpenAIException - request (33555 tokens) exceeds the available context size (32768 tokens), try increasing it',
+    }));
+    expect(outcome.type).toBe('context-overflow');
+  });
+
+  it('classifies a context overflow regardless of status (terminal_reason)', () => {
+    const outcome = classifyEnvelope(makeEnvelope({
+      is_error: true,
+      api_error_status: null,
+      terminal_reason: 'context_length_exceeded',
+    }));
+    expect(outcome.type).toBe('context-overflow');
+  });
+
+  it('classifies a request timeout as transient-error (retryable)', () => {
+    const outcome = classifyEnvelope(makeEnvelope({
+      is_error: true,
+      api_error_status: null,
+      result: 'Request timed out',
+    }));
+    expect(outcome.type).toBe('transient-error');
   });
 
   it('returns phase-failure for unknown status 418', () => {
