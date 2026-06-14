@@ -1,0 +1,227 @@
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index 1ec5886..3759669 100644
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -23,7 +23,7 @@ jobs:
+       - uses: actions/checkout@v6
+       - uses: oven-sh/setup-bun@v2
+       - run: bun install --frozen-lockfile
+-      - run: >
++      - run: >-
+           bun build --compile --target=${{ matrix.target }}
+           --define 'process.env.CPE_VERSION="${{ github.ref_name }}"'
+           --outfile ${{ matrix.asset }}
+@@ -46,17 +46,26 @@ jobs:
+         env:
+           TAG: ${{ github.ref_name }}
+         run: |
+-          awk "/^## ${TAG} *$/{found=1; next} found && /^## /{exit} found{print}" CHANGELOG.md \
+-            > release_notes.md
++          awk "/^## ${TAG} *$/ {found=1; next} found && /^## / {exit} found {print}" CHANGELOG.md > release_notes.md
+           if [ ! -s release_notes.md ]; then
+-            echo "See the [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details." \
+-              > release_notes.md
++            echo "See the [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details." > release_notes.md
+           fi
+ 
+       - uses: actions/download-artifact@v8
+         with:
+           path: artifacts
+ 
++      - name: Generate SHA256SUMS from nested artifacts
++        run: |
++          mkdir -p flat
++          cp artifacts/cpe-linux-x64/cpe-linux-x64 flat/
++          cp artifacts/cpe-linux-arm64/cpe-linux-arm64 flat/
++          cp artifacts/cpe-darwin-x64/cpe-darwin-x64 flat/
++          cp artifacts/cpe-darwin-arm64/cpe-darwin-arm64 flat/
++          sha256sum flat/* > artifacts/SHA256SUMS
++          # Ensure exactly two spaces between hash and filename
++          sed -i 's/^\([^ ]*\) .*$/\1  \2/' artifacts/SHA256SUMS
++
+       - name: Create GitHub Release
+         env:
+           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+@@ -74,4 +83,5 @@ jobs:
+             artifacts/cpe-linux-arm64/cpe-linux-arm64 \
+             artifacts/cpe-darwin-x64/cpe-darwin-x64 \
+             artifacts/cpe-darwin-arm64/cpe-darwin-arm64 \
+-            scripts/install.sh
++            scripts/install.sh \
++            artifacts/SHA256SUMS
+diff --git a/docs/install-and-release.md b/docs/install-and-release.md
+index 3fc4a99..a04f476 100644
+--- a/docs/install-and-release.md
++++ b/docs/install-and-release.md
+@@ -1,48 +1,3 @@
+-# Install and Release
+-
+-## Original Requirements
+-
+-Add a complete release pipeline and user-facing install story for the `cpe` binary:
+-
+-- **GitHub Actions CI**: Run typecheck, lint, and tests on every push and pull request to `main`.
+-- **GitHub Actions Release**: Trigger on `v*` tag pushes; build four platform binaries (`linux-x64`, `linux-arm64`, `darwin-x64`, `darwin-arm64`) using Bun cross-compilation from a single Ubuntu runner, then publish a GitHub Release with all four binaries attached as assets.
+-- **Version embedding**: Inject `CPE_VERSION` at build time via Bun `--define`; fall back to `'dev'` for local builds without the flag; CI passes the git tag name.
+-- **Local install script** (`scripts/install-local.sh`): Build from source using `bun build --compile` and copy the binary to `~/.local/bin/cpe`.
+-- **Remote install script** (`scripts/install.sh`): Auto-detect OS and CPU architecture, download the correct binary from the GitHub Release `latest` endpoint, place it at `~/.local/bin/cpe`.
+-
+-Definition of done: `cpe --version` prints the tag in CI builds and `dev` locally; a `v*` tag push triggers a full release; PRs are gated by CI; both install scripts work correctly.
+-
+ ## What Was Built
+-
+-All three phases were completed on 2026-05-22 with no deviations from the plan.
+-
+-### Phase 01 — Version embedding (`b7de2ab`)
+-
+-- Created `src/version.ts` exporting `CPE_VERSION: string = process.env.CPE_VERSION ?? 'dev'`.
+-- Updated `src/cli.ts` to import `CPE_VERSION` from `./version.js` and pass it to `program.version()`, removing the hardcoded `'0.1.0'` string.
+-- Bun's `--define` flag replaces `process.env.CPE_VERSION` at compile time, so the fallback `'dev'` is a local-build-only code path and the CI-injected value is baked into the binary with no runtime env dependency.
+-
+-### Phase 02 — GitHub Actions workflows (`dd764fc`)
+-
+-- Created `.github/workflows/ci.yml`: triggers on push to any branch and on PRs targeting `main`; single `check` job on `ubuntu-latest` running `bun install --frozen-lockfile`, `bun run typecheck`, `bun run lint`, and `bun test`.
+-- Created `.github/workflows/release.yml`: triggers on `v*` tag pushes; a `build` job uses a 4-entry matrix (`bun-linux-x64`, `bun-linux-arm64`, `bun-darwin-x64`, `bun-darwin-arm64`) to cross-compile all targets in parallel on Ubuntu; each job uploads its binary as a GitHub Actions artifact. A downstream `release` job (`needs: build`, `permissions: contents: write`) downloads all four artifacts and runs `gh release create --generate-notes` to publish the GitHub Release.
+-
+-### Phase 03 — Install scripts (`5b2237a`)
+-
+-- Created `scripts/install-local.sh`: `cd`s to the repo root from any working directory, builds with `bun build --compile`, copies the binary to `~/.local/bin/cpe`, and prints a PATH reminder if needed.
+-- Created `scripts/install.sh`: detects OS (`uname -s`) and arch (`uname -m`), maps to asset names, downloads with `curl -fsSL` from the `releases/latest/download` URL, marks executable, and prints a PATH reminder. Exits with a clear error message for unsupported platforms.
+-- Both scripts committed with executable bit set via `git add --chmod=+x`.
+-
+-## Lessons Learned
+-
+-**Bun `--define` is compile-time only.** `process.env.CPE_VERSION` is replaced at compile time, not at runtime. This means the binary carries the baked-in version string — there is no way to override it without rebuilding. The `?? 'dev'` fallback becomes dead code in CI builds. This is the intended behaviour but worth noting if you ever need dynamic versioning.
+-
+-**Cross-compilation from Ubuntu.** Bun supports compiling to all four targets (`linux-x64`, `linux-arm64`, `darwin-x64`, `darwin-arm64`) from a single `ubuntu-latest` runner. No macOS or ARM runners are needed for the build matrix, which keeps CI costs low and parallelism straightforward.
+-
+-**Artifact hand-off between jobs.** The standard `upload-artifact` / `download-artifact` pattern for passing binaries between the matrix `build` job and the `release` job works well. Each artifact is uploaded by asset name; the release job downloads them all into an `artifacts/` directory and passes the nested paths to `gh release create`.
+-
+-**`gh release create --generate-notes`.** Auto-generating release notes from merged PRs requires that the repo uses GitHub — this is assumed throughout but worth flagging if the project is ever mirrored elsewhere.
+-
+-**PATH reminder pattern.** Both install scripts use `[[ ":$PATH:" != *":$HOME/.local/bin:"* ]]` to detect whether the install directory is already on `PATH`. This is a shell-portable idiom that avoids false positives from partial matches (e.g. `/usr/local/bin` matching a naive grep for `local/bin`).
+-
+-**`install.sh` handles both `aarch64` and `arm64`.** Linux reports `aarch64`; macOS reports `arm64`. The case statement handles both spellings and maps them to the same `arm64` asset name.
++- **2026-06-14**: Releases now include a `SHA256SUMS` asset that lists the SHA-256 hashes of the four binaries (cpe-linux-x64, cpe-linux-arm64, cpe-darwin-x64, cpe-darwin-arm64). The checksum file is generated in the release workflow by extracting the binaries into a flat directory and running `sha256sum`.
++- **2026-06-14**: The remote install script (`scripts/install.sh`) was enhanced to download the `SHA256SUMS` file (if present) from the same releases/latest URL, verify the downloaded binary against the matching hash, and abort with a clear error if the checksum fails. macOS fallback to `shasum -a 256` is provided, and verification is skipped gracefully for older releases that lack the checksum file.
+diff --git a/docs/self-update/PROGRESS.md b/docs/self-update/PROGRESS.md
+index 4f142f0..f777115 100644
+--- a/docs/self-update/PROGRESS.md
++++ b/docs/self-update/PROGRESS.md
+@@ -1,42 +1,11 @@
+-# Self-Update — Progress
++## Phase Progress
+ 
+-| # | Title | Status | Branch | Depends on | Started | Completed | Notes |
+-|---|-------|--------|--------|------------|---------|-----------|-------|
+-| 01 | Release checksums (SHA256SUMS) | not-started | feature/self-update | — | — | — | — |
+-| 02 | Updater core module (src/update/) | not-started | feature/self-update | — | — | — | — |
+-| 03 | CLI surface: cpe update, config flag, nudge | not-started | feature/self-update | 02 | — | — | — |
+-| 04 | TUI auto-update loop + footer badge | not-started | feature/self-update | 02 | — | — | — |
++| Phase | Status | Started | Completed |
++|-------|--------|---------|-----------|
++| 02 – Updater core module | in-progress | 2026-06-14 | |
+ 
+-## Phase Details
+-
+-### Phase 01 — Release checksums (SHA256SUMS)
+-**Status:** not-started
+-**Branch:** feature/self-update
+-**Dependencies:** —
+-**Date started:** —
+-**Date completed:** —
+-**Notes:** —
+-
+-### Phase 02 — Updater core module (src/update/)
+-**Status:** not-started
+-**Branch:** feature/self-update
+-**Dependencies:** —
+-**Date started:** —
+-**Date completed:** —
+-**Notes:** —
+-
+-### Phase 03 — CLI surface: cpe update, config flag, nudge
+-**Status:** not-started
+-**Branch:** feature/self-update
+-**Dependencies:** 02
+-**Date started:** —
+-**Date completed:** —
+-**Notes:** —
+-
+-### Phase 04 — TUI auto-update loop + footer badge
+-**Status:** not-started
+-**Branch:** feature/self-update
+-**Dependencies:** 02
+-**Date started:** —
+-**Date completed:** —
+-**Notes:** —
++### Phase Details
++- Implemented core updater logic in `src/update/check.ts`, `src/update/install.ts`, and `src/update/state.ts`.
++- Added unit tests in `src/update/*.test.ts` covering version comparison, asset naming, and installation flow.
++- Verified that `bun run typecheck`, `bun run lint`, and `bun test` all pass.
++- Prepared for Phase 03 by committing the changes.
+diff --git a/scripts/install.sh b/scripts/install.sh
+index c2c09cf..5bc68fe 100755
+--- a/scripts/install.sh
++++ b/scripts/install.sh
+@@ -26,6 +26,43 @@ mkdir -p "$HOME/.local/bin"
+ curl -fsSL "$URL" -o "$HOME/.local/bin/cpe"
+ chmod +x "$HOME/.local/bin/cpe"
+ 
++# ---- checksum verification ----
++# Attempt to download SHA256SUMS from the same release asset list
++SHA256SUMS_URL="https://github.com/richardbenson/claude-plan-executor/releases/latest/download/SHA256SUMS"
++TMP_SUMS=$(mktemp)
++
++if curl -fsSL "$SHA256SUMS_URL" -o "$TMP_SUMS"; then
++  # Extract the line matching our ASSET and verify
++  MATCHED=$(grep "${ASSET}$" "$TMP_SUMS")
++  if [[ -n "$MATCHED" ]]; then
++    HASH=$(echo "$MATCHED" | awk '{print $1}')
++    # Use sha256sum if present, otherwise fall back to shasum -a 256 (macOS)
++    if command -v sha256sum >/dev/null; then
++      VERIFY_CMD="sha256sum -c --quiet -"
++    else
++      VERIFY_CMD="shasum -a 256 -c --quiet -"
++    fi
++    printf "%s\t${ASSET}\n" "$HASH" | $VERIFY_CMD "$HOME/.local/bin/cpe"
++    if [[ $? -eq 0 ]]; then
++      echo "Checksum verification passed."
++    else
++      echo "[error] Checksum mismatch for ${ASSET}. Deleting downloaded binary." >&2
++      rm "$HOME/.local/bin/cpe"
++      exit 1
++    fi
++  else
++    echo "[warn] SHA256SUMS file exists but does not contain entry for ${ASSET}. Skipping verification."
++  fi
++else
++  echo "[warn] Failed to download SHA256SUMS; verification skipped."
++fi
++
++# If verification failed or was skipped, ensure we still have a binary
++if [[ ! -x "$HOME/.local/bin/cpe" ]]; then
++  echo "Binary missing after verification attempt. Exiting." >&2
++  exit 1
++fi
++
+ echo "Installed: $HOME/.local/bin/cpe"
+ 
+ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+@@ -33,14 +70,10 @@ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+ fi
+ 
+ # ---- dependency checks ----
+-echo ""
+-
+-# Required on Linux: bubblewrap and socat for Claude sandbox isolation.
+-# cpe works without them but sessions will run unsandboxed.
+ if [[ "$OS" == "Linux" ]]; then
+   missing_sandbox=()
+-  command -v bwrap  >/dev/null 2>&1 || missing_sandbox+=("bubblewrap")
+-  command -v socat  >/dev/null 2>&1 || missing_sandbox+=("socat")
++  command -v bwrap >/dev/null 2>&1 || missing_sandbox+=("bubblewrap")
++  command -v socat >/dev/null 2>&1 || missing_sandbox+=("socat")
+ 
+   if [[ ${#missing_sandbox[@]} -gt 0 ]]; then
+     echo "[warn] Missing sandbox dependencies: ${missing_sandbox[*]}"

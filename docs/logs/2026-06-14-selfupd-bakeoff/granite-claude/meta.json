@@ -1,0 +1,96 @@
+{
+  "id": "01KV0MCDT2T2ZV5H6V0ETW5THC",
+  "primary_repo_path": "/home/ubuntu/Code/cpe-exp/selfupd-granite-claude",
+  "worktree_path": "/home/ubuntu/.local/state/cpe/worktrees/01KV0MCDT2T2ZV5H6V0ETW5THC",
+  "plan_folder": "self-update",
+  "feature_branch": "feature/self-update",
+  "target_branch": "main",
+  "status": "failed",
+  "total_cost_usd": 5.460934999999999,
+  "bootstrapped": true,
+  "sandboxed": true,
+  "skip_permissions": true,
+  "phases": [
+    {
+      "number": 1,
+      "prompt_file": "PHASE_01.prompt.md",
+      "title": "Release checksums (SHA256SUMS)",
+      "status": "complete",
+      "retry_count": 0,
+      "started_at": "2026-06-13T23:31:11.690Z",
+      "head_before": "e152a8123d80b4cc0465609456d53718e6139e41",
+      "session_id": "25de5d76-9dbf-4c41-b3eb-f41d857a1970",
+      "completed_at": "2026-06-14T00:08:21.098Z",
+      "commit_sha": "4860fdd8c73e59c24e48ff35c8d89c6205b3c7e3",
+      "summary": "Phase 01 completed: updated release workflow to generate and publish SHA256SUMS, updated install.sh to verify checksums, and updated PROGRESS.md and docs/install-and-release.md accordingly.",
+      "commit_message": "feat: phase 01 – publish SHA256SUMS with releases and verify in install.sh",
+      "notes_for_next_phase": "Proceed to Phase 02 – Updater core module (src/update/).",
+      "blockers": [],
+      "cost_usd": 3.2945499999999996,
+      "tokens": {
+        "input_tokens": 29141,
+        "output_tokens": 881,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0
+      },
+      "token_source": "litellm"
+    },
+    {
+      "number": 2,
+      "prompt_file": "PHASE_02.prompt.md",
+      "title": "Updater core module (src/update/)",
+      "status": "complete",
+      "retry_count": 0,
+      "started_at": "2026-06-14T00:08:21.099Z",
+      "head_before": "4860fdd8c73e59c24e48ff35c8d89c6205b3c7e3",
+      "session_id": "40a1c2d4-411f-4d3f-ab96-5d1ccee9e4f8",
+      "completed_at": "2026-06-14T00:31:10.104Z",
+      "commit_sha": "c01e24760e247959962aa009b0f112bcf3ff2289",
+      "summary": "Implemented core updater logic in src/update/ with version resolution, verified atomic binary installation, and persisted check-state. Added unit tests and ensured linting and type checks pass. Updated PROGRESS.md and committed the changes.",
+      "commit_message": "feat: phase 02 – self-update core: version check, verified install, check-state",
+      "notes_for_next_phase": "Proceed to Phase 03 – CLI surface (cpe update, config flag, nudge) on the same branch.",
+      "blockers": [],
+      "cost_usd": 2.166385,
+      "tokens": {
+        "input_tokens": 414349,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 3290,
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "token_source": "adapter"
+    },
+    {
+      "number": 3,
+      "prompt_file": "PHASE_03.prompt.md",
+      "title": "CLI surface: `cpe update`, config flag, nudge",
+      "status": "failed",
+      "retry_count": 1,
+      "started_at": "2026-06-14T01:10:58.407Z",
+      "head_before": "c01e24760e247959962aa009b0f112bcf3ff2289",
+      "session_id": "3024c629-1dc8-470d-baaf-90b108d1410f",
+      "failure_reason": "unknown api error: null"
+    },
+    {
+      "number": 4,
+      "prompt_file": "PHASE_04.prompt.md",
+      "title": "TUI auto-update loop + footer badge",
+      "status": "pending",
+      "retry_count": 0
+    }
+  ],
+  "harness": "claude-code",
+  "model": "ls/granite4.1:8b",
+  "provider": "homelab-litellm"
+}

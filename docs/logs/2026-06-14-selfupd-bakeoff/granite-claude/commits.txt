@@ -1,0 +1,2 @@
+c01e247 feat: phase 02 – self-update core: version check, verified install, check-state
+4860fdd feat: phase 01 – publish SHA256SUMS with releases and verify in install.sh

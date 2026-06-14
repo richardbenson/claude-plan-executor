@@ -1,0 +1,4 @@
+056dcfc docs: summarise self-update
+460f5f0 feat: phase 03 – cpe update command, update_auto flag, post-command nudge
+9469191 feat: phase 02 – self-update core: version check, verified install, check-state
+0c4db42 feat: phase 01 – publish SHA256SUMS with releases and verify in install.sh

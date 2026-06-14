@@ -1,0 +1,50 @@
+{
+  "id": "01KV0MCEZG082HR5WMNFHYJ17G",
+  "primary_repo_path": "/home/ubuntu/Code/cpe-exp/selfupd-qwen-claude",
+  "worktree_path": "/home/ubuntu/.local/state/cpe/worktrees/01KV0MCEZG082HR5WMNFHYJ17G",
+  "plan_folder": "self-update",
+  "feature_branch": "feature/self-update",
+  "target_branch": "main",
+  "status": "failed",
+  "total_cost_usd": 0,
+  "bootstrapped": true,
+  "sandboxed": true,
+  "skip_permissions": true,
+  "phases": [
+    {
+      "number": 1,
+      "prompt_file": "PHASE_01.prompt.md",
+      "title": "Release checksums (SHA256SUMS)",
+      "status": "failed",
+      "retry_count": 0,
+      "started_at": "2026-06-14T03:32:09.055Z",
+      "head_before": "d35d33cdebde569902ccf061989cdee8b614668a",
+      "session_id": "f35d12d8-9067-43dc-b503-55bd5def0980",
+      "failure_reason": "auth error: 400"
+    },
+    {
+      "number": 2,
+      "prompt_file": "PHASE_02.prompt.md",
+      "title": "Updater core module (src/update/)",
+      "status": "pending",
+      "retry_count": 0
+    },
+    {
+      "number": 3,
+      "prompt_file": "PHASE_03.prompt.md",
+      "title": "CLI surface: `cpe update`, config flag, nudge",
+      "status": "pending",
+      "retry_count": 0
+    },
+    {
+      "number": 4,
+      "prompt_file": "PHASE_04.prompt.md",
+      "title": "TUI auto-update loop + footer badge",
+      "status": "pending",
+      "retry_count": 0
+    }
+  ],
+  "harness": "claude-code",
+  "model": "ls/qwen3-coder-next:80b",
+  "provider": "homelab-litellm"
+}

@@ -1,0 +1,115 @@
+{
+  "id": "01KV0MCCR0EYTW9X80S65VH1GW",
+  "primary_repo_path": "/home/ubuntu/Code/cpe-exp/selfupd-granite-opencode",
+  "worktree_path": "/home/ubuntu/.local/state/cpe/worktrees/01KV0MCCR0EYTW9X80S65VH1GW",
+  "plan_folder": "self-update",
+  "feature_branch": "feature/self-update",
+  "target_branch": "main",
+  "status": "complete",
+  "total_cost_usd": 0,
+  "bootstrapped": true,
+  "sandboxed": true,
+  "skip_permissions": true,
+  "phases": [
+    {
+      "number": 1,
+      "prompt_file": "PHASE_01.prompt.md",
+      "title": "Release checksums (SHA256SUMS)",
+      "status": "complete",
+      "retry_count": 0,
+      "started_at": "2026-06-13T22:36:45.521Z",
+      "head_before": "e152a8123d80b4cc0465609456d53718e6139e41",
+      "session_id": "6fec3aa4-056b-4d24-9cbc-9af07071e4c1",
+      "completed_at": "2026-06-13T22:40:53.098Z",
+      "commit_sha": "0c4db42c69e36d6b08d580854726b8e660f425b5",
+      "summary": "Added SHA256SUMS generation to the release workflow and added verification logic to install.sh, updating progress tracking.",
+      "commit_message": "feat: phase 01 – publish SHA256SUMS with releases and verify in install.sh",
+      "notes_for_next_phase": "",
+      "blockers": [],
+      "cost_usd": 0,
+      "tokens": {
+        "input_tokens": 161597,
+        "output_tokens": 1260,
+        "cache_read_input_tokens": 144590,
+        "cache_creation_input_tokens": 0
+      },
+      "token_source": "litellm"
+    },
+    {
+      "number": 2,
+      "prompt_file": "PHASE_02.prompt.md",
+      "title": "Updater core module (src/update/)",
+      "status": "complete",
+      "retry_count": 0,
+      "started_at": "2026-06-13T22:40:53.099Z",
+      "head_before": "0c4db42c69e36d6b08d580854726b8e660f425b5",
+      "session_id": "cd5b2681-ae62-4dea-9c37-3f018932ad0d",
+      "completed_at": "2026-06-13T22:43:43.629Z",
+      "commit_sha": "9469191b656cd2e53c7f809b95d56825fd50816f",
+      "summary": "Added version resolution, comparison, atomic binary installation, and persisted check-state functionality in src/update/, with unit tests and idempotent checks.",
+      "commit_message": "feat: phase 02 – self-update core: version check, verified install, check-state",
+      "notes_for_next_phase": "",
+      "blockers": [],
+      "cost_usd": 0,
+      "tokens": {
+        "input_tokens": 60329,
+        "output_tokens": 1419,
+        "cache_read_input_tokens": 51815,
+        "cache_creation_input_tokens": 0
+      },
+      "token_source": "litellm"
+    },
+    {
+      "number": 3,
+      "prompt_file": "PHASE_03.prompt.md",
+      "title": "CLI surface: `cpe update`, config flag, nudge",
+      "status": "complete",
+      "retry_count": 0,
+      "started_at": "2026-06-13T22:43:43.630Z",
+      "head_before": "9469191b656cd2e53c7f809b95d56825fd50816f",
+      "session_id": "de130a7b-414d-4ecc-8f28-0db76245f2ec",
+      "completed_at": "2026-06-13T22:50:47.745Z",
+      "commit_sha": "460f5f048953996b3df9deaf3c85cfd5da3dece7",
+      "summary": "Added update_auto configuration flag, implemented cpe update and --check subcommands, post-command nudge logic, and updated documentation.",
+      "commit_message": "feat: phase 03 – cpe update command, update_auto flag, post-command nudge",
+      "notes_for_next_phase": "",
+      "blockers": [],
+      "cost_usd": 0,
+      "tokens": {
+        "input_tokens": 274551,
+        "output_tokens": 2662,
+        "cache_read_input_tokens": 253405,
+        "cache_creation_input_tokens": 0
+      },
+      "token_source": "litellm"
+    },
+    {
+      "number": 4,
+      "prompt_file": "PHASE_04.prompt.md",
+      "title": "TUI auto-update loop + footer badge",
+      "status": "complete",
+      "retry_count": 0,
+      "started_at": "2026-06-13T23:06:23.388Z",
+      "head_before": "460f5f048953996b3df9deaf3c85cfd5da3dece7",
+      "session_id": "6a475853-f484-4167-ae10-363b6ce87177",
+      "completed_at": "2026-06-13T23:23:54.241Z",
+      "summary": "The transcript shows a read operation on docs/self-update/PROGRESS.md and docs/self-update/README.md, but no commit is indicated. The diff adds a footer badge specification to DESIGN.md and updates the status of Phase 04 in PROGRESS.md to 'in-progress', yet no commit command or message is visible.",
+      "notes_for_next_phase": "Proceed with implementing the TUI auto-update loop and footer badge as described in the DESIGN.md addition. Ensure a commit is made after the implementation is complete.",
+      "blockers": [
+        "No commit detected in the transcript or diff.",
+        "Phase 04 implementation details are not yet completed; only the status was updated."
+      ],
+      "cost_usd": 0,
+      "tokens": {
+        "input_tokens": 977528,
+        "output_tokens": 4265,
+        "cache_read_input_tokens": 938010,
+        "cache_creation_input_tokens": 0
+      },
+      "token_source": "litellm"
+    }
+  ],
+  "harness": "opencode",
+  "model": "ls/granite4.1:8b",
+  "provider": "homelab-litellm"
+}

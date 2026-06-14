@@ -1,0 +1,67 @@
+{
+  "id": "01KV0MCEA8VZZ255R1Z5D7WKBN",
+  "primary_repo_path": "/home/ubuntu/Code/cpe-exp/selfupd-qwen-opencode",
+  "worktree_path": "/home/ubuntu/.local/state/cpe/worktrees/01KV0MCEA8VZZ255R1Z5D7WKBN",
+  "plan_folder": "self-update",
+  "feature_branch": "feature/self-update",
+  "target_branch": "main",
+  "status": "failed",
+  "total_cost_usd": 0,
+  "bootstrapped": true,
+  "sandboxed": true,
+  "skip_permissions": true,
+  "phases": [
+    {
+      "number": 1,
+      "prompt_file": "PHASE_01.prompt.md",
+      "title": "Release checksums (SHA256SUMS)",
+      "status": "complete",
+      "retry_count": 1,
+      "started_at": "2026-06-14T03:10:39.187Z",
+      "head_before": "ef82d1966ed3fda792c8003d8d1b068dabcd1db4",
+      "session_id": "a20c844b-3681-4261-8a23-2a13af436a19",
+      "completed_at": "2026-06-14T03:14:30.960Z",
+      "commit_sha": "5dcbf59d9d22151ea5b51165724045c243420aa2",
+      "summary": "Added SHA256SUMS generation to release workflow and checksum verification to install.sh script.",
+      "commit_message": "feat: phase 01 — publish SHA256SUMS with releases and verify in install.sh",
+      "notes_for_next_phase": "",
+      "blockers": [],
+      "cost_usd": 0,
+      "tokens": {
+        "input_tokens": 723948,
+        "output_tokens": 4764,
+        "cache_read_input_tokens": 699777,
+        "cache_creation_input_tokens": 0
+      },
+      "token_source": "litellm"
+    },
+    {
+      "number": 2,
+      "prompt_file": "PHASE_02.prompt.md",
+      "title": "Updater core module (src/update/)",
+      "status": "failed",
+      "retry_count": 1,
+      "started_at": "2026-06-14T03:26:19.390Z",
+      "head_before": "63220b3ec8b17d635e1c7b6105e058b0ffb82766",
+      "session_id": "8e7cb44f-1f07-45ad-b892-5c3bf68bf354",
+      "failure_reason": "harness 'opencode' exited 1"
+    },
+    {
+      "number": 3,
+      "prompt_file": "PHASE_03.prompt.md",
+      "title": "CLI surface: `cpe update`, config flag, nudge",
+      "status": "pending",
+      "retry_count": 0
+    },
+    {
+      "number": 4,
+      "prompt_file": "PHASE_04.prompt.md",
+      "title": "TUI auto-update loop + footer badge",
+      "status": "pending",
+      "retry_count": 0
+    }
+  ],
+  "harness": "opencode",
+  "model": "ls/qwen3-coder-next:80b",
+  "provider": "homelab-litellm"
+}
