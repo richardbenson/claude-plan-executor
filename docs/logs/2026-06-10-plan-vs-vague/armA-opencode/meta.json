@@ -1,0 +1,24 @@
+{
+  "id": "01KTYT8JYZGXN8WV55SZQM869C",
+  "primary_repo_path": "/home/ubuntu/Code/cpe-exp/armA",
+  "worktree_path": "/home/ubuntu/.local/state/cpe/worktrees/01KTYT8JYZGXN8WV55SZQM869C",
+  "feature_branch": "feature/sp-01ktyt8j",
+  "target_branch": "main",
+  "status": "complete",
+  "total_cost_usd": 0,
+  "bootstrapped": true,
+  "sandboxed": true,
+  "skip_permissions": true,
+  "prompt": "cpe has no way to keep itself up to date. Can you add version checking and updating? I want to be able to check my version and update explicitly, but ideally it also just checks by itself and installs new versions when they come out — and if it updated underneath a running session, let me know so I can restart it. We ship binaries on GitHub releases.",
+  "prompt_source": "free-text",
+  "harness": "opencode",
+  "model": "ls/gemma4-cpe:31b",
+  "provider": "homelab-litellm",
+  "tokens": {
+    "input_tokens": 1192344,
+    "output_tokens": 11093,
+    "cache_read_input_tokens": 1091354,
+    "cache_creation_input_tokens": 0
+  },
+  "token_source": "litellm"
+}

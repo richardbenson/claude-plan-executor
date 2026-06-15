@@ -1,0 +1,6 @@
+e152a81 docs: plan self-update
+2ccd844 Archive 2026-06-13 new-model bake-off: granite4.1:8b in, 80B not worth it, gemma4:26b out
+77f1fe7 Archive plan-vs-vague 31b round: planning advantage narrows, verification gap persists
+7247e17 provider refresh: authenticate litellm model fetch with the admin key
+1e3bdac Guard-kill fixes: salvage finished phases, persist failure reasons, unbuffer aider
+d603fb5 finalise: tail the opaque harness log into the activity bus

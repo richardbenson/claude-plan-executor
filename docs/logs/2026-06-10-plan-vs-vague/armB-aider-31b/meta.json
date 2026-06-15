@@ -1,0 +1,75 @@
+{
+  "id": "01KTTV3W1K65NR0T5Q21B5A39H",
+  "primary_repo_path": "/home/ubuntu/Code/cpe-exp/armB-aider",
+  "worktree_path": "/home/ubuntu/.local/state/cpe/worktrees/01KTTV3W1K65NR0T5Q21B5A39H",
+  "plan_folder": "self-update",
+  "feature_branch": "feature/self-update",
+  "target_branch": "main",
+  "status": "failed",
+  "total_cost_usd": 0,
+  "bootstrapped": true,
+  "sandboxed": true,
+  "skip_permissions": true,
+  "phases": [
+    {
+      "number": 1,
+      "prompt_file": "PHASE_01.prompt.md",
+      "title": "Release checksums (SHA256SUMS)",
+      "status": "complete",
+      "retry_count": 0,
+      "started_at": "2026-06-11T10:20:30.411Z",
+      "head_before": "81c2d29d3770f51ff9abc7ed907a84a5a3883331",
+      "session_id": "c03a2a02-f7bc-43d8-82fc-618600d990ef",
+      "completed_at": "2026-06-11T13:17:22.774Z",
+      "commit_sha": "16f61dcc814b9daded739d7b7173f60db7ad5cd3",
+      "summary": "Implemented the updater core module in src/update/, including logic for resolving latest release tags from GitHub, comparing versions numerically (handling prereleases), performing atomic binary installation with SHA256 verification, and persisting update check state.",
+      "commit_message": "feat: phase 02 \u2014 self-update core: version check, verified install, check-state",
+      "notes_for_next_phase": "",
+      "blockers": [],
+      "tokens": {
+        "input_tokens": 75558,
+        "output_tokens": 19680,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0
+      },
+      "token_source": "litellm"
+    },
+    {
+      "number": 2,
+      "prompt_file": "PHASE_02.prompt.md",
+      "title": "Updater core module (src/update/)",
+      "status": "complete",
+      "retry_count": 0,
+      "started_at": "2026-06-11T13:17:22.775Z",
+      "head_before": "16f61dcc814b9daded739d7b7173f60db7ad5cd3",
+      "session_id": "68648e37-e3e8-4da3-95a6-8feb469136c6",
+      "completed_at": "2026-06-11T15:19:00.000Z",
+      "commit_sha": "3fa3721",
+      "summary": "Implemented the updater core module in src/update/, including logic for resolving latest release tags from GitHub, comparing versions numerically (handling prereleases), performing atomic binary installation with SHA256 verification, and persisting update check state.",
+      "commit_message": "feat: phase 02 \u2014 self-update core: version check, verified install, check-state",
+      "notes_for_next_phase": "",
+      "blockers": []
+    },
+    {
+      "number": 3,
+      "prompt_file": "PHASE_03.prompt.md",
+      "title": "CLI surface: `cpe update`, config flag, nudge",
+      "status": "failed",
+      "retry_count": 0,
+      "started_at": "2026-06-11T15:44:02.698Z",
+      "head_before": "3fa3721c4b820c21483156dc338480354f8f2b68",
+      "session_id": "db6c2683-44bb-4278-ac73-9cfb9aa46e01",
+      "failure_reason": "abandoned: aider repeatedly wedged post-commit; executor swapped for opencode (see experiment notes)"
+    },
+    {
+      "number": 4,
+      "prompt_file": "PHASE_04.prompt.md",
+      "title": "TUI auto-update loop + footer badge",
+      "status": "pending",
+      "retry_count": 0
+    }
+  ],
+  "harness": "aider",
+  "model": "gemma4-cpe:31b",
+  "provider": "homelab-litellm"
+}

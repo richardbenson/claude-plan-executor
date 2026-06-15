@@ -10,6 +10,12 @@ import _summarise from './summarise.md' with { type: 'text' };
 import _bootstrapDetect from './bootstrap-detect.md' with { type: 'text' };
 // @ts-expect-error — Bun text import
 import _singlePrompt from './single-prompt.md' with { type: 'text' };
+// @ts-expect-error — Bun text import
+import _benchPrompt from './bench-prompt.md' with { type: 'text' };
+// @ts-expect-error — Bun text import
+import _opaqueContract from './opaque-contract.md' with { type: 'text' };
+// @ts-expect-error — Bun text import
+import _summarizeResult from './summarize-result.md' with { type: 'text' };
 import _phaseResultSchemaObj from './phase-result-schema.json';
 import _bootstrapDetectSchemaObj from './bootstrap-detect-schema.json';
 import _singlePromptResultSchemaObj from './single-prompt-result-schema.json';
@@ -18,6 +24,70 @@ export const PLANBOT_PROMPT: string = _planbot as unknown as string;
 export const SUMMARISE_PROMPT: string = _summarise as unknown as string;
 export const BOOTSTRAP_DETECT_PROMPT: string = _bootstrapDetect as unknown as string;
 export const SINGLE_PROMPT_TEMPLATE: string = _singlePrompt as unknown as string;
+/** Bench variant of the single-prompt template: commit only, never push/PR (clone has no real forge). */
+export const BENCH_PROMPT_TEMPLATE: string = _benchPrompt as unknown as string;
+
+/**
+ * Autonomy framing prepended to EVERY headless run — bench, single-prompt, and
+ * phases, across all harnesses. These runs have no human to answer questions, and
+ * an open-ended/question-style task otherwise risks the agent replying in chat and
+ * making no file changes (a no-op, since outcome is derived from the git diff).
+ * This forces it to proceed autonomously and deliver concrete changes.
+ */
+export const AUTONOMY_PREAMBLE: string =
+  'You are running fully autonomously and unattended — there is NO human available ' +
+  'to respond. Do NOT ask questions, request clarification, or wait for confirmation ' +
+  'or input, and do not stop partway expecting a reply. If the task is open-ended or ' +
+  'ambiguous, make reasonable assumptions, state them briefly, and proceed to a ' +
+  'complete solution. You MUST implement the task by editing files in the repository ' +
+  'right now — do NOT reply with a plan, checklist, to-do list, or a description of ' +
+  'what you would do; actually create and edit the real files (scripts, configs, ' +
+  'docs). Text output alone counts as a failure. Following your tool\'s own workflow ' +
+  '(such as naming the files you need to edit before editing them) is fine and does ' +
+  'not count as stopping. Keep working until the task is done.';
+
+/** Prepend the autonomy preamble to a prompt (applied to all headless runs/harnesses). */
+export function withAutonomy(prompt: string): string {
+  return `${AUTONOMY_PREAMBLE}\n\n---\n\n${prompt.trim()}`;
+}
+export const OPAQUE_CONTRACT: string = _opaqueContract as unknown as string;
+
+/** The push/PR step injected into the opaque contract for single-prompt runs only. */
+const OPAQUE_PR_STEP = `
+### Push & open a pull request
+Push the branch and open a pull request using whatever tool is available
+(\`gh pr create\`, \`tea pr create\`, etc.). The title should be a plain-English
+sentence describing the change; the body should summarise what changed and how to
+verify it.
+`;
+
+/**
+ * Append the opaque "reporting contract" to a base prompt (a phase prompt or a
+ * raw single-prompt task). Opaque harnesses have no structured-output channel, so
+ * the contract tells the agent to commit, optionally open a PR, and write its
+ * result to `.cpe/result.json` for cpe to read. `withPr` adds the PR step + the
+ * `pr_created`/`pr_url` result fields (single-prompt); phases omit them.
+ */
+export function buildOpaquePrompt(base: string, opts: { withPr: boolean }): string {
+  const prStep = opts.withPr ? OPAQUE_PR_STEP : '';
+  const prFields = opts.withPr
+    ? ',\n  "pr_created": true,\n  "pr_url": "https://... or null"'
+    : '';
+  const contract = OPAQUE_CONTRACT
+    .replace('{{PR_STEP}}', prStep)
+    .replace('{{PR_FIELDS}}', prFields);
+  return `${base.trimEnd()}\n\n${contract}`;
+}
+
+export const SUMMARIZE_RESULT_PROMPT: string = _summarizeResult as unknown as string;
+
+/** Build the summarization prompt from a git diff + transcript tail (both truncated). */
+export function buildSummarizePrompt(diff: string, transcript: string): string {
+  const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '\n…(truncated)…' : s);
+  return SUMMARIZE_RESULT_PROMPT
+    .replace('{{DIFF}}', clip(diff.trim() || '(empty diff)', 12000))
+    .replace('{{TRANSCRIPT}}', clip(transcript.trim() || '(no transcript)', 6000));
+}
 export const PHASE_RESULT_SCHEMA: string = JSON.stringify(_phaseResultSchemaObj);
 export const BOOTSTRAP_DETECT_SCHEMA: string = JSON.stringify(_bootstrapDetectSchemaObj);
 export const SINGLE_PROMPT_RESULT_SCHEMA: string = JSON.stringify(_singlePromptResultSchemaObj);

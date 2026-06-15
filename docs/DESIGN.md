@@ -1,4 +1,4 @@
-# Claude Plan Executor — TUI Design Spec
+# Coding Plan Executor — TUI Design Spec
 
 > Source-of-truth design doc for the `cpe` TUI. Pair with the visual reference (`tui-design.html` — open in a browser) for layout intuition.
 

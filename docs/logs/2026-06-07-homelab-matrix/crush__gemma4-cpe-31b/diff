@@ -1,0 +1,79 @@
+diff --git a/ansible/group_vars/opencode_vms/all.yml b/ansible/group_vars/opencode_vms/all.yml
+index 4379538..84d03c8 100644
+--- a/ansible/group_vars/opencode_vms/all.yml
++++ b/ansible/group_vars/opencode_vms/all.yml
+@@ -5,6 +5,13 @@ opencode_gitea_hostname: "gitea.lab.richardbenson.co.uk"
+ opencode_github_username: "richardbenson"
+ opencode_gitea_username: "richard"
+ 
++# Tool versions
++opencode_openchamber_version: "1.11.7"
++opencode_gh_cli_version: "2.93.0"
++opencode_tea_cli_version: "0.14.1"
++opencode_rtk_version: "0.42.0"
++opencode_nodejs_version: "22"
++
+ # Provider URLs for opencode.json
+ opencode_k3s_ollama_base_url: "http://ollama.ollama.svc.homelab.cluster:11434/v1"
+ opencode_desktop_ollama_base_url: "http://192.168.1.3:11434/v1"
+diff --git a/ansible/playbooks/provision-opencode.yml b/ansible/playbooks/provision-opencode.yml
+index f217700..d45b884 100644
+--- a/ansible/playbooks/provision-opencode.yml
++++ b/ansible/playbooks/provision-opencode.yml
+@@ -54,7 +54,7 @@
+ 
+     - name: Add NodeSource apt repository
+       ansible.builtin.apt_repository:
+-        repo: "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main"
++        repo: "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_{{ opencode_nodejs_version }}.x nodistro main"
+         state: present
+         filename: nodesource
+ 
+@@ -79,38 +79,38 @@
+       ansible.builtin.shell:
+         cmd: >
+           npm install -g
+-          https://github.com/openchamber/openchamber/releases/download/v1.11.7/openchamber-web-1.11.7.tgz
++          https://github.com/openchamber/openchamber/releases/download/v{{ opencode_openchamber_version }}/openchamber-web-{{ opencode_openchamber_version }}.tgz
+         creates: /usr/local/bin/openchamber
+ 
+     # -- gh CLI ---------------------------------------------------------------
+ 
+-    - name: Download gh CLI v2.93.0
++    - name: Download gh CLI v{{ opencode_gh_cli_version }}
+       ansible.builtin.unarchive:
+-        src: https://github.com/cli/cli/releases/download/v2.93.0/gh_2.93.0_linux_amd64.tar.gz
++        src: https://github.com/cli/cli/releases/download/v{{ opencode_gh_cli_version }}/gh_{{ opencode_gh_cli_version }}_linux_amd64.tar.gz
+         dest: /tmp
+         remote_src: true
+-        creates: /tmp/gh_2.93.0_linux_amd64
++        creates: /tmp/gh_{{ opencode_gh_cli_version }}_linux_amd64
+ 
+     - name: Install gh binary
+       ansible.builtin.copy:
+-        src: /tmp/gh_2.93.0_linux_amd64/bin/gh
++        src: /tmp/gh_{{ opencode_gh_cli_version }}_linux_amd64/bin/gh
+         dest: /usr/local/bin/gh
+         mode: "0755"
+         remote_src: true
+ 
+     # -- tea CLI --------------------------------------------------------------
+ 
+-    - name: Install tea CLI v0.14.1
++    - name: Install tea CLI v{{ opencode_tea_cli_version }}
+       ansible.builtin.get_url:
+-        url: https://gitea.com/gitea/tea/releases/download/v0.14.1/tea-0.14.1-linux-amd64
++        url: https://gitea.com/gitea/tea/releases/download/v{{ opencode_tea_cli_version }}/tea-{{ opencode_tea_cli_version }}-linux-amd64
+         dest: /usr/local/bin/tea
+         mode: "0755"
+ 
+     # -- rtk ------------------------------------------------------------------
+ 
+-    - name: Download rtk v0.42.0 (musl)
++    - name: Download rtk v{{ opencode_rtk_version }} (musl)
+       ansible.builtin.unarchive:
+-        src: https://github.com/rtk-ai/rtk/releases/download/v0.42.0/rtk-x86_64-unknown-linux-musl.tar.gz
++        src: https://github.com/rtk-ai/rtk/releases/download/v{{ opencode_rtk_version }}/rtk-x86_64-unknown-linux-musl.tar.gz
+         dest: /tmp
+         remote_src: true
+         creates: /tmp/rtk

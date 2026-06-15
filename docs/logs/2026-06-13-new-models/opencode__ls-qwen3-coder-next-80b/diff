@@ -1,0 +1,19 @@
+diff --git a/DONE.md b/DONE.md
+new file mode 100644
+index 0000000..ed20df9
+--- /dev/null
++++ b/DONE.md
+@@ -0,0 +1 @@
++Fixed greet() to properly use the name argument and return "Hello, <name>!".
+diff --git a/greet.py b/greet.py
+index b2dd4bb..5757e46 100644
+--- a/greet.py
++++ b/greet.py
+@@ -1,6 +1,5 @@
+ def greet(name):
+-    # BUG: ignores the name argument
+-    return "Hello, !"
++    return "Hello, %s!" % name
+ 
+ 
+ if __name__ == "__main__":

@@ -1,0 +1,546 @@
+.github/workflows/release.yml       |  53 ++--
+ docs/DESIGN.md                      | 375 +++----------------------
+ docs/install-and-release.md         |  50 +---
+ docs/self-update.md                 |  54 ++++
+ docs/self-update/PHASE_01.md        |  36 ---
+ docs/self-update/PHASE_01.prompt.md |  45 ---
+ docs/self-update/PHASE_02.md        |  49 ----
+ docs/self-update/PHASE_02.prompt.md |  62 -----
+ docs/self-update/PHASE_03.md        |  55 ----
+ docs/self-update/PHASE_03.prompt.md |  67 -----
+ docs/self-update/PHASE_04.md        |  47 ----
+ docs/self-update/PHASE_04.prompt.md |  62 -----
+ docs/self-update/PROGRESS.md        |  42 ---
+ docs/self-update/README.md          |  96 -------
+ scripts/install.sh                  | 119 ++++----
+ src/cli.ts                          | 203 +-------------
+ src/commands/start.ts               |  34 +--
+ src/index.ts                        |   3 +
+ src/tui/Manage.tsx                  | 539 ++----------------------------------
+ src/tui/Watch.tsx                   | 147 ++++------
+ src/tui/hooks/useInstalledUpdate.ts |  16 ++
+ src/types/meta.ts                   |  28 +-
+ src/update/auto.test.ts             |  83 ++++++
+ src/update/auto.ts                  |  86 ++++++
+ src/update/check.test.ts            |  55 ++++
+ src/update/check.ts                 |  92 ++++++
+ src/update/install.test.ts          | 110 ++++++++
+ src/update/install.ts               | 106 +++++++
+ src/update/state.test.ts            |  52 ++++
+ src/update/state.ts                 |  63 +++++
+ 30 files changed, 960 insertions(+), 1869 deletions(-)
+
+--- Changes ---
+
+.github/workflows/release.yml
+  @@ -23,7 +23,7 @@ jobs:
+  -      - run: >
+  +      - run: ">
+             bun build --compile --target=${{ matrix.target }}
+             --define 'process.env.CPE_VERSION="${{ github.ref_name }}"'
+             --outfile ${{ matrix.asset }}
+  @@ -33,38 +33,50 @@ jobs:
+  -  release:
+  +  generate-checksums:
+       needs: build
+       runs-on: ubuntu-latest
+  -    permissions:
+  -      contents: write
+       steps:
+         - uses: actions/checkout@v6
+  -
+  -      - name: Extract release notes from CHANGELOG
+  -        id: notes
+  -        env:
+  -          TAG: ${{ github.ref_name }}
+  -        run: |
+  -          awk "/^## ${TAG} *$/{found=1; next} found && /^## /{exit} found{print}" CHANGELOG.md \
+  -            > release_notes.md
+  -          if [ ! -s release_notes.md ]; then
+  -            echo "See the [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details." \
+  -              > release_notes.md
+  -          fi
+  -
+         - uses: actions/download-artifact@v8
+           with:
+             path: artifacts
+  +      - name: Collect binaries into flat dir
+  +        run: |
+  +          mkdir -p checksums
+  +          mv artifacts/cpe-linux-x64/cpe-linux-x64 checksums/cpe-linux-x64
+  +          mv artifacts/cpe-linux-arm64/cpe-linux-arm64 checksums/cpe-linux-arm64
+  +          mv artifacts/cpe-darwin-x64/cpe-darwin-x64 checksums/cpe-darwin-x64
+  +          mv artifacts/cpe-darwin-arm64/cpe-darwin-arm64 checksums/cpe-darwin-arm64
+  +      - name: Generate SHA256SUMS
+  +        run: |
+  +          cd checksums
+  +          sha256sum * > ../SHA256SUMS
+  +          ls -l SHA256SUMS
+  +      - uses: actions/upload-artifact@v7
+  +        with:
+  +          name: checksums
+  +          path: SHA256SUMS
+   
+  +  release:
+  +    needs: [build, generate-checksums]
+  +    runs-on: ubuntu-latest
+  +    permissions:
+  +      contents: write
+  +    steps:
+  +      - uses: actions/checkout@v6
+  +      - name: Download checksums
+  +        uses: actions/download-artifact@v8
+  +        with:
+  +          name: checksums
+  +          path: checksums
+         - name: Create GitHub Release
+           env:
+             GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+             TAG: ${{ github.ref_name }}
+  -          PRERELEASE: ${{ contains(github.ref_name, '-') }}
+           run: |
+             FLAGS=()
+  -          [[ "$PRERELEASE" == "true" ]] && FLAGS+=(--prerelease)
+  +          [[ ${{ contains(github.ref_name, '-') }} == true ]] && FLAGS+=(--prerelease)
+             gh release create "$TAG" \
+               --repo ${{ github.repository }} \
+               --title "cpe $TAG" \
+  @@ -74,4 +86,5 @@ jobs:
+  -            scripts/install.sh
+  +            scripts/install.sh \
+  +            checksums/SHA256SUMS
+  +33 -20
+
+docs/DESIGN.md
+  @@ -1,348 +1,55 @@
+  -# Coding Plan Executor — TUI Design Spec
+  +## Footer Badge Specification
+   
+  -> Source-of-truth design doc for the `cpe` TUI. Pair with the visual reference (`tui-design.html` — open in a browser) for layout intuition.
+  +**Purpose**: Communicate that a newer binary release has been downloaded while the current session is still running, prompting the user to restart the CPE process to pick up the update.
+   
+  -This doc is written for a Claude Code session driving implementation. It is denser than a normal design doc because it's meant to translate directly into Ink components.
+  -
+  ----
+  -
+  -## 1. Two modes, one tool
+  -
+  -`cpe` has **two modes** that share the same data and primitives but optimise for very different attention budgets. Toggle with `v`.
+  -
+  -| Mode | When | What it looks like |
+  -|---|---|---|
+  -| **Watch** *(passive)* | Side monitor; overnight; "is it still chewing?" | Big readable type, calm chrome, almost no keybinds. Hero is what's running NOW. Below it: live activity feed, up-next, limit window, today's tally. |
+  -| **Manage** *(active)* | At keyboard; reordering queue; deciding what to retry | Dense triptych: queue · phases · live session. Visible selection state. Every operation has a keybind in the contextual command bar. |
+  -
+  -**`cpe start` always launches in Watch.** Manage is opt-in via `v`.
+  -
+  ----
+  -
+  -## 2. Visual system
+  -
+  -### 2.1 Type
+  -
+  -- **Font**: JetBrains Mono (or the user's terminal default — Ink doesn't get to choose, but the design assumes monospace).
+  -- **Cell**: 1 ch × 1 line. All positioning is cell-aligned.
+  -- **Big numbers** (phase counter, limit countdown) are rendered in a larger pixel-sized type within the cell grid — this is the only place we break monospace alignment, intentionally, for legibility from across the room.
+  -
+  -### 2.2 Color (Tokyo Night)
+  -
+  -| Token | Hex | Role |
+  -|---|---|---|
+  -| `bg` | `#1a1b26` | terminal background |
+  -| `bgFloat` | `#1f2335` | row highlight, modal cards |
+  -| `bgHi` | `#292e42` | selection highlight |
+  -| `border` | `#3b4261` | box borders (resting) |
+  -| `borderHi` | `#414868` | divider rules (`·`) |
+  -| `dim` | `#565f89` | labels, secondary text |
+  -| `dim2` | `#737aa2` | mid-emphasis text |
+  -| `fgMute` | `#9aa5ce` | body text (de-emphasised) |
+  -| `fgDark` | `#a9b1d6` | body text |
+  -| `fg` | `#c0caf5` | primary text |
+  -| `blue` | `#7aa2f7` | brand / "cpe" wordmark |
+  -| `cyan` | `#7dcfff` | **executing**, focused pane, active selection |
+  -| `cyan2` | `#2ac3de` | accents (header for non-focused active info) |
+  -| `teal` | `#73daca` | Watch-mode header accent |
+  -| `green` | `#9ece6a` | **complete**, OK, "live" indicator |
+  -| `green2` | `#41a6b5` | commit SHAs, PR-open |
+  -| `yellow` | `#e0af68` | **budget**, **user-paused** |
+  -| `orange` | `#ff9e64` | **retrying**, Manage-mode header accent |
+  -| `red` | `#f7768e` | **failed**, destructive confirmations |
+  -| `magenta` | `#bb9af7` | **paused-limit** (5h window), countdowns |
+  -
+  -**Rule**: saturated hues are never decorative. They map 1:1 to a state, a focus position, or a destructive action.
+  -
+  -### 2.3 State taxonomy
+  -
+  -The single source of truth for run/phase status. Every screen draws state with the same glyph + colour.
+  -
+  -| State | Glyph | Color | Label | Meaning |
+  -|---|---|---|---|---|
+  -| `queued` | `○` | `dim2` | "queued" | Waiting in line |
+  -| `executing` | `◐` | `cyan` | "executing" | Claude session running |
+  -| `retrying` | `↻` | `orange` | "retrying" | Phase failed once, on second attempt |
+  -| `paused` | `⏸` | `yellow` | "paused" | User-initiated pause |
+  -| `paused-limit` | `◴` | `magenta` | "limit-wait" | Waiting on 5h window |
+  -| `finalising` | `⤴` | `teal` | "finalising" | Running `summarise` + creating PR |
+  -| `complete` | `●` | `green` | "complete" | All phases done |
+  -| `pr-created` | `✓` | `green` | "PR opened" | Push + PR done |
+  -| `failed` | `✕` | `red` | "failed" | Phase failed after retries exhausted |
+  -| `pending` | `·` | `dim` | "pending" | Phase not yet reached |
+  -
+  ----
+  -
+  -## 3. Watch (passive) — anatomy
+  -
+  -**Default mode on launch. Target size: 120×40.**
+  -
+  -```
+  -┌──────────────────────────────────────────────────────────────────────────┐
+  -│ ▮ cpe · WATCH · queue chewing ●                today · active 4h 26m     │  row 0
+  -├──────────────────────────────────────────────────────────────────────────┤
+  -│ ╭────────── HERO (rows 2-13) ────────────────────────────────────────╮  │
+  -│ │ NOW EXECUTING                              today's progress         │  │
+  -│ │ meatbot / 001-add-tests                    14 phases complete       │  │
+  -│ │                                                                     │  │
+  -│ │ phase 04 / 14 — Login failure & lockout tests   budget today        │  │
+  -│ │                                                  $9.74 across 4 runs │  │
+  -│ │ plan ████████████░░░░░░░░░░░░░░░░░░░░░░░░  cost/hour ▁▂▃▄▅▆▇█       │  │
+  -│ ╰─────────────────────────────────────────────────────────────────────╯  │
+  -│                                                                          │
+  -│ LIVE ACTIVITY ● streaming session a7f3b2…                                │
+  -│ ····················································                     │
+  -│ 02:47:14  ✎ edit    src/auth/lockout.ts +18 −3 · writing █              │
+  -│ 02:46:52  $ bash    pnpm vitest run tests/login → 20 passed (1.04s)     │
+  -│ 02:46:23  ✎ edit    src/auth/login.ts +12 −4                            │
+  -│ 02:45:08  ▸ phase   started phase 04 — Login failure & lockout tests   │
+  ... (272 lines truncated)
+  +41 -326
+
+docs/install-and-release.md
+  @@ -1,48 +1,2 @@
+  -# Install and Release
+  -
+  -## Original Requirements
+  -
+  -Add a complete release pipeline and user-facing install story for the `cpe` binary:
+  -
+  -- **GitHub Actions CI**: Run typecheck, lint, and tests on every push and pull request to `main`.
+  -- **GitHub Actions Release**: Trigger on `v*` tag pushes; build four platform binaries (`linux-x64`, `linux-arm64`, `darwin-x64`, `darwin-arm64`) using Bun cross-compilation from a single Ubuntu runner, then publish a GitHub Release with all four binaries attached as assets.
+  -- **Version embedding**: Inject `CPE_VERSION` at build time via Bun `--define`; fall back to `'dev'` for local builds without the flag; CI passes the git tag name.
+  -- **Local install script** (`scripts/install-local.sh`): Build from source using `bun build --compile` and copy the binary to `~/.local/bin/cpe`.
+  -- **Remote install script** (`scripts/install.sh`): Auto-detect OS and CPU architecture, download the correct binary from the GitHub Release `latest` endpoint, place it at `~/.local/bin/cpe`.
+  -
+  -Definition of done: `cpe --version` prints the tag in CI builds and `dev` locally; a `v*` tag push triggers a full release; PRs are gated by CI; both install scripts work correctly.
+  -
+  -## What Was Built
+  -
+  -All three phases were completed on 2026-05-22 with no deviations from the plan.
+  -
+  -### Phase 01 — Version embedding (`b7de2ab`)
+  -
+  -- Created `src/version.ts` exporting `CPE_VERSION: string = process.env.CPE_VERSION ?? 'dev'`.
+  -- Updated `src/cli.ts` to import `CPE_VERSION` from `./version.js` and pass it to `program.version()`, removing the hardcoded `'0.1.0'` string.
+  -- Bun's `--define` flag replaces `process.env.CPE_VERSION` at compile time, so the fallback `'dev'` is a local-build-only code path and the CI-injected value is baked into the binary with no runtime env dependency.
+  -
+  -### Phase 02 — GitHub Actions workflows (`dd764fc`)
+  -
+  -- Created `.github/workflows/ci.yml`: triggers on push to any branch and on PRs targeting `main`; single `check` job on `ubuntu-latest` running `bun install --frozen-lockfile`, `bun run typecheck`, `bun run lint`, and `bun test`.
+  -- Created `.github/workflows/release.yml`: triggers on `v*` tag pushes; a `build` job uses a 4-entry matrix (`bun-linux-x64`, `bun-linux-arm64`, `bun-darwin-x64`, `bun-darwin-arm64`) to cross-compile all targets in parallel on Ubuntu; each job uploads its binary as a GitHub Actions artifact. A downstream `release` job (`needs: build`, `permissions: contents: write`) downloads all four artifacts and runs `gh release create --generate-notes` to publish the GitHub Release.
+  -
+  -### Phase 03 — Install scripts (`5b2237a`)
+  -
+  -- Created `scripts/install-local.sh`: `cd`s to the repo root from any working directory, builds with `bun build --compile`, copies the binary to `~/.local/bin/cpe`, and prints a PATH reminder if needed.
+  -- Created `scripts/install.sh`: detects OS (`uname -s`) and arch (`uname -m`), maps to asset names, downloads with `curl -fsSL` from the `releases/latest/download` URL, marks executable, and prints a PATH reminder. Exits with a clear error message for unsupported platforms.
+  -- Both scripts committed with executable bit set via `git add --chmod=+x`.
+  -
+  -## Lessons Learned
+  -
+  -**Bun `--define` is compile-time only.** `process.env.CPE_VERSION` is replaced at compile time, not at runtime. This means the binary carries the baked-in version string — there is no way to override it without rebuilding. The `?? 'dev'` fallback becomes dead code in CI builds. This is the intended behaviour but worth noting if you ever need dynamic versioning.
+  -
+  -**Cross-compilation from Ubuntu.** Bun supports compiling to all four targets (`linux-x64`, `linux-arm64`, `darwin-x64`, `darwin-arm64`) from a single `ubuntu-latest` runner. No macOS or ARM runners are needed for the build matrix, which keeps CI costs low and parallelism straightforward.
+  -
+  -**Artifact hand-off between jobs.** The standard `upload-artifact` / `download-artifact` pattern for passing binaries between the matrix `build` job and the `release` job works well. Each artifact is uploaded by asset name; the release job downloads them all into an `artifacts/` directory and passes the nested paths to `gh release create`.
+  -
+  -**`gh release create --generate-notes`.** Auto-generating release notes from merged PRs requires that the repo uses GitHub — this is assumed throughout but worth flagging if the project is ever mirrored elsewhere.
+  -
+  -**PATH reminder pattern.** Both install scripts use `[[ ":$PATH:" != *":$HOME/.local/bin:"* ]]` to detect whether the install directory is already on `PATH`. This is a shell-portable idiom that avoids false positives from partial matches (e.g. `/usr/local/bin` matching a naive grep for `local/bin`).
+  -
+  -**`install.sh` handles both `aarch64` and `arm64`.** Linux reports `aarch64`; macOS reports `arm64`. The case statement handles both spellings and maps them to the same `arm64` asset name.
+  +- What Was Built:
+  +  - 2026-06-10: Revisions introduced SHA256SUMS publication in GitHub Release and added verification step in the install.sh script. The script now downloads SHA256SUMS (if available) and validates the binary before installation, falling back to a warning if verification cannot be performed.
+  +2 -48
+
+docs/self-update.md
+  @@ -0,0 +1,54 @@
+  +# Self-Update Implementation Summary
+  +
+  +## Original Requirements
+  +
+  +From **README.md**:
+  +- `cpe update` resolves the latest GitHub release, compares it to the baked-in `CPE_VERSION`, downloads the matching binary, verifies its SHA256 checksum, atomically replaces the running binary, and reports the version change.
+  +- `cpe update --check` reports the current vs latest version without changing anything.
+  +- Automatic updating via `cpe start` checks every 6 hours and auto-installs newer releases; after install, a persistent yellow footer badge (`↑ vX.Y.Z installed – restart to apply`) appears in all TUI modes. Short‑lived CLI commands print a one‑line nudge at most once per 24 h when a newer version exists.
+  +- Configuration flag `update_auto?: boolean` in `~/.config/cpe/config.json` (default `true`). Setting `false` disables both auto‑update loops and nudges. Dev builds (`CPE_VERSION === 'dev'`) never check or nudge.
+  +- Release integrity: `release.yml` publishes a `SHA256SUMS` file alongside the four binaries; the updater downloads this file for verification.
+  +
+  +## What Was Built (Phase‑by‑Phase)
+  +
+  +### Phase 01 – Release checksums (`SHA256SUMS`)
+  +- Added `SHA256SUMS` to every GitHub release (`.github/workflows/release.yml`).
+  +- Updated `scripts/install.sh` to verify binaries against `SHA256SUMS` when present, with graceful fallback for older releases.
+  +- Documented the new asset in `docs/install-and-release.md`.
+  +
+  +### Phase 02 – Updater core module (`src/update/`)
+  +- Implemented `check.ts`, `install.ts`, and `state.ts` to resolve the latest tag via a manual redirect, compare versions, download, verify, and atomically rename the binary.
+  +- Added unit tests (`*_test.ts`) covering each module.
+  +- Persisted check‑state (`update-check.json`) following the `src/storage/` patterns.
+  +
+  +### Phase 03 – CLI surface (`cpe update`, config flag, nudge)
+  +- Exposed `cpe update [--check]` and `cpe update` commands in `src/commands/update.ts`.
+  +- Added `update_auto` flag to `AppConfig` (`src/types/meta.ts`).
+  +- Implemented `nudge.ts` to print a one‑line stderr message (`update available: <tag> – run cpe update`) for short‑lived commands when a newer version exists.
+  +- Updated `README.md` to document the commands and configuration flag.
+  +
+  +### Phase 04 – TUI auto‑update loop & footer badge
+  +- Created `src/update/auto.ts` which starts a background loop (every 6 hours) that calls the core updater when a newer release is found.
+  +- Provided a tiny in‑process store (`subscribeInstalledUpdate`, `getInstalledUpdate`) used by a new hook `useInstalledUpdate` (`src/tui/hooks/useInstalledUpdate.ts`).
+  +- Updated TUI footers in `src/tui/Watch.tsx`, `src/tui/Manage.tsx`, `src/tui/Bench.tsx` to display the badge `↑ vX.Y.Z installed – restart to apply`.
+  +- Added badge spec to `docs/DESIGN.md` and ensured guards (`CPE_VERSION !== 'dev'` and `config.update_auto !== false`) prevent unnecessary loops.
+  +- Tested loop guards and store semantics in `src/update/auto.test.ts`.
+  +
+  +## Lessons Learned
+  +
+  +- **Redirect‑based latest‑tag lookup** proved reliable and avoided GitHub API rate limits.
+  +- **Atomic binary swap** required downloading to the same directory as `process.execPath` and using `rename()`; this safely replaces the running binary without `ETXTBSY` errors.
+  +- **SHA256SUM verification** was crucial for release integrity; the installer gracefully degrades when the file is missing (old releases), satisfying backward compatibility.
+  +- **Config flag handling** (optional `update_auto?: boolean`) worked well with the existing `DEFAULT_CONFIG` pattern, defaulting to `true`.
+  +- **TUI badge implementation** was lightweight but required a shared in‑process store to persist across renders, fitting nicely with Ink's hook system.
+  +- **Testing strategy** – isolated unit tests for each module plus integration tests for the updater loop ensured high confidence before merging.
+  +
+  +## Next Steps / Open Items
+  +
+  +- Verify that the auto‑update loop respects the 6‑hour interval under all system states (e.g., suspended, VM migration).
+  +- Add telemetry (optional) to report successful/unsuccessful updates for future analytics.
+  +- Consider a graceful fallback if the network request to GitHub fails (retry with exponential back‑off).
+  +
+  +---
+  +
+  +*All phase documents (`PHASE_0X.md` and corresponding `.prompt.md`) have been consolidated above. The plan folder `docs/self-update/` will be removed as instructed.*
+  +54 -0
+
+docs/self-update/PHASE_01.md
+  @@ -1,36 +0,0 @@
+  -# Phase 01 — Release checksums (SHA256SUMS)
+  -
+  -**Branch:** feature/self-update
+  -**Dependencies:** none
+  -
+  -## Summary
+  -
+  -Add a `SHA256SUMS` file to every GitHub release so the updater (Phase 02) and
+  -`scripts/install.sh` can verify downloaded binaries. This phase ships first so
+  -that the next tagged release already carries checksums by the time the updater
+  -exists.
+  -
+  -## Context
+  -
+  -- `.github/workflows/release.yml` has two jobs: a 4-entry matrix `build` job
+  -  that uploads each binary as an artifact named after the asset
+  -  (`cpe-linux-x64`, `cpe-linux-arm64`, `cpe-darwin-x64`, `cpe-darwin-arm64`),
+  -  and a `release` job that downloads them into `artifacts/` — note the nested
+  -  layout `artifacts/<asset>/<asset>` — and runs `gh release create` listing
+  -  each binary path plus `scripts/install.sh`.
+  -- `SHA256SUMS` must contain **bare asset names** (e.g.
+  -  `<hash>  cpe-linux-x64`), not nested artifact paths, so verifiers can match
+  -  by filename. The binaries therefore need to be collected into one flat
+  -  directory before hashing.
+  -- `scripts/install.sh` downloads from the `releases/latest/download/` URL,
+  -  detects OS/arch via `uname`, and currently does no verification. It must
+  -  keep working against releases that predate `SHA256SUMS` (warn + continue on
+  -  404), because the script itself is published as a release asset and users
+  -  may run a new script against an old release. macOS has `shasum -a 256`, not
+  -  `sha256sum`.
+  -
+  -## Files expected to change
+  -
+  -- `.github/workflows/release.yml` — generate and attach `SHA256SUMS`
+  -- `scripts/install.sh` — download and verify checksum when available
+  -- `docs/install-and-release.md` — short "What changed" note documenting the new asset
+  +0 -36
+
+docs/self-update/PHASE_01.prompt.md
+  @@ -1,45 +0,0 @@
+  -Read docs/self-update/PHASE_01.md for context before starting, and docs/self-update/README.md for the overall feature requirements. You are working on branch feature/self-update — create it from main if it does not exist yet, or check it out if it does.
+  -
+  -**PROGRESS.md update**: At the start of this phase, update `PROGRESS.md`: set the status for this phase to `in-progress` and fill in the started date. When the phase is complete, set the status to `complete` and fill in the completed date. Use today's date in YYYY-MM-DD format. The file is docs/self-update/PROGRESS.md — update both the summary table row and the Phase Details entry.
+  -
+  -**Idempotency**: Before each significant action (creating a file, running a migration, making a commit), check the working tree state first — does the file already exist? Is this already committed? Are the tests already passing? This makes the phase safe to resume after a rate-limit interruption.
+  -
+  -## Task
+  -
+  -Add SHA256 checksum publication to the release pipeline and checksum verification to the remote install script.
+  -
+  -## Files to modify
+  -
+  -1. `.github/workflows/release.yml` — in the `release` job, after the `actions/download-artifact@v8` step and before the `gh release create` step, add a step that collects the four binaries from their nested artifact paths (`artifacts/<asset>/<asset>`) into a single flat directory, then runs `sha256sum` over the bare filenames to produce a `SHA256SUMS` file whose lines reference plain asset names (`<hash>  cpe-linux-x64`, etc.). Add the `SHA256SUMS` file to the asset list passed to `gh release create`. Keep the existing assets (four binaries plus `scripts/install.sh`) exactly as they are; adjust the binary paths in the `gh release create` arguments if you point them at the flat directory instead of the nested artifact paths.
+  -
+  -2. `scripts/install.sh` — after downloading the binary and before `chmod +x`, attempt to download `SHA256SUMS` from the same `releases/latest/download/` base URL into a temp file. If the download fails (release predates checksums), print a `[warn]` line that verification was skipped and continue — this script is itself a release asset and must keep working against older releases. If it succeeds, extract the line matching the chosen `$ASSET` name and verify the downloaded binary against it; on mismatch, delete the downloaded binary, print a clear error to stderr, and exit 1. Use `sha256sum` when available and fall back to `shasum -a 256` (macOS ships only the latter). Clean up the temp file in all paths.
+  -
+  -3. `docs/install-and-release.md` — append a dated note (2026-06-10) to the "What Was Built" section recording that releases now include a `SHA256SUMS` asset and that `install.sh` verifies against it when present.
+  -
+  -## Code patterns to follow
+  -
+  -- `release.yml` uses plain `run:` steps with bash; follow the existing style (env vars via `env:` blocks, `$TAG`-style references, no third-party actions beyond the ones already used).
+  -- `install.sh` uses `set -euo pipefail`, lowercase locals (`os`, `arch`, `ASSET` for the derived asset), `[warn]`/`[info]` prefixes for advisory output, and stderr + `exit 1` for fatal errors. Match the existing case-statement and quoting style.
+  -
+  -## Edge cases
+  -
+  -- `SHA256SUMS` lines must use exactly two spaces between hash and filename (the `sha256sum` default) so `sha256sum -c` and naive `awk '{print $1}'` parsing both work.
+  -- The artifact download layout is nested (`artifacts/cpe-linux-x64/cpe-linux-x64`); hashing must happen against bare filenames or the SUMS lines will contain paths no verifier can match.
+  -- macOS has no `sha256sum`; Linux minimal images may lack `shasum`. Detect with `command -v` and use whichever exists; if neither exists, warn and skip verification rather than failing the install.
+  -- A partially-downloaded binary must never be left at `~/.local/bin/cpe` after a failed verification.
+  -
+  -## Acceptance criteria
+  -
+  -- `bash -n scripts/install.sh` passes (syntax check).
+  -- The release workflow YAML is valid (parses cleanly; `actionlint` if available, otherwise a YAML parse via `bun -e` or python is sufficient).
+  -- Reading the workflow diff: `SHA256SUMS` is generated from bare asset names and is included in the `gh release create` asset list.
+  -- `scripts/install.sh` verification logic: mismatch path deletes the binary and exits non-zero; missing-SUMS path warns and continues; both checked by manual inspection or a scripted dry-run with a locally crafted SUMS file (do not hit the network in CI tests).
+  -- `bun run typecheck`, `bun run lint`, and `bun test` still pass (no TypeScript is touched, but run them to confirm the tree is green).
+  -
+  -## References
+  -
+  -- `.github/workflows/release.yml` — current build/release jobs and asset naming.
+  -- `scripts/install.sh` — current download flow, platform detection, and the `[warn]`/`[info]` output conventions to match.
+  -- `docs/install-and-release.md` — "Lessons Learned" already documents the nested artifact layout (`artifacts/<asset>/<asset>`); your flat-directory step is the consequence of that layout.
+  -
+  -**One commit per phase**: At the end of the phase, after all acceptance criteria are met, make exactly one git commit with a conventional commit message (e.g. `feat: phase 01 — publish SHA256SUMS with releases and verify in install.sh`). Do not make intermediate commits during the phase. If you find the working tree already has a commit for this phase (check `git log --oneline -3`), skip the commit step.
+  +0 -45
+
+docs/self-update/PHASE_02.md
+  @@ -1,49 +0,0 @@
+  -# Phase 02 — Updater core module (src/update/)
+  -
+  -**Branch:** feature/self-update
+  -**Dependencies:** none (conceptually follows 01: releases must carry SHA256SUMS for the installer to verify against)
+  -
+  -## Summary
+  -
+  -Create the self-contained update engine: resolve the latest released version,
+  -compare it to the running version, download + verify + atomically install a
+  -new binary, and persist check-state for throttling. No CLI or TUI wiring yet —
+  -that is Phases 03 and 04. Everything here is unit-testable without network.
+  -
+  -## Context
+  -
+  -- The running version is `CPE_VERSION` from `src/version.ts` — baked in at
+  -  compile time via Bun `--define`, `'dev'` for local builds.
+  -- Releases live at GitHub repo `richardbenson/claude-plan-executor` with
+  -  assets `cpe-{linux|darwin}-{x64|arm64}` and (after Phase 01) `SHA256SUMS`.
+  -  Tags are `v*` (e.g. `v0.2.0`); prerelease tags contain a `-`
+  -  (see the `PRERELEASE` detection in release.yml).
+  -- The latest tag is resolvable without the GitHub API: a request to
+  -  `https://github.com/<slug>/releases/latest` with `redirect: 'manual'`
+  -  returns a `Location` header ending in `/tag/<tag>`.
+  -- Binary swap: Bun-compiled binaries cannot be overwritten in place while
+  -  running (`ETXTBSY` on Linux); the safe pattern is download to a temp file
+  -  **in the same directory** as `process.execPath` (same filesystem →
+  -  `rename()` is atomic), verify, chmod 755, then rename over the target.
+  -- State-file conventions live in `src/storage/` — see `meta.ts` for the
+  -  optional `base?: string` parameter pattern that makes the module testable
+  -  against a temp directory, and `config.ts` for the try/catch-with-default
+  -  read pattern.
+  -- Tests use `bun test` (`describe`/`it`/`expect` from `bun:test`); see
+  -  `src/storage/meta.test.ts` and `src/runner/` tests for temp-dir patterns.
+  -
+  -## Module layout
+  -
+  -- `src/update/check.ts` — `REPO_SLUG`, `fetchLatestTag()`, `compareVersions()`, `isNewer()`
+  -- `src/update/install.ts` — `assetName()`, `downloadAndInstall(tag)`
+  -- `src/update/state.ts` — read/write `update-check.json`, `shouldCheck()`
+  -- `src/update/check.test.ts`, `src/update/install.test.ts`, `src/update/state.test.ts`
+  -
+  -## Files expected to change
+  -
+  -- `src/update/check.ts` (new)
+  -- `src/update/install.ts` (new)
+  -- `src/update/state.ts` (new)
+  -- `src/update/check.test.ts` (new)
+  -- `src/update/install.test.ts` (new)
+  -- `src/update/state.test.ts` (new)
+  +0 -49
+
+docs/self-update/PHASE_02.prompt.md
+  @@ -1,62 +0,0 @@
+  -Read docs/self-update/PHASE_02.md for context before starting, and docs/self-update/README.md for the overall feature requirements. You are working on branch feature/self-update — create it from main if it does not exist yet, or check it out if it does.
+  -
+  -**PROGRESS.md update**: At the start of this phase, update `PROGRESS.md`: set the status for this phase to `in-progress` and fill in the started date. When the phase is complete, set the status to `complete` and fill in the completed date. Use today's date in YYYY-MM-DD format. The file is docs/self-update/PROGRESS.md — update both the summary table row and the Phase Details entry.
+  -
+  -**Idempotency**: Before each significant action (creating a file, running a migration, making a commit), check the working tree state first — does the file already exist? Is this already committed? Are the tests already passing? This makes the phase safe to resume after a rate-limit interruption.
+  -
+  -## Task
+  -
+  -Create the updater core in a new `src/update/` directory: version resolution and comparison, verified atomic binary installation, and persisted check-state. No CLI or TUI wiring in this phase.
+  -
+  -## Files to create
+  -
+  -1. `src/update/check.ts`
+  -   - `export const REPO_SLUG = 'richardbenson/claude-plan-executor';`
+  -   - `fetchLatestTag(timeoutMs?: number): Promise<string>` — `fetch('https://github.com/' + REPO_SLUG + '/releases/latest', { redirect: 'manual', signal: AbortSignal.timeout(...) })`, read the `location` header, return the final path segment after `/tag/` (e.g. `v0.2.0`). Throw a descriptive Error if the header is missing or unparseable. Default timeout around 5000 ms.
+  -   - `compareVersions(a: string, b: string): number` — strip a leading `v`, split on `-` into core and prerelease, compare dot-separated core segments numerically (missing segments are 0); a version with a prerelease suffix is LOWER than the same core without one; two prerelease suffixes compare lexically. Pure function, no I/O.
+  -   - `isNewer(latestTag: string, currentVersion: string): boolean` — returns false whenever `currentVersion === 'dev'`; otherwise `compareVersions(latestTag, currentVersion) > 0`.
+  -
+  -2. `src/update/install.ts`
+  -   - `assetName(): string` — map `process.platform` (`linux` → `linux`, `darwin` → `darwin`) and `process.arch` (`x64` → `x64`, `arm64` → `arm64`) to `cpe-<os>-<arch>`; throw a clear "unsupported platform" Error for anything else.
+  -   - `downloadAndInstall(tag: string, opts?: { execPath?: string; fetchImpl?: typeof fetch }): Promise<void>` — the injectable `execPath` (default `process.execPath`) and `fetchImpl` (default global `fetch`) exist so tests can run against temp files with a stubbed fetch. Flow: download `https://github.com/<slug>/releases/download/<tag>/SHA256SUMS` and the asset for `assetName()`; stream the asset to a temp file named like `.cpe-update-<pid>` in `path.dirname(execPath)` (same filesystem so the final rename is atomic); compute its SHA256 with `new Bun.CryptoHasher('sha256')`; find the SUMS line whose filename field equals the asset name and compare hashes; on success `fs.chmodSync(tmp, 0o755)` then `fs.renameSync(tmp, execPath)`. On ANY failure (missing SUMS file → message must say the release predates checksums; missing line; hash mismatch; download error) delete the temp file in a finally block and rethrow with a message that names the failing step.
+  -
+  -3. `src/update/state.ts`
+  -   - State shape `{ last_checked_at?: string; latest_seen?: string }` stored at `<base ?? ~/.local/state/cpe>/update-check.json`.
+  -   - `readUpdateState(base?: string)`, `writeUpdateState(state, base?)`, and `shouldCheck(intervalHours: number, now?: Date, base?: string): boolean` (true when no state, unparseable state, or `last_checked_at` older than the interval).
+  -
+  -4. `src/update/check.test.ts`, `src/update/install.test.ts`, `src/update/state.test.ts` — see acceptance criteria. No network access in any test: stub `fetchImpl`, build SUMS content locally, use `fs.mkdtempSync(path.join(os.tmpdir(), ...))` for state/install targets.
+  -
+  -## Code patterns to follow
+  -
+  -- Mirror `src/storage/meta.ts` for the optional `base?: string` parameter and `src/storage/config.ts` for try/catch-with-default reads and `fs.mkdirSync(..., { recursive: true })` before writes; write JSON with `JSON.stringify(x, null, 2) + '\n'`.
+  -- Imports use the `import * as fs from 'fs'` / `'os'` / `'path'` style and `.js` extensions on relative imports, matching the rest of src/.
+  -- Tests use `bun:test` (`describe`, `it`/`test`, `expect`) like `src/storage/meta.test.ts`.
+  -- Error reporting: throw `Error` with actionable messages; callers (Phases 03/04) handle display. No `console.log` in this module.
+  -
+  -## Edge cases
+  -
+  -- `currentVersion === 'dev'` must short-circuit `isNewer` to false — dev builds never self-update.
+  -- `compareVersions('v0.10.0', 'v0.9.0')` must be positive (numeric, not lexical, segment comparison).
+  -- Prerelease ordering: `v1.0.0-rc.1` < `v1.0.0`.
+  -- SUMS parsing must tolerate both single-space and double-space separators and trailing newline, and must match the exact filename (no substring matches — `cpe-linux-x64` must not match a hypothetical `cpe-linux-x64-musl` line).
+  -- Temp file must be cleaned up on every failure path; a failed update must leave the original binary untouched.
+  -- `fetchLatestTag` must not follow the redirect (a 302 with `location` is the success case) and must handle a 200 (no redirect — unexpected) as an error.
+  -
+  -## Acceptance criteria
+  -
+  -- `compareVersions` unit tests cover: equal versions, patch/minor/major bumps, leading-`v` stripping, multi-digit segments (0.10 vs 0.9), prerelease < release, missing segments (1.0 == 1.0.0).
+  -- `isNewer` returns false for `currentVersion 'dev'` regardless of the latest tag.
+  -- `assetName` tests cover the current platform's mapping and assert the error path via monkey-patched `process.platform`/`process.arch` descriptors (or by extracting a pure helper that takes platform/arch as arguments — preferred).
+  -- `downloadAndInstall` tests (stubbed fetch, temp dir): happy path replaces the target file and makes it executable; checksum mismatch leaves the original target untouched, removes the temp file, and rejects; missing SHA256SUMS (404 stub) rejects with a message mentioning checksums; the temp file is created in the same directory as the target.
+  -- `shouldCheck` tests: no state file → true; fresh state → false; state older than interval → true; corrupt JSON → true.
+  -- `bun run typecheck`, `bun run lint`, and `bun test` all pass.
+  -
+  -## References
+  -
+  -- `src/storage/meta.ts` — `base?: string` testability pattern and JSON write style.
+  -- `src/storage/config.ts` — read-with-default and `CONFIG_PATH` constant style.
+  -- `src/storage/meta.test.ts` — bun:test structure and temp-dir usage.
+  -- `src/version.ts` — the `CPE_VERSION` constant the comparison logic serves (do not import it into src/update/; take versions as parameters so the module stays pure and testable).
+  -- `.github/workflows/release.yml` — tag format (`v*`, prerelease tags contain `-`) and asset names the installer must request.
+  -
+  -**One commit per phase**: At the end of the phase, after all acceptance criteria are met, make exactly one git commit with a conventional commit message (e.g. `feat: phase 02 — self-update core: version check, verified install, check-state`). Do not make intermediate commits during the phase. If you find the working tree already has a commit for this phase (check `git log --oneline -3`), skip the commit step.
+  +0 -62
+
+docs/self-update/PHASE_03.md
+  @@ -1,55 +0,0 @@
+  -# Phase 03 — CLI surface: `cpe update`, config flag, nudge
+  -
+
+... (more changes truncated)
+  +0 -2
+[full diff: rtk git diff --no-compact]

@@ -1,0 +1,197 @@
+diff --git a/src/cli.ts b/src/cli.ts
+index 6cca874..fecd9c4 100644
+--- a/src/cli.ts
++++ b/src/cli.ts
+@@ -12,6 +12,7 @@ import { worktreeCommand } from './commands/worktree.js';
+ import { promptCommand } from './commands/prompt.js';
+ import { benchCommand, benchSummaryCommand } from './commands/bench.js';
+ import { harnessCheckCommand, harnessListCommand } from './commands/harness.js';
++import { checkVersionCommand, updateCommand, autoUpdate } from './commands/update.js';
+ import { readQueue, writeQueue } from './storage/queue.js';
+ import {
+   providerListCommand,
+@@ -40,8 +41,25 @@ export function setupCli(): void {
+     .description('Coding Plan Executor — automates planbot → next-phase → summarise-plan on any harness')
+     .version(CPE_VERSION);
+ 
++  // Background auto-update check
++  autoUpdate().then(({ updated, version }) => {
++    if (updated) {
++      console.log(`[info] cpe was updated to ${version} in the background.`);
++      console.log(`       Please restart your session to use the new version.`);
++    }
++  }).catch(() => {});
++
++  program
++    .command('version')
++    .description('Check current version and look for updates')
++    .action(wrap(checkVersionCommand));
++
++  program
++    .command('update')
++    .description('Update cpe to the latest version')
++    .action(wrap(updateCommand));
++
+   program
+-    .command('plan [details...]')
+     .description('Create a new plan interactively')
+     .option('--disable-sandbox', 'Skip sandbox injection for this run')
+     .option('--provider <name>', 'Provider to use for this run')
+diff --git a/src/commands/update.ts b/src/commands/update.ts
+new file mode 100644
+index 0000000..d85a92b
+--- /dev/null
++++ b/src/commands/update.ts
+@@ -0,0 +1,105 @@
++import { CPE_VERSION } from '../version.js';
++import os from 'node:os';
++import fs from 'node:fs/promises';
++import { createWriteStream } from 'node:fs';
++import { pipeline } from 'node:stream/promises';
++
++const REPO = 'richardbenson/claude-plan-executor';
++const VERSION_API = `https://api.github.com/repos/${REPO}/releases/latest`;
++
++async function getLatestVersion(): Promise<{ version: string; url: string }> {
++  const response = await fetch(VERSION_API);
++  if (!response.ok) throw new Error(`GitHub API error: ${response.statusText}`);
++  const data = await response.json();
++  
++  const version = data.tag_name.startsWith('v') ? data.tag_name.slice(1) : data.tag_name;
++
++  const platform = os.platform(); 
++  const arch = os.arch();         
++
++  let osName = '';
++  if (platform === 'linux') osName = 'linux';
++  else if (platform === 'darwin') osName = 'darwin';
++  else throw new Error(`Unsupported platform: ${platform}`);
++
++  let archName = '';
++  if (arch === 'x64') archName = 'x64';
++  else if (arch === 'arm64') archName = 'arm64';
++  else throw new Error(`Unsupported architecture: ${arch}`);
++
++  const assetName = `cpe-${osName}-${archName}`;
++  const asset = data.assets.find((a: { name: string; browser_download_url: string }) => a.name === assetName);
++  if (!asset) throw new Error(`No binary found for platform ${osName}-${archName}`);
++
++  return { version, url: asset.browser_download_url };
++}
++
++export async function updateCommand(): Promise<void> {
++  try {
++    console.log('Checking for updates...');
++    const { version: latestVersion, url } = await getLatestVersion();
++
++    if (CPE_VERSION === 'dev' || CPE_VERSION !== latestVersion) {
++      console.log(`New version available: ${latestVersion} (current: ${CPE_VERSION})`);
++      
++      console.log('Downloading update...');
++      const response = await fetch(url);
++      if (!response.ok) throw new Error(`Failed to download binary: ${response.statusText}`);
++
++      const exePath = process.execPath;
++      const tempPath = `${exePath}.tmp`;
++
++      const fileStream = createWriteStream(tempPath);
++      await pipeline(response.body!, fileStream);
++
++      if (os.platform() !== 'win32') {
++        await fs.chmod(tempPath, 0o755);
++      }
++
++      await fs.rename(tempPath, exePath);
++      console.log(`Successfully updated to ${latestVersion}!`);
++    } else {
++      console.log('cpe is up to date.');
++    }
++  } catch (err) {
++    throw new Error(`Update failed: ${err instanceof Error ? err.message : String(err)}`);
++  }
++}
++
++export async function checkVersionCommand(): Promise<void> {
++  try {
++    console.log(`Current version: ${CPE_VERSION}`);
++    const { version: latestVersion } = await getLatestVersion();
++    if (CPE_VERSION === 'dev' || CPE_VERSION !== latestVersion) {
++      console.log(`Update available: ${latestVersion}. Run 'cpe update' to upgrade.`);
++    } else {
++      console.log('You are running the latest version.');
++    }
++  } catch (err) {
++    throw new Error(`Could not check version: ${err instanceof Error ? err.message : String(err)}`);
++  }
++}
++
++export async function autoUpdate(): Promise<{ updated: boolean; version: string }> {
++  try {
++    const { version: latestVersion, url } = await getLatestVersion();
++    if (CPE_VERSION === 'dev' || CPE_VERSION !== latestVersion) {
++      const response = await fetch(url);
++      if (!response.ok) return { updated: false, version: latestVersion };
++
++      const exePath = process.execPath;
++      const tempPath = `${exePath}.tmp`;
++      const fileStream = createWriteStream(tempPath);
++      await pipeline(response.body!, fileStream);
++
++      if (os.platform() !== 'win32') {
++        await fs.chmod(tempPath, 0o755);
++      }
++      await fs.rename(tempPath, exePath);
++      return { updated: true, version: latestVersion };
++    }
++  } catch {
++    // Silent fail for auto-update to avoid disrupting user experience
++  }
++  return { updated: false, version: CPE_VERSION };
++}
+diff --git a/src/tui/App.tsx b/src/tui/App.tsx
+index cad142b..33111a6 100644
+--- a/src/tui/App.tsx
++++ b/src/tui/App.tsx
+@@ -10,6 +10,7 @@ import { yellow } from './theme.js';
+ import { useQueueState } from './hooks/useQueueState.js';
+ import type { AppConfig } from '../types/meta.js';
+ import type { ActivityEvent } from '../events/types.js';
++import { autoUpdate } from '../commands/update.js';
+ 
+ interface AppProps {
+   config: AppConfig;
+@@ -52,6 +53,7 @@ export function App({ config, containerWarning, onInteractiveSubprocess }: AppPr
+   const queueState = useQueueState();
+   const sessionStartedAtRef = React.useRef<Date | null>(null);
+   const [sessionStartedAt, setSessionStartedAt] = useState<Date | null>(null);
++  const [updateAvailable, setUpdateAvailable] = useState(false);
+ 
+   useEffect(() => {
+     const unsub = activityBus.subscribe(event => {
+@@ -69,6 +71,16 @@ export function App({ config, containerWarning, onInteractiveSubprocess }: AppPr
+     return unsub;
+   }, []);
+ 
++  useEffect(() => {
++    const check = async () => {
++      const { updated } = await autoUpdate();
++      if (updated) setUpdateAvailable(true);
++    };
++    check();
++    const timer = setInterval(check, 1000 * 60 * 60); // Check every hour
++    return () => clearInterval(timer);
++  }, []);
++
+   useInput((input, _key) => {
+     if (showQuitConfirm) {
+       if (input === 'y') process.exit(0);
+@@ -115,6 +127,9 @@ export function App({ config, containerWarning, onInteractiveSubprocess }: AppPr
+         {containerWarning && !config.dangerously_skip_permissions && (
+           <Text color={yellow}> ⚠ container detected — bubblewrap unavailable, Claude will prompt for permissions. Set dangerously_skip_permissions: true in cpe.config.json or ~/.config/cpe/config.json to suppress.</Text>
+         )}
++        {updateAvailable && (
++          <Text color={yellow}> ⚠ a new version of cpe was installed — please restart your session to use it.</Text>
++        )}
+         {showQuitConfirm && <QuitConfirmBar />}
+         {mode === 'watch'
+           ? <Watch columns={columns} rows={rows} compact={compact} />

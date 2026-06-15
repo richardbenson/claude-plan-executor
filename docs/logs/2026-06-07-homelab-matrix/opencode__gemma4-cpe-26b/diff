@@ -1,0 +1,61 @@
+diff --git a/ansible/group_vars/opencode_vms/versions.yml b/ansible/group_vars/opencode_vms/versions.yml
+new file mode 100644
+index 0000000..9351b11
+--- /dev/null
++++ b/ansible/group_vars/opencode_vms/versions.yml
+@@ -0,0 +1,18 @@
++---
++# Version definitions for opencode VM instances.
++
++# opencode (npm global)
++opencode_version: "latest"  # npm install -g handles latest by default, but we can track it if needed
++
++# openchamber (GitHub release tgz)
++openchamber_version: "1.11.7"
++
++# gh CLI (github/cli releases)
++gh_version: "2.93.0"
++
++# tea CLI (gitea/tea releases)
++tea_version: "0.14.1"
++
++# rtk (rtk-ai/rtk releases)
++rtk_version: "0.42.0"
++---
+diff --git a/docs/automation/update_strategy.md b/docs/automation/update_strategy.md
+new file mode 100644
+index 0000000..7f4cf33
+--- /dev/null
++++ b/docs/automation/update_strategy.md
+@@ -0,0 +1,31 @@
++---
++# Proposed System for Dependency and Tool Updates
++
++## Strategy: "The Continuous Update Loop"
++
++Since the infrastructure is fully automated (Terraform + Ansible), we should embrace a model where the single source of truth—the repository—is kept up-to/date. Instead of trying to manage updates *on* the running VM, we update the *definitions* in this repo and re-run the provisioning playbook.
++
++### 1. Decoupling Versions from Logic
++We will move all hardcoded versions out of `provision-opencode.yml` and into a structured configuration file (e.g., `ansible/group_vars/opencode_vms/versions.yml`). This allows us to see exactly what is currently deployed.
++
++### 2. The Update Workflow
++1.  **Detection**: A scheduled CI job (in Gitea Actions or similar) runs a "Check for Updates" script.
++    *   For `npm` packages (`opencode`, `openchamber`), it checks the registry/GitHub releases.
++    *   For binaries (`gh`, `tea`, `rtk`), it checks GitHub release tags via API.
++2.  **Proposal**: If an update is found, the CI job automatically creates a new branch and a Pull Request (PR) updating the version string in `versions.yml`. The PR description includes: "Update [tool] from vX to vY".
++3.  **Verification (Optional but Recommended)**: Since we can rebuild, if tests pass on the new version, it's safe. Given this is a personal lab, the updated PR itself is the verification trigger.
++4.  **Deployment**: Merging the PR triggers the Ansible playbook to run against the `opencode_vms`. Because the playbook is idempotent and uses the new versions specified in `versions.yml`, the VM is "updated" by being re-provisioned or simply having its binaries replaced/reinstalled as per the logic.
++
++### 3. Handling "Broken" Versions (The Safety Net)
++Because we log every version change in Git, we have a complete history of what worked. If `v2.94.0` of `gh` breaks the provisioning:
++1.  Identify the failure in CI logs.
++2.  Revert the commit in the repository.
++3.  Run Ansible. The VM is restored to the previous known-good state (`v2.93.0`).
++
++### 4. Implementation Plan (Proceeding Now)
++I will implement the following changes:
++1.  Create `ansible/group_vars/opencode_vms/versions.yml` containing all current versions extracted from the playbook.
++2.  Refactor `ansible/playbooks/provision-opencode.yml` to use these variables instead of hardcoded strings.
++3.  (Planned) Create a shell script `scripts/check-tool-updates.sh` that can be used in CI to detect new versions for the tools currently managed.
++
++---

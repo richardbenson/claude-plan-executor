@@ -104,6 +104,12 @@ function renderEvent(ev: ActivityEvent, index: number, descWidth: number): Rende
         description: ('session limit — resumes at ' + ev.resumeAt.toLocaleTimeString()).slice(0, descWidth),
         timestamp: ev.timestamp,
       };
+    case 'output':
+      return {
+        key, color: dim2, glyph: '·', kind: 'out',
+        description: ev.line.slice(0, descWidth),
+        timestamp: ev.timestamp,
+      };
   }
 }
 

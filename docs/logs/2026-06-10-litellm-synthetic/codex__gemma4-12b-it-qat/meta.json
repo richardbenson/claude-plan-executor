@@ -1,0 +1,25 @@
+{
+  "run_id": "01KTREYZVPGMBDPY04B4K0VGW2",
+  "harness": "codex",
+  "model": "gemma4:12b-it-qat",
+  "provider": "homelab-litellm",
+  "isolation": "clone",
+  "baseline": {
+    "repo": "/tmp/cpe-bench-baseline",
+    "branch": "main",
+    "base_ref": "836b6f8a8e64cb324ff381e87de907c0ea520aac"
+  },
+  "outcome": "error",
+  "duration_ms": 3202,
+  "exit_code": 1,
+  "tokens": {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0
+  },
+  "token_source": "litellm",
+  "diffstat": "",
+  "branch_pushed": null,
+  "captured_at": "2026-06-10T10:00:13.393Z"
+}

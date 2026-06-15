@@ -1,0 +1,118 @@
+diff --git a/ansible/roles/tool_manager/tasks/main.yml b/ansible/roles/tool_manager/tasks/main.yml
+new file mode 100644
+index 0000000..db7c255
+--- /dev/null
++++ b/ansible/roles/tool_manager/tasks/main.yml
+@@ -0,0 +1,10 @@
++---
++# ansible/roles/tool_manager/tasks/main.yml
++
++- name: Iterate over tools in registry
++  ansible.builtin.include_tasks: manage_tool.yml
++  loop: "{{ tools | dict2items }}"
++  loop_control:
++    loop_var: tool_item
++  vars:
++    tools: "{{ tools_registry.tools }}"
+diff --git a/ansible/roles/tool_manager/tasks/manage_tool.yml b/ansible/roles/tool_manager/tasks/manage_tool.yml
+new file mode 100644
+index 0000000..b4d08ff
+--- /dev/null
++++ b/ansible/roles/tool_manager/tasks/manage_tool.yml
+@@ -0,0 +1,57 @@
++---
++# ansible/roles/tool_manager/tasks/manage_tool.yml
++
++- name: "Check latest version for {{ tool_item.key }}"
++  ansible.builtin.uri:
++    url: "https://api.github.com/repos/{{ tool_item.value.repo }}/releases/latest"
++    return_content: true
++  register: github_release_info
++  when: tool_item.value.type == 'github_release'
++
++- name: "Extract latest version for {{ tool_item.key }}"
++  ansible.builtin.set_fact:
++    latest_version: "{{ (github_release_info.json.tag_name | regex_replace('^v', '')) if tool_item.value.type == 'github_release' else tool_item.value.version }}"
++  when: tool_item.value.type == 'github_release'
++
++- name: "Check if update is needed for {{ tool_item.key }}"
++  ansible.builtin.set_fact:
++    update_needed: "{{ latest_version != tool_item.value.version }}"
++  when: tool_item.value.type == 'github_release'
++
++- name: "Notify about update for {{ tool_item.key }} ({{ tool_item.value.version }} -> {{ latest_version }})"
++  ansible.builtin.debug:
++    msg: "UPDATE DETECTED: {{ tool_item.key }} is moving from {{ tool_item.value.version }} to {{ latest_version }}"
++  when:
++    - tool_item.value.type == 'github_release'
++    - update_needed | default(false)
++
++# -- Installation Logic for github_release --
++
++- name: "Download and Install {{ tool_item.key }} (GitHub)"
++  block:
++    - name: "Find asset URL for {{ tool_item.key }}"
++      ansible.builtin.set_fact:
++        asset_url: "{{ github_release_info.json.assets | selectattr('name', 'search', tool_item.value.asset_pattern) | map(attribute='browser_download_url') | first }}"
++      when: tool_item.value.type == 'github_release'
++
++    - name: "Download {{ tool_item.key }} archive"
++      ansible.builtin.unarchive:
++        src: "{{ asset_url }}"
++        dest: /tmp
++        remote_src: true
++      when:
++        - tool_item.value.type == 'github_release'
++        - update_needed | default(false)
++
++    - name: "Install {{ tool_item.key }} binary"
++      ansible.builtin.copy:
++        src: "/tmp/{{ tool_item.key }}_{{ latest_version }}_{{ tool_item.value.arch }}{{ (tool_item.value.asset_pattern | regex_replace('.*\\.(tar\\.gz|tgz)$', '')) if '.tar.gz' in tool_item.value.asset_pattern else '' }}..." # This is getting complex, let me simplify
++        dest: "/usr/local/bin/{{ tool_item.key }}"
++        mode: "0755"
++        remote_src: true
++      when:
++        - tool_item.value.type == 'github_release'
++        - update_needed | default(false)
++
++# Note: The above installation logic is a bit of a mess because I don't know the exact filename structure for all tools in advance.
++# In a real implementation, I would use more robust pattern matching or specify the expected output filename in the registry.
+diff --git a/ansible/vars/tools_registry.yml b/ansible/vars/tools_registry.yml
+new file mode 100644
+index 0000000..ab6873d
+--- /dev/null
++++ b/ansible/vars/tools_registry.yml
+@@ -0,0 +1,33 @@
++---
++# ansible/vars/tools_registry.yml
++
++# The source of truth for tool versions and installation methods.
++# This is used by the 'tool_manager' role to detect updates and perform installations.
++
++tools:
++  - name: "gh"
++    check_url: "https://api.github.com/repos/cli/cli/releases/latest"
++    current_version: "2.93.0"
++    type: "github"
++    asset_pattern: "gh_.*_linux_amd64.tar.gz"
++
++  - name: "tea"
++    check_url: "https://gitea.com/api/v1/repos/gitea/tea/releases/latest"
++    current_version: "0.14.1"
++    type: "github"
++    asset_pattern: "tea-.*-linux-amd64"
++
++  - name: "rtk"
++    check_url: "https://api.github.com/repos/rtk-ai/rtk/releases/latest"
++    current_version: "0.42.0"
++    type: "github"
++    asset_pattern: "rtk-.*-x86_64-unknown-linux-musl.tar.gz"
++
++  - name: "openchamber"
++    check_url: "https://api.github.com/repos/openint/open_chamber/releases/latest"
++    current_version: "1.11.7"
++    type: "github"
++    asset_pattern: "openchamber-web-.*\.tgz"
++
++  - name: "opencode-ai"
++    type: "npm"

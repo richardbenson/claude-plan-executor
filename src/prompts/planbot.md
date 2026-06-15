@@ -99,7 +99,7 @@ Prompt only — no code fences, no meta-commentary. Must include all of the foll
 
 **One commit per phase**: At the end of the phase, after all acceptance criteria are met, make exactly one git commit with a conventional commit message (e.g. `feat: phase 02 — <short description>`). Do not make intermediate commits during the phase. If you find the working tree already has a commit for this phase (check `git log --oneline -3`), skip the commit step.
 
-**Structured output**: Your final message in this conversation must be a JSON object matching the schema you have been given. Do all your work using tools first, then emit only the JSON as your closing message.
+**Do NOT include any instruction about how to report or format the final result** (no "final message must be JSON", no result-file instructions). The executor injects the correct completion contract for whichever harness runs the phase — a structured-output schema for claude-code, a result-file contract for opaque harnesses — and a conflicting instruction baked into the prompt makes weaker models stall reconciling the two.
 
 ---
 

@@ -1,0 +1,86 @@
+diff --git a/ansible/group_vars/opencode_vms/versions.yml b/ansible/group_vars/opencode_vms/versions.yml
+new file mode 100644
+index 0000000..0cbd1b2
+--- /dev/null
++++ b/ansible/group_vars/opencode_vms/versions.yml
+@@ -0,0 +1,11 @@
++# Centralized version management for opencode VMs
++# These versions are used by the provision-opelope playbook and update scripts.
++
++node_js_version: "22"
++gh_cli_version: "v2.93.0"
++tea_cli_version: "v0.14.1"
++rtk_version: "v0.42.0"
++openchamber_version: "v1.11.7"
++
++# Optional pins for specific logic that might break on latest if not handled properly
++#[ - Use comments to explain why a version is pinned ]
+diff --git a/ansible/playbooks/provision-opencode.yml b/ansible/playbooks/provision-opencode.yml
+index f217700..dfb2321 100644
+--- a/ansible/playbooks/provision-opencode.yml
++++ b/ansible/playbooks/provision-opencode.yml
+@@ -75,49 +75,50 @@
+ 
+     # -- openchamber ----------------------------------------------------------
+ 
+-    - name: Install openchamber via npm (GitHub release tgz)
++# -- openchamber ----------------------------------------------------------
++
++    - name: Install openchamber via npm (GitHub release tgz) with version from versions.yml
+       ansible.builtin.shell:
+         cmd: >
+           npm install -g
+-          https://github.com/openchamber/openchamber/releases/download/v1.11.7/openchamber-web-1.11.7.tgz
++          https://github.com/openchamber/openchamber/releases/download/v{{ openchamber_version }}/openchamber-web-{{ openchamber_version }}.tgz
+         creates: /usr/local/bin/openchamber
+-
+     # -- gh CLI ---------------------------------------------------------------
+ 
+-    - name: Download gh CLI v2.93.0
++    - name: Download gh binary with version from versions.yml
+       ansible.builtin.unarchive:
+-        src: https://github.com/cli/cli/releases/download/v2.93.0/gh_2.93.0_linux_amd64.tar.gz
++        src: "https://github.com/cli/cli/releases/download/{{ gh_cli_version }}/gh_{{ gh_cli_version }}_linux_amd64.tar.gz"
+         dest: /tmp
+         remote_src: true
+-        creates: /tmp/gh_2.93.0_linux_amd64
++        creates: /tmp/gh_{{ gh_cli_version }}
+ 
+     - name: Install gh binary
+       ansible.builtin.copy:
+-        src: /tmp/gh_2.93.0_linux_amd64/bin/gh
++        src: "/tmp/gh_{{ gh_cli_version }}/bin/gh"
+         dest: /usr/local/bin/gh
+         mode: "0755"
+         remote_src: true
+ 
+     # -- tea CLI --------------------------------------------------------------
+ 
+-    - name: Install tea CLI v0.14.1
++    - name: Install tea binary with version from versions.yml
+       ansible.builtin.get_url:
+-        url: https://gitea.com/gitea/tea/releases/download/v0.14.1/tea-0.14.1-linux-amd64
++        url: "https://gitea.com/gitea/tea/releases/download({{ tea_cli_version }})/tea_{{ tea_cli_version }}-linux-amd64"
+         dest: /usr/local/bin/tea
+         mode: "0755"
+ 
+-    # -- rtk ------------------------------------------------------------------
++# -- rtk ------------------------------------------------------------------
+ 
+-    - name: Download rtk v0.42.0 (musl)
++    - name: Download rtk binary with version from versions.yml
+       ansible.builtin.unarchive:
+-        src: https://github.com/rtk-ai/rtk/releases/download/v0.42.0/rtk-x86_64-unknown-linux-musl.tar.gz
++        src: "https://github.com/rtk-ai/rtk/releases/download({{ rtk_version }})/rtk-x86_64-unknown-linux-musl.tar.gz"
+         dest: /tmp
+         remote_src: true
+-        creates: /tmp/rtk
++        creates: /tmp/rtk_{{ rtk_version }}
+ 
+     - name: Install rtk binary
+       ansible.builtin.copy:
+-        src: /tmp/rtk
++        src: "/tmp/rtk_{{ rtk_version }}/bin/rtk"
+         dest: /usr/local/bin/rtk
+         mode: "0755"
+         remote_src: true

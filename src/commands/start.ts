@@ -1,6 +1,7 @@
 import React from 'react';
 import { render } from 'ink';
 import { readConfig } from '../storage/config.js';
+import { ensureHarnessDetection } from '../harness/detect.js';
 import { readMeta, updateMeta, listAllRunIds } from '../storage/meta.js';
 import { isQueuePaused, dequeue, enqueueFront, readQueue, writeQueue } from '../storage/queue.js';
 import { reconcileWorktrees } from '../git/worktree.js';
@@ -86,7 +87,11 @@ export async function runQueueProcessor(config: AppConfig, bus: ActivityBus): Pr
         : {}),
     };
 
-    if (!reconciledRepos.has(meta.primary_repo_path)) {
+    // Clone-isolation (bench) runs create their clone lazily at run time and
+    // have no pre-existing worktree, so skip the worktree reconcile for them.
+    const isCloneRun = (meta.isolation ?? config.isolation ?? 'worktree') === 'clone';
+
+    if (!isCloneRun && !reconciledRepos.has(meta.primary_repo_path)) {
       reconciledRepos.add(meta.primary_repo_path);
       const { orphaned, missing } = reconcileWorktrees(meta.primary_repo_path, [{ id: runId, worktreePath: meta.worktree_path }]);
       if (orphaned.length > 0) {
@@ -165,11 +170,35 @@ export async function runQueueProcessor(config: AppConfig, bus: ActivityBus): Pr
         }
       }
     }
+
+    // Inter-run pause: give the backend (e.g. Ollama) time to evict the previous
+    // model before the next run. Interruptible — a queue pause cuts it short.
+    await interruptiblePause((config.pause_seconds ?? 0) * 1000);
+  }
+}
+
+/**
+ * Sleep in short increments so a queue pause interrupts the wait cleanly.
+ * `isPaused` is injectable for testing; it defaults to the live queue state.
+ */
+export async function interruptiblePause(
+  totalMs: number,
+  isPaused: () => boolean = isQueuePaused,
+  stepMs = 1000,
+): Promise<void> {
+  if (totalMs <= 0) return;
+  let waited = 0;
+  while (waited < totalMs) {
+    if (isPaused()) return;
+    await Bun.sleep(Math.min(stepMs, totalMs - waited));
+    waited += stepMs;
   }
 }
 
 export async function startCommand(): Promise<void> {
-  const config = readConfig();
+  // Ensure harness install-detection has run at least once so the dispatch-time
+  // install gate has data on first launch (cheap no-op once the cache exists).
+  const config = ensureHarnessDetection(readConfig());
 
   seedBusFromHistory();
 

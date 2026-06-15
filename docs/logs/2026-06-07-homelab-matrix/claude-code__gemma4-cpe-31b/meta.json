@@ -1,0 +1,26 @@
+{
+  "run_id": "01KTGS5J7M9P8DSFYN41TE07VG",
+  "harness": "claude-code",
+  "model": "gemma4-cpe:31b",
+  "provider": "desktop-ollama",
+  "isolation": "clone",
+  "baseline": {
+    "repo": "/home/ubuntu/Code/homelab",
+    "branch": "modeltests/sandbox-no-docs",
+    "base_ref": "cadab2ac07fad2e26bcb3962cfc45c62f27a4de4"
+  },
+  "outcome": "timeout",
+  "outcome_reason": "exceeded max runtime",
+  "duration_ms": 5399883,
+  "exit_code": 137,
+  "tokens": {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0
+  },
+  "cost_usd": 0,
+  "diffstat": "scripts/update-opencode.sh | 0\n 1 file changed, 0 insertions(+), 0 deletions(-)",
+  "branch_pushed": "harnesstests/claude-code__gemma4-cpe-31b",
+  "captured_at": "2026-06-07T12:06:44.059Z"
+}

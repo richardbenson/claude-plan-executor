@@ -1,0 +1,1 @@
+0acccb8 feat: phase 01 — publish SHA256SUMS with releases and verify in install.sh

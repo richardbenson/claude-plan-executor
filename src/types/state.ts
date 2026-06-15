@@ -9,7 +9,9 @@ export type RunStatus =
   | 'pr-created'
   | 'failed'
   | 'pending'
-  | 'archived';
+  | 'archived'
+  | 'timeout'
+  | 'bailed';
 
 export type PhaseStatus =
   | 'queued'
@@ -42,6 +44,8 @@ export const STATE_TABLE: Record<RunStatus | PhaseStatus, StateInfo> = {
   failed:       { glyph: '✕', color: '#f7768e', label: 'failed' },
   pending:      { glyph: '·', color: '#565f89', label: 'pending' },
   archived:     { glyph: '⊘', color: '#414868', label: 'archived' },
+  timeout:      { glyph: '⏱', color: '#ff9e64', label: 'timeout' },
+  bailed:       { glyph: '⊗', color: '#f7768e', label: 'bailed' },
 };
 
 export function getStateInfo(status: RunStatus | PhaseStatus): StateInfo {

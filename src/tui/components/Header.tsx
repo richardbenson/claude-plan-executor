@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
-import { blue, borderHi, teal, orange, fgDark, dim, green, yellow } from '../theme.js';
+import { blue, borderHi, teal, orange, cyan, fgDark, dim, green, yellow } from '../theme.js';
 
 interface Props {
-  mode: 'WATCH' | 'MANAGE';
+  mode: 'WATCH' | 'MANAGE' | 'BENCH';
   statusText: string;
   sessionActive?: boolean;
   startedAt?: Date;
@@ -62,7 +62,7 @@ export function Header({ mode, statusText, sessionActive, startedAt, compact, sk
     return () => clearInterval(id);
   }, [startedAt]);
 
-  const modeColor = mode === 'WATCH' ? teal : orange;
+  const modeColor = mode === 'WATCH' ? teal : mode === 'BENCH' ? cyan : orange;
 
   return (
     <Box flexDirection="row" justifyContent="space-between">

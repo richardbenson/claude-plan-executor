@@ -1,0 +1,28 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+new file mode 100644
+index 0000000..fe2210d
+--- /dev/null
++++ b/CHANGELOG.md
+@@ -0,0 +1,5 @@
++# Changelog
++
++## [2026-06-10] - Fix Greeting Bug
++- Fixed issue where the `greet` function ignored the input name parameter.
++- Updated `greet.py` to correctly include the provided name in the greeting string.
+\ No newline at end of file
+diff --git a/greet.py b/greet.py
+index b2dd4bb..7d7f741 100644
+--- a/greet.py
++++ b/greet.py
+@@ -1,7 +1,7 @@
+ def greet(name):
+-    # BUG: ignores the name argument
+-    return "Hello, !"
++    # Fixed: now includes the name parameter in the greeting string
++    return f"Hello, {name}!"
+ 
+ 
+ if __name__ == "__main__":
+-    print(greet("world"))
++    print(greet("world"))
+\ No newline at end of file

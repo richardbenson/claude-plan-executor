@@ -1,0 +1,24 @@
+{
+  "run_id": "01KTGS5J7WFXR531EWXE55SMX8",
+  "harness": "pi",
+  "model": "gemma4-cpe:26b",
+  "provider": "desktop-ollama",
+  "isolation": "clone",
+  "baseline": {
+    "repo": "/home/ubuntu/Code/homelab",
+    "branch": "modeltests/sandbox-no-docs",
+    "base_ref": "cadab2ac07fad2e26bcb3962cfc45c62f27a4de4"
+  },
+  "outcome": "completed",
+  "duration_ms": 619211,
+  "exit_code": 0,
+  "tokens": {
+    "input_tokens": 661595,
+    "output_tokens": 16995,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0
+  },
+  "diffstat": "ansible/group_vars/opencode_vms.yml      | 19 +++++++++++++++++++\n ansible/playbooks/provision-opencode.yml |  6 +++---\n 2 files changed, 22 insertions(+), 3 deletions(-)",
+  "branch_pushed": "harnesstests/pi__gemma4-cpe-26b",
+  "captured_at": "2026-06-07T16:28:00.972Z"
+}

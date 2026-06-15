@@ -1,0 +1,543 @@
+.github/workflows/release.yml       |  21 ++---
+ README.md                           |  15 ----
+ docs/install-and-release.md         |   7 --
+ docs/self-update/PHASE_01.md        |  36 ---------
+ docs/self-update/PHASE_01.prompt.md |  45 -----------
+ docs/self-update/PHASE_02.md        |  49 ------------
+ docs/self-update/PHASE_02.prompt.md |  62 ---------------
+ docs/self-update/PHASE_03.md        |  55 -------------
+ docs/self-update/PHASE_03.prompt.md |  67 ----------------
+ docs/self-update/PHASE_04.md        |  47 -----------
+ docs/self-update/PHASE_04.prompt.md |  62 ---------------
+ docs/self-update/PROGRESS.md        |  71 ++++++++---------
+ docs/self-update/README.md          | 105 ++++---------------------
+ scripts/install.sh                  |  66 ----------------
+ src/commands/update.ts              |  25 ++++--
+ src/index.ts                        |   8 +-
+ src/types/meta.ts                   |   5 +-
+ src/update/check.test.ts            |  70 -----------------
+ src/update/check.ts                 | 108 +++++++++++---------------
+ src/update/install.test.ts          |  74 ------------------
+ src/update/install.ts               | 150 +++++++++++-------------------------
+ src/update/nudge.test.ts            | 134 ++++++++++++++++----------------
+ src/update/nudge.ts                 |  89 ++++++++++++---------
+ src/update/state.test.ts            |  33 --------
+ src/update/state.ts                 |  90 ++++++++++++----------
+ 25 files changed, 339 insertions(+), 1155 deletions(-)
+
+--- Changes ---
+
+.github/workflows/release.yml
+  @@ -57,16 +57,6 @@ jobs:
+  -      - name: Generate SHA256SUMS
+  -        run: |
+  -          mkdir -p flat
+  -          cp artifacts/cpe-linux-x64/cpe-linux-x64 flat/cpe-linux-x64
+  -          cp artifacts/cpe-linux-arm64/cpe-linux-arm64 flat/cpe-linux-arm64
+  -          cp artifacts/cpe-darwin-x64/cpe-darwin-x64 flat/cpe-darwin-x64
+  -          cp artifacts/cpe-darwin-arm64/cpe-darwin-arm64 flat/cpe-darwin-arm64
+  -          cd flat
+  -          sha256sum cpe-* > ../SHA256SUMS
+  -
+         - name: Create GitHub Release
+           env:
+             GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  @@ -80,9 +70,8 @@ jobs:
+  -            flat/cpe-linux-x64 \
+  -            flat/cpe-linux-arm64 \
+  -            flat/cpe-darwin-x64 \
+  -            flat/cpe-darwin-arm64 \
+  -            scripts/install.sh \
+  -            SHA256SUMS
+  +            artifacts/cpe-linux-x64/cpe-linux-x64 \
+  +            artifacts/cpe-linux-arm64/cpe-linux-arm64 \
+  +            artifacts/cpe-darwin-x64/cpe-darwin-x64 \
+  +            artifacts/cpe-darwin-arm64/cpe-darwin-arm64 \
+  +            scripts/install.sh
+  +5 -16
+
+README.md
+  @@ -447,21 +447,6 @@ You can set it globally or per-repo:
+  -## Updating
+  -
+  -Use `cpe update` to check for and install updates to the CLI. Use `cpe update --check` to only check for a newer version without installing.
+  -
+  -The CLI will automatically check for updates in the background once per day, and display a nudge if an update is available (unless disabled with `update_auto: false` in config). This is also used to power the TUI auto-update in the next phase.
+  -
+  -Dev builds are exempt from update checking and installation.
+  -
+  -To disable automatic background update checks, add this to `~/.config/cpe/config.json`:
+  -```json
+  -{
+  -  "update_auto": false
+  -}
+  -```
+  -
+   When `dangerously_skip_permissions` is active, the TUI header shows `⚠ perms skipped` and each affected run shows a `!` badge in the queue pane.
+   
+   ## License
+  +0 -15
+
+docs/install-and-release.md
+  @@ -22,13 +22,6 @@ All three phases were completed on 2026-05-22 with no deviations from the plan.
+  -### Phase 01 — Release checksums (SHA256SUMS) (`2026-06-14`)
+  -
+  -- Added SHA256 checksum publication to the release pipeline.
+  -- Added checksum verification to the remote install script.
+  -- Releases now include a `SHA256SUMS` asset.
+  -- The `install.sh` script verifies against checksums when present.
+  -
+   ### Phase 02 — GitHub Actions workflows (`dd764fc`)
+   
+   - Created `.github/workflows/ci.yml`: triggers on push to any branch and on PRs targeting `main`; single `check` job on `ubuntu-latest` running `bun install --frozen-lockfile`, `bun run typecheck`, `bun run lint`, and `bun test`.
+  +0 -7
+
+docs/self-update/PHASE_01.md
+  @@ -1,36 +0,0 @@
+  -# Phase 01 — Release checksums (SHA256SUMS)
+  -
+  -**Branch:** feature/self-update
+  -**Dependencies:** none
+  -
+  -## Summary
+  -
+  -Add a `SHA256SUMS` file to every GitHub release so the updater (Phase 02) and
+  -`scripts/install.sh` can verify downloaded binaries. This phase ships first so
+  -that the next tagged release already carries checksums by the time the updater
+  -exists.
+  -
+  -## Context
+  -
+  -- `.github/workflows/release.yml` has two jobs: a 4-entry matrix `build` job
+  -  that uploads each binary as an artifact named after the asset
+  -  (`cpe-linux-x64`, `cpe-linux-arm64`, `cpe-darwin-x64`, `cpe-darwin-arm64`),
+  -  and a `release` job that downloads them into `artifacts/` — note the nested
+  -  layout `artifacts/<asset>/<asset>` — and runs `gh release create` listing
+  -  each binary path plus `scripts/install.sh`.
+  -- `SHA256SUMS` must contain **bare asset names** (e.g.
+  -  `<hash>  cpe-linux-x64`), not nested artifact paths, so verifiers can match
+  -  by filename. The binaries therefore need to be collected into one flat
+  -  directory before hashing.
+  -- `scripts/install.sh` downloads from the `releases/latest/download/` URL,
+  -  detects OS/arch via `uname`, and currently does no verification. It must
+  -  keep working against releases that predate `SHA256SUMS` (warn + continue on
+  -  404), because the script itself is published as a release asset and users
+  -  may run a new script against an old release. macOS has `shasum -a 256`, not
+  -  `sha256sum`.
+  -
+  -## Files expected to change
+  -
+  -- `.github/workflows/release.yml` — generate and attach `SHA256SUMS`
+  -- `scripts/install.sh` — download and verify checksum when available
+  -- `docs/install-and-release.md` — short "What changed" note documenting the new asset
+  +0 -36
+
+docs/self-update/PHASE_01.prompt.md
+  @@ -1,45 +0,0 @@
+  -Read docs/self-update/PHASE_01.md for context before starting, and docs/self-update/README.md for the overall feature requirements. You are working on branch feature/self-update — create it from main if it does not exist yet, or check it out if it does.
+  -
+  -**PROGRESS.md update**: At the start of this phase, update `PROGRESS.md`: set the status for this phase to `in-progress` and fill in the started date. When the phase is complete, set the status to `complete` and fill in the completed date. Use today's date in YYYY-MM-DD format. The file is docs/self-update/PROGRESS.md — update both the summary table row and the Phase Details entry.
+  -
+  -**Idempotency**: Before each significant action (creating a file, running a migration, making a commit), check the working tree state first — does the file already exist? Is this already committed? Are the tests already passing? This makes the phase safe to resume after a rate-limit interruption.
+  -
+  -## Task
+  -
+  -Add SHA256 checksum publication to the release pipeline and checksum verification to the remote install script.
+  -
+  -## Files to modify
+  -
+  -1. `.github/workflows/release.yml` — in the `release` job, after the `actions/download-artifact@v8` step and before the `gh release create` step, add a step that collects the four binaries from their nested artifact paths (`artifacts/<asset>/<asset>`) into a single flat directory, then runs `sha256sum` over the bare filenames to produce a `SHA256SUMS` file whose lines reference plain asset names (`<hash>  cpe-linux-x64`, etc.). Add the `SHA256SUMS` file to the asset list passed to `gh release create`. Keep the existing assets (four binaries plus `scripts/install.sh`) exactly as they are; adjust the binary paths in the `gh release create` arguments if you point them at the flat directory instead of the nested artifact paths.
+  -
+  -2. `scripts/install.sh` — after downloading the binary and before `chmod +x`, attempt to download `SHA256SUMS` from the same `releases/latest/download/` base URL into a temp file. If the download fails (release predates checksums), print a `[warn]` line that verification was skipped and continue — this script is itself a release asset and must keep working against older releases. If it succeeds, extract the line matching the chosen `$ASSET` name and verify the downloaded binary against it; on mismatch, delete the downloaded binary, print a clear error to stderr, and exit 1. Use `sha256sum` when available and fall back to `shasum -a 256` (macOS ships only the latter). Clean up the temp file in all paths.
+  -
+  -3. `docs/install-and-release.md` — append a dated note (2026-06-10) to the "What Was Built" section recording that releases now include a `SHA256SUMS` asset and that `install.sh` verifies against it when present.
+  -
+  -## Code patterns to follow
+  -
+  -- `release.yml` uses plain `run:` steps with bash; follow the existing style (env vars via `env:` blocks, `$TAG`-style references, no third-party actions beyond the ones already used).
+  -- `install.sh` uses `set -euo pipefail`, lowercase locals (`os`, `arch`, `ASSET` for the derived asset), `[warn]`/`[info]` prefixes for advisory output, and stderr + `exit 1` for fatal errors. Match the existing case-statement and quoting style.
+  -
+  -## Edge cases
+  -
+  -- `SHA256SUMS` lines must use exactly two spaces between hash and filename (the `sha256sum` default) so `sha256sum -c` and naive `awk '{print $1}'` parsing both work.
+  -- The artifact download layout is nested (`artifacts/cpe-linux-x64/cpe-linux-x64`); hashing must happen against bare filenames or the SUMS lines will contain paths no verifier can match.
+  -- macOS has no `sha256sum`; Linux minimal images may lack `shasum`. Detect with `command -v` and use whichever exists; if neither exists, warn and skip verification rather than failing the install.
+  -- A partially-downloaded binary must never be left at `~/.local/bin/cpe` after a failed verification.
+  -
+  -## Acceptance criteria
+  -
+  -- `bash -n scripts/install.sh` passes (syntax check).
+  -- The release workflow YAML is valid (parses cleanly; `actionlint` if available, otherwise a YAML parse via `bun -e` or python is sufficient).
+  -- Reading the workflow diff: `SHA256SUMS` is generated from bare asset names and is included in the `gh release create` asset list.
+  -- `scripts/install.sh` verification logic: mismatch path deletes the binary and exits non-zero; missing-SUMS path warns and continues; both checked by manual inspection or a scripted dry-run with a locally crafted SUMS file (do not hit the network in CI tests).
+  -- `bun run typecheck`, `bun run lint`, and `bun test` still pass (no TypeScript is touched, but run them to confirm the tree is green).
+  -
+  -## References
+  -
+  -- `.github/workflows/release.yml` — current build/release jobs and asset naming.
+  -- `scripts/install.sh` — current download flow, platform detection, and the `[warn]`/`[info]` output conventions to match.
+  -- `docs/install-and-release.md` — "Lessons Learned" already documents the nested artifact layout (`artifacts/<asset>/<asset>`); your flat-directory step is the consequence of that layout.
+  -
+  -**One commit per phase**: At the end of the phase, after all acceptance criteria are met, make exactly one git commit with a conventional commit message (e.g. `feat: phase 01 — publish SHA256SUMS with releases and verify in install.sh`). Do not make intermediate commits during the phase. If you find the working tree already has a commit for this phase (check `git log --oneline -3`), skip the commit step.
+  +0 -45
+
+docs/self-update/PHASE_02.md
+  @@ -1,49 +0,0 @@
+  -# Phase 02 — Updater core module (src/update/)
+  -
+  -**Branch:** feature/self-update
+  -**Dependencies:** none (conceptually follows 01: releases must carry SHA256SUMS for the installer to verify against)
+  -
+  -## Summary
+  -
+  -Create the self-contained update engine: resolve the latest released version,
+  -compare it to the running version, download + verify + atomically install a
+  -new binary, and persist check-state for throttling. No CLI or TUI wiring yet —
+  -that is Phases 03 and 04. Everything here is unit-testable without network.
+  -
+  -## Context
+  -
+  -- The running version is `CPE_VERSION` from `src/version.ts` — baked in at
+  -  compile time via Bun `--define`, `'dev'` for local builds.
+  -- Releases live at GitHub repo `richardbenson/claude-plan-executor` with
+  -  assets `cpe-{linux|darwin}-{x64|arm64}` and (after Phase 01) `SHA256SUMS`.
+  -  Tags are `v*` (e.g. `v0.2.0`); prerelease tags contain a `-`
+  -  (see the `PRERELEASE` detection in release.yml).
+  -- The latest tag is resolvable without the GitHub API: a request to
+  -  `https://github.com/<slug>/releases/latest` with `redirect: 'manual'`
+  -  returns a `Location` header ending in `/tag/<tag>`.
+  -- Binary swap: Bun-compiled binaries cannot be overwritten in place while
+  -  running (`ETXTBSY` on Linux); the safe pattern is download to a temp file
+  -  **in the same directory** as `process.execPath` (same filesystem →
+  -  `rename()` is atomic), verify, chmod 755, then rename over the target.
+  -- State-file conventions live in `src/storage/` — see `meta.ts` for the
+  -  optional `base?: string` parameter pattern that makes the module testable
+  -  against a temp directory, and `config.ts` for the try/catch-with-default
+  -  read pattern.
+  -- Tests use `bun test` (`describe`/`it`/`expect` from `bun:test`); see
+  -  `src/storage/meta.test.ts` and `src/runner/` tests for temp-dir patterns.
+  -
+  -## Module layout
+  -
+  -- `src/update/check.ts` — `REPO_SLUG`, `fetchLatestTag()`, `compareVersions()`, `isNewer()`
+  -- `src/update/install.ts` — `assetName()`, `downloadAndInstall(tag)`
+  -- `src/update/state.ts` — read/write `update-check.json`, `shouldCheck()`
+  -- `src/update/check.test.ts`, `src/update/install.test.ts`, `src/update/state.test.ts`
+  -
+  -## Files expected to change
+  -
+  -- `src/update/check.ts` (new)
+  -- `src/update/install.ts` (new)
+  -- `src/update/state.ts` (new)
+  -- `src/update/check.test.ts` (new)
+  -- `src/update/install.test.ts` (new)
+  -- `src/update/state.test.ts` (new)
+  +0 -49
+
+docs/self-update/PHASE_02.prompt.md
+  @@ -1,62 +0,0 @@
+  -Read docs/self-update/PHASE_02.md for context before starting, and docs/self-update/README.md for the overall feature requirements. You are working on branch feature/self-update — create it from main if it does not exist yet, or check it out if it does.
+  -
+  -**PROGRESS.md update**: At the start of this phase, update `PROGRESS.md`: set the status for this phase to `in-progress` and fill in the started date. When the phase is complete, set the status to `complete` and fill in the completed date. Use today's date in YYYY-MM-DD format. The file is docs/self-update/PROGRESS.md — update both the summary table row and the Phase Details entry.
+  -
+  -**Idempotency**: Before each significant action (creating a file, running a migration, making a commit), check the working tree state first — does the file already exist? Is this already committed? Are the tests already passing? This makes the phase safe to resume after a rate-limit interruption.
+  -
+  -## Task
+  -
+  -Create the updater core in a new `src/update/` directory: version resolution and comparison, verified atomic binary installation, and persisted check-state. No CLI or TUI wiring in this phase.
+  -
+  -## Files to create
+  -
+  -1. `src/update/check.ts`
+  -   - `export const REPO_SLUG = 'richardbenson/claude-plan-executor';`
+  -   - `fetchLatestTag(timeoutMs?: number): Promise<string>` — `fetch('https://github.com/' + REPO_SLUG + '/releases/latest', { redirect: 'manual', signal: AbortSignal.timeout(...) })`, read the `location` header, return the final path segment after `/tag/` (e.g. `v0.2.0`). Throw a descriptive Error if the header is missing or unparseable. Default timeout around 5000 ms.
+  -   - `compareVersions(a: string, b: string): number` — strip a leading `v`, split on `-` into core and prerelease, compare dot-separated core segments numerically (missing segments are 0); a version with a prerelease suffix is LOWER than the same core without one; two prerelease suffixes compare lexically. Pure function, no I/O.
+  -   - `isNewer(latestTag: string, currentVersion: string): boolean` — returns false whenever `currentVersion === 'dev'`; otherwise `compareVersions(latestTag, currentVersion) > 0`.
+  -
+  -2. `src/update/install.ts`
+  -   - `assetName(): string` — map `process.platform` (`linux` → `linux`, `darwin` → `darwin`) and `process.arch` (`x64` → `x64`, `arm64` → `arm64`) to `cpe-<os>-<arch>`; throw a clear "unsupported platform" Error for anything else.
+  -   - `downloadAndInstall(tag: string, opts?: { execPath?: string; fetchImpl?: typeof fetch }): Promise<void>` — the injectable `execPath` (default `process.execPath`) and `fetchImpl` (default global `fetch`) exist so tests can run against temp files with a stubbed fetch. Flow: download `https://github.com/<slug>/releases/download/<tag>/SHA256SUMS` and the asset for `assetName()`; stream the asset to a temp file named like `.cpe-update-<pid>` in `path.dirname(execPath)` (same filesystem so the final rename is atomic); compute its SHA256 with `new Bun.CryptoHasher('sha256')`; find the SUMS line whose filename field equals the asset name and compare hashes; on success `fs.chmodSync(tmp, 0o755)` then `fs.renameSync(tmp, execPath)`. On ANY failure (missing SUMS file → message must say the release predates checksums; missing line; hash mismatch; download error) delete the temp file in a finally block and rethrow with a message that names the failing step.
+  -
+  -3. `src/update/state.ts`
+  -   - State shape `{ last_checked_at?: string; latest_seen?: string }` stored at `<base ?? ~/.local/state/cpe>/update-check.json`.
+  -   - `readUpdateState(base?: string)`, `writeUpdateState(state, base?)`, and `shouldCheck(intervalHours: number, now?: Date, base?: string): boolean` (true when no state, unparseable state, or `last_checked_at` older than the interval).
+  -
+  -4. `src/update/check.test.ts`, `src/update/install.test.ts`, `src/update/state.test.ts` — see acceptance criteria. No network access in any test: stub `fetchImpl`, build SUMS content locally, use `fs.mkdtempSync(path.join(os.tmpdir(), ...))` for state/install targets.
+  -
+  -## Code patterns to follow
+  -
+  -- Mirror `src/storage/meta.ts` for the optional `base?: string` parameter and `src/storage/config.ts` for try/catch-with-default reads and `fs.mkdirSync(..., { recursive: true })` before writes; write JSON with `JSON.stringify(x, null, 2) + '\n'`.
+  -- Imports use the `import * as fs from 'fs'` / `'os'` / `'path'` style and `.js` extensions on relative imports, matching the rest of src/.
+  -- Tests use `bun:test` (`describe`, `it`/`test`, `expect`) like `src/storage/meta.test.ts`.
+  -- Error reporting: throw `Error` with actionable messages; callers (Phases 03/04) handle display. No `console.log` in this module.
+  -
+  -## Edge cases
+  -
+  -- `currentVersion === 'dev'` must short-circuit `isNewer` to false — dev builds never self-update.
+  -- `compareVersions('v0.10.0', 'v0.9.0')` must be positive (numeric, not lexical, segment comparison).
+  -- Prerelease ordering: `v1.0.0-rc.1` < `v1.0.0`.
+  -- SUMS parsing must tolerate both single-space and double-space separators and trailing newline, and must match the exact filename (no substring matches — `cpe-linux-x64` must not match a hypothetical `cpe-linux-x64-musl` line).
+  -- Temp file must be cleaned up on every failure path; a failed update must leave the original binary untouched.
+  -- `fetchLatestTag` must not follow the redirect (a 302 with `location` is the success case) and must handle a 200 (no redirect — unexpected) as an error.
+  -
+  -## Acceptance criteria
+  -
+  -- `compareVersions` unit tests cover: equal versions, patch/minor/major bumps, leading-`v` stripping, multi-digit segments (0.10 vs 0.9), prerelease < release, missing segments (1.0 == 1.0.0).
+  -- `isNewer` returns false for `currentVersion 'dev'` regardless of the latest tag.
+  -- `assetName` tests cover the current platform's mapping and assert the error path via monkey-patched `process.platform`/`process.arch` descriptors (or by extracting a pure helper that takes platform/arch as arguments — preferred).
+  -- `downloadAndInstall` tests (stubbed fetch, temp dir): happy path replaces the target file and makes it executable; checksum mismatch leaves the original target untouched, removes the temp file, and rejects; missing SHA256SUMS (404 stub) rejects with a message mentioning checksums; the temp file is created in the same directory as the target.
+  -- `shouldCheck` tests: no state file → true; fresh state → false; state older than interval → true; corrupt JSON → true.
+  -- `bun run typecheck`, `bun run lint`, and `bun test` all pass.
+  -
+  -## References
+  -
+  -- `src/storage/meta.ts` — `base?: string` testability pattern and JSON write style.
+  -- `src/storage/config.ts` — read-with-default and `CONFIG_PATH` constant style.
+  -- `src/storage/meta.test.ts` — bun:test structure and temp-dir usage.
+  -- `src/version.ts` — the `CPE_VERSION` constant the comparison logic serves (do not import it into src/update/; take versions as parameters so the module stays pure and testable).
+  -- `.github/workflows/release.yml` — tag format (`v*`, prerelease tags contain `-`) and asset names the installer must request.
+  -
+  -**One commit per phase**: At the end of the phase, after all acceptance criteria are met, make exactly one git commit with a conventional commit message (e.g. `feat: phase 02 — self-update core: version check, verified install, check-state`). Do not make intermediate commits during the phase. If you find the working tree already has a commit for this phase (check `git log --oneline -3`), skip the commit step.
+  +0 -62
+
+docs/self-update/PHASE_03.md
+  @@ -1,55 +0,0 @@
+  -# Phase 03 — CLI surface: `cpe update`, config flag, nudge
+  -
+  -**Branch:** feature/self-update
+  -**Dependencies:** Phase 02 (uses src/update/check.ts, install.ts, state.ts)
+  -
+  -## Summary
+  -
+  -Wire the Phase 02 engine into the CLI: an explicit `cpe update [--check]`
+  -command, the `update_auto` config flag, and the throttled post-command nudge
+  -that short-lived commands print when a newer release exists. Short-lived
+  -commands never install.
+  -
+  -## Context
+  -
+  -- Commands live in `src/commands/<name>.ts` and are registered in
+  -  `src/cli.ts` via `program.command(...).action(wrap(fn))` — `wrap` prints
+  -  the error message and exits 1, so command functions just throw.
+  -- The entry point `src/index.ts` is four lines: `setupCli(); program.parse();`.
+  -  The nudge must run **after** the invoked command completes, which requires
+  -  awaiting `program.parseAsync()` instead. The nudge must be skipped for
+  -  `start` (never returns until quit), for `update` itself (redundant), for
+  -  dev builds, when `update_auto` is `false`, and when the 24 h throttle has
+  -  not elapsed (`shouldCheck` from Phase 02). It must never break a command:
+  -  every failure path is swallowed.
+  -- `AppConfig` and `DEFAULT_CONFIG` are in `src/types/meta.ts`; config is read
+  -  via `readConfig()` from `src/storage/config.ts`. Absent `update_auto`
+  -  means enabled (check `!== false`, don't add it to `DEFAULT_CONFIG` — the
+  -  optional-with-default-true convention matches `sandbox.enabled` handling
+  -  elsewhere; document the default in the doc comment).
+  -- `CPE_VERSION` comes from `src/version.ts`.
+  -
+  -## Behaviour spec
+  -
+  -- `cpe update --check`: print current version, latest tag, and either
+  -  "update available — run cpe update" or "already up to date". Exit 0 both ways.
+  -- `cpe update`: on dev build, print that self-update is disabled for dev
+  -  builds (suggest `scripts/install-local.sh`) and return. If newer: call
+  -  `downloadAndInstall`, then print `updated <current> → <latest>` plus a
+  -  reminder to restart any running `cpe start` session. If current: say so.
+  -  Both paths refresh the update-check state file so the nudge throttle
+  -  resets.
+  -- Nudge (all other commands): when a check fires and finds a newer tag,
+  -  print exactly one stderr line:
+  -  `update available: <tag> — run cpe update`. Always record the check in
+  -  the state file, found or not.
+  -
+  -## Files expected to change
+  -
+  -- `src/commands/update.ts` (new)
+  -- `src/update/nudge.ts` (new)
+  -- `src/update/nudge.test.ts` (new)
+  -- `src/cli.ts` — register the `update` command
+  -- `src/index.ts` — `parseAsync` + post-command nudge call
+  -- `src/types/meta.ts` — `update_auto?: boolean` on `AppConfig`
+  -- `README.md` — document `cpe update`, the nudge, and the `update_auto` flag
+  +0 -55
+
+docs/self-update/PHASE_03.prompt.md
+  @@ -1,67 +0,0 @@
+  -Read docs/self-update/PHASE_03.md for context before starting, and docs/self-update/README.md for the overall feature requirements. You are working on branch feature/self-update — check it out; Phase 02 must already be committed there (verify src/update/check.ts exists before starting; if it does not, stop and report that Phase 02 has not run).
+  -
+  -**PROGRESS.md update**: At the start of this phase, update `PROGRESS.md`: set the status for this phase to `in-progress` and fill in the started date. When the phase is complete, set the status to `complete` and fill in the completed date. Use today's date in YYYY-MM-DD format. The file is docs/self-update/PROGRESS.md — update both the summary table row and the Phase Details entry.
+  -
+  -**Idempotency**: Before each significant action (creating a file, running a migration, making a commit), check the working tree state first — does the file already exist? Is this already committed? Are the tests already passing? This makes the phase safe to resume after a rate-limit interruption.
+  -
+  -## Task
+  -
+  -Expose the Phase 02 updater through the CLI: add `cpe update [--check]`, the `update_auto` config flag, and a throttled post-command update nudge for short-lived commands.
+  -
+  -## Files to modify or create
+  -
+  -1. `src/types/meta.ts` — add `update_auto?: boolean;` to `AppConfig` with a doc comment in the style of the existing commented fields: absent/true enables automatic update checks (TUI auto-install in Phase 04, CLI nudge here); false disables both; explicit `cpe update` always works. Do NOT add it to `DEFAULT_CONFIG` — consumers must treat `config.update_auto !== false` as enabled so existing config files keep working.
+  -
+  -2. `src/commands/update.ts` (new) — `export async function updateCommand(opts: { check?: boolean }): Promise<void>`:
+  -   - If `CPE_VERSION === 'dev'`: print that self-update is disabled for dev builds and to rebuild via `scripts/install-local.sh`, then return (exit 0, even for `--check`).
+  -   - Call `fetchLatestTag()`; with `--check`, print current version and latest tag, plus either an "update available — run cpe update" or "already up to date" line, and return.
+  -   - Without `--check`: if `isNewer(latest, CPE_VERSION)`, print a downloading line (the binary is ~92 MB — say what is happening), call `downloadAndInstall(latest)`, then print `updated <current> → <latest>` and a reminder that any running `cpe start` session is still on the old version and should be restarted. If not newer, print "already up to date (<version>)".
+  -   - In every successful path (check or install), write the update state via `writeUpdateState({ last_checked_at: new Date().toISOString(), latest_seen: <latest> })` so the nudge throttle resets.
+  -   - Let errors throw — `wrap()` in cli.ts handles printing and exit code.
+  -
+  -3. `src/update/nudge.ts` (new) — `export async function maybePrintUpdateNudge(argv: string[]): Promise<void>`:
+  -   - Determine the invoked subcommand from argv and return immediately for `start` and `update`.
+  -   - Return immediately when `CPE_VERSION === 'dev'`, when `readConfig().update_auto === false`, or when `!shouldCheck(24)`.
+  -   - Otherwise call `fetchLatestTag(2000)` (short timeout — this runs after every eligible command), write the update state, and if `isNewer(...)` write one line to `process.stderr`: `update available: <tag> — run cpe update`.
+  -   - Wrap the entire body so that no error ever escapes (network down, GitHub unreachable, unwritable state dir → silent no-op). This function must never change a command's exit code or output stream ordering guarantees beyond the single stderr line.
+  -   - Accept optional injectable dependencies (an object with `fetchLatestTag`, `shouldCheck`, `readConfig`, `write` defaults) so the skip-conditions and output are unit-testable without network — follow the injectable-parameter style used by `interruptiblePause` in `src/commands/start.ts`.
+  -
+  -4. `src/update/nudge.test.ts` (new) — cover the skip conditions (start/update argv, dev version, `update_auto: false`, throttle says no) and the success path emitting exactly one stderr line, using injected stubs.
+  -
+  -5. `src/cli.ts` — register the command following the existing pattern: `program.command('update').description('Update cpe to the latest GitHub release').option('--check', 'Check for a newer version without installing').action(wrap(updateCommand))`. Note the action receives the options object as its first argument for an argument-less command.
+  -
+  -6. `src/index.ts` — change to `await program.parseAsync();` (top-level await is fine under Bun) and then `await maybePrintUpdateNudge(process.argv);`.
+  -
+  -7. `README.md` — add a short "Updating" section: `cpe update` / `cpe update --check`, the automatic background behaviour (point forward to the TUI auto-update), the once-per-24h nudge, the `update_auto: false` opt-out in `~/.config/cpe/config.json`, and that dev builds are exempt.
+  -
+  -## Code patterns to follow
+  -
+  -- Command modules export a single `async function <name>Command(...)` and throw on failure; `wrap()` in cli.ts owns error printing and `process.exit(1)` — do not call `process.exit` inside the command.
+  -- `.js` extensions on relative imports; `import * as` for node builtins.
+  -- User-facing output via `console.log` in commands (see `src/commands/status.ts` for tone — terse, lowercase-leaning lines); the nudge writes to `process.stderr` only.
+  -- Version source is `CPE_VERSION` from `src/version.ts`, the same constant `program.version()` uses.
+  -
+  -## Edge cases
+  -
+  -- `cpe --version` / `--help` invocations: commander handles these before any action runs; the nudge after `parseAsync` will still execute — that is acceptable, but it must not run for `update`/`start` and must never delay exit by more than the 2 s fetch timeout.
+  -- Unparseable or missing config file: `readConfig()` already returns defaults — nudge treats that as enabled.
+  -- `downloadAndInstall` failing mid-download must surface its error through `wrap()` with the binary untouched (guaranteed by Phase 02) — do not catch it in `updateCommand`.
+  -- The nudge must not print when latest equals current (no "you are up to date" noise on every command).
+  -
+  -## Acceptance criteria
+  -
+  -- `bun run typecheck`, `bun run lint`, and `bun test` pass.
+  -- `cpe update --check` against a dev build prints the dev-build message and exits 0 (verify by running `bun run src/index.ts update --check`).
+  -- `cpe update` appears in `bun run src/index.ts --help` output with its description.
+  -- nudge tests prove: no output and no fetch for `start`/`update` argv, dev builds, `update_auto: false`, and an unfulfilled throttle; exactly one stderr line when a newer tag is found; no exception propagates when the injected fetch rejects.
+  -- README has the new Updating section.
+  -
+  -## References
+  -
+  -- `src/cli.ts` — `wrap()` and command registration patterns to copy exactly.
+  -- `src/commands/status.ts` — smallest existing command, output tone.
+  -- `src/commands/start.ts` — `interruptiblePause` shows the injectable-dependency-for-tests convention.
+  -- `src/update/check.ts`, `src/update/install.ts`, `src/update/state.ts` — the Phase 02 API this phase consumes.
+  -- `src/storage/config.ts` — `readConfig()` default behaviour the nudge relies on.
+  -
+  -**One commit per phase**: At the end of the phase, after all acceptance criteria are met, make exactly one git commit with a conventional commit message (e.g. `feat: phase 03 — cpe update command, update_auto flag, post-command nudge`). Do not make intermediate commits during the phase. If you find the working tree already has a commit for this phase (check `git log --oneline -3`), skip the commit step.
+  +0 -67
+
+docs/self-update/PHASE_04.md
+  @@ -1,47 +0,0 @@
+  -# Phase 04 — TUI auto-update loop + footer badge
+  -
+  -**Branch:** feature/self-update
+  -**Dependencies:** Phase 02 (engine). Phase 03 only shares the config flag semantics (`update_auto !== false`).
+  -
+  -## Summary
+  -
+  -Make `cpe start` keep itself up to date: a background loop checks every 6
+  -hours and silently installs newer releases. Because the running process keeps
+  -executing the old binary image after the on-disk swap, every TUI mode shows a
+  -persistent yellow footer badge — `↑ vX.Y.Z installed — restart to apply` —
+  -until the user restarts. Per the user's decision this is a badge only: no
+  -activity-feed event. DESIGN.md is updated, since it is the source of truth
+  -for TUI surfaces (see CLAUDE.md).
+  -
+  -## Context
+  -
+  -- `src/commands/start.ts` → `startCommand()` boots the queue processor and
+  -  re-renders the Ink `App` in a loop (TUI restarts around interactive
+  -  subprocesses). The auto-update loop must be started once, outside that
+  -  render loop, alongside `runQueueProcessor`.
+  -- The updater runs in the same process as the TUI, so badge state can be a
+  -  tiny in-process store with a subscribe function (no file polling needed),
+  -  consumed by a hook — see `src/tui/hooks/` for existing hook patterns and
+  -  `activityBus.subscribe` usage in `App.tsx` for the subscription-in-
+  -  useEffect shape. The store must live at module scope so the badge survives
+  -  the App unmount/re-render cycle around interactive subprocesses.
+  -- Footers to extend (right-aligned hint text, `dim2` color):
+  -  - `src/tui/Watch.tsx` — footer around lines 195/222/233-235 (normal,
+  -    compact, and paused variants; paused uses `UserPausedFooter`)
+  -  - `src/tui/Manage.tsx` — keybind footer around line 428
+  -  - `src/tui/Bench.tsx` — equivalent footer line
+  -- Badge styling: `yellow` (`#e0af68`) from `src/tui/theme.ts`, consistent
+  -  with the "needs your attention" semantics in DESIGN.md §2.2/2.3.
+  -- Guards: loop runs only when `CPE_VERSION !== 'dev'` and
+  -  `config.update_auto !== false`. Failures are silent (a failed check just
+  -  waits for the next tick); a check must never overlap a still-running
+  -  install.
+  -
+  -## Files expected to change
+  -
+  -- `src/update/auto.ts` (new) — loop + badge store (`startAutoUpdateLoop`, `subscribeInstalledUpdate`, `getInstalledUpdate`)
+  -- `src/update/auto.test.ts` (new) — loop guards and store semantics with injected timers/stubs
+  -- `src/commands/start.ts` — start the loop in `startCommand()`
+  -- `src/tui/hooks/useInstalledUpdate.ts` (new) — hook over the store
+  -- `src/tui/Watch.tsx`, `src/tui/Manage.tsx`, `src/tui/Bench.tsx` — footer badge
+  -- `docs/DESIGN.md` — badge spec (placement, color, copy) in the footer documentation
+  +0 -47
+
+docs/self-update/PHASE_04.prompt.md
+  @@ -1,62 +0,0 @@
+  -Read docs/self-update/PHASE_04.md for context before starting, and docs/self-update/README.md for the overall feature requirements. Then read docs/DESIGN.md before touching any TUI file — it is the source of truth for layout, color, state mapping, and keybinds (this is a standing project rule from CLAUDE.md). You are working on branch feature/self-update — check it out; verify src/update/check.ts exists (Phase 02 committed) before starting; if it does not, stop and report that Phase 02 has not run.
+  -
+  -**PROGRESS.md update**: At the start of this phase, update `PROGRESS.md`: set the status for this phase to `in-progress` and fill in the started date. When the phase is complete, set the status to `complete` and fill in the completed date. Use today's date in YYYY-MM-DD format. The file is docs/self-update/PROGRESS.md — update both the summary table row and the Phase Details entry.
+  -
+  -**Idempotency**: Before each significant action (creating a file, running a migration, making a commit), check the working tree state first — does the file already exist? Is this already committed? Are the tests already passing? This makes the phase safe to resume after a rate-limit interruption.
+  -
+  -## Task
+  -
+  -Add the background auto-update loop to `cpe start` and a persistent "restart to apply" footer badge to all three TUI modes. Update DESIGN.md to specify the badge.
+  -
+  -## Files to modify or create
+  -
+  -1. `src/update/auto.ts` (new):
+  -   - A module-scope badge store: `let installedUpdate: string | null` plus `getInstalledUpdate(): string | null` and `subscribeInstalledUpdate(fn: (tag: string) => void): () => void` (returns an unsubscribe function, mirroring the `activityBus.subscribe` contract in `src/events/bus.ts`). Module scope matters: the App unmounts and re-renders around interactive subprocesses (see the while-loop in `startCommand`), and the badge must survive that.
+  -   - `startAutoUpdateLoop(config: AppConfig, deps?: {...}): () => void` — returns a stop function (clears the timer; `startCommand` may ignore it, but tests need it). Behaviour: no-op (return immediately) when `CPE_VERSION === 'dev'` or `config.update_auto === false`. Otherwise run a check shortly after startup (~30 s delay so launch is never slowed) and then every 6 h: `fetchLatestTag()` → if `isNewer(latest, CPE_VERSION)` → `downloadAndInstall(latest)` → set the store and notify subscribers → `writeUpdateState(...)`. A boolean in-flight guard must prevent overlapping runs (a 92 MB download can outlast a tick on slow links). Every failure is swallowed after a single `process.stderr.write('[update] ...')` line — the loop must never crash the queue processor's process. Once an update has been installed, stop checking (the next restart picks it up; repeated installs would churn the disk for no benefit).
+  -   - Make the timer functions and the check/install functions injectable via `deps` with production defaults, following the `interruptiblePause(totalMs, isPaused, stepMs)` injectable-parameter convention in `src/commands/start.ts`, so tests drive the loop without real timers or network.
+  -
+  -2. `src/update/auto.test.ts` (new) — with injected fake timers/stubs: dev version and `update_auto: false` never schedule; a found update calls install once, sets the store, notifies subscribers, and stops further checks; overlapping ticks are prevented by the in-flight guard; install failure leaves the store null and the loop alive.
+  -
+  -3. `src/commands/start.ts` — in `startCommand()`, after `runQueueProcessor(config, activityBus).catch(() => { });`, add `startAutoUpdateLoop(config);`. Nothing else changes; the store-based badge needs no prop through `App`.
+  -
+  -4. `src/tui/hooks/useInstalledUpdate.ts` (new) — `useInstalledUpdate(): string | null`; `useState(getInstalledUpdate())` initial value (covers re-mounts after an interactive subprocess) plus `useEffect` subscribing to `subscribeInstalledUpdate` and returning the unsubscribe. Follow the structure of the existing hooks in `src/tui/hooks/`.
+  -
+  -5. `src/tui/Watch.tsx`, `src/tui/Manage.tsx`, `src/tui/Bench.tsx` — in each footer (Watch has three variants: normal ~line 233-235, compact ~line 195/222, and the paused footer via `UserPausedFooter` in `src/tui/components/WatchPaused.tsx`; Manage keybind footer ~line 428; Bench footer ~line 243), when `useInstalledUpdate()` is non-null prepend a yellow badge before the existing dim hint text: `↑ <tag> installed — restart to apply` using `yellow` from `src/tui/theme.ts`, keeping the existing `dim2`/`dim` hints intact to the right. If threading the hook into `UserPausedFooter` is disproportionate, placing the badge adjacent to it in Watch's paused branch is acceptable — but the badge must be visible in ALL of: Watch normal, Watch compact, Watch paused, Manage, and Bench.
+  -
+  -6. `docs/DESIGN.md` — add the badge to the design spec: a short subsection under §3 (Watch anatomy, near "Bottom strip"/footer description) defining copy (`↑ vX.Y.Z installed — restart to apply`), color (yellow `#e0af68`, "needs your attention" semantics per §2.2/§2.3), placement (left of the footer keybind hints, present in every mode and every alternate state), persistence (remains until the session restarts), and trigger (background auto-update replaced the on-disk binary while this session runs the old image). Note in §4.1's footer description that the badge coexists with the paused footer.
+  -
+  -## Code patterns to follow
+  -
+  -- Hooks: see existing files in `src/tui/hooks/` (e.g. `useQueueState`) for naming, return shape, and effect cleanup.
+  -- Subscription contract: `src/events/bus.ts` `subscribe` returning an unsubscribe closure.
+  -- Footer rendering: Ink `<Box justifyContent="flex-end">` with `<Text color={...}>` segments, as in Watch.tsx line 235; colors only from `src/tui/theme.ts`, never literals in components.
+  -- Background fire-and-forget with caught rejections, as `runQueueProcessor(...).catch(() => { })` in start.ts.
+  -- Tests in `bun:test`; no real network, no real 6 h timers.
+  -
+  -## Edge cases
+  -
+  -- TUI unmount/re-render cycle (interactive subprocess hand-off): badge must reappear after re-render — covered by module-scope store + `useState` initial value.
+  -- `update_auto: false` and dev builds: loop must not even schedule its first timer.
+  -- Install failing halfway (network drop): original binary untouched (Phase 02 guarantee), store stays null, loop continues on schedule, single stderr line.
+  -- A queue run executing during the swap: the on-disk rename does not affect the running process or its child harness processes; nothing must pause or interrupt the queue.
+  -- Narrow terminals (80×24 compact mode): the badge plus hints may exceed the width; badge wins — let the dim hints truncate naturally rather than wrapping to a second line.
+  -
+  -## Acceptance criteria
+  -
+  -- `bun run typecheck`, `bun run lint`, and `bun test` pass.
+  -- auto.test.ts proves: no scheduling for dev/`update_auto: false`; exactly one install per discovered update; subscriber notification; in-flight guard; checks stop after a successful install; loop survives an install failure.
+  -- Manual smoke: `bun run src/index.ts start` launches, all three modes render their footers unchanged when no update is installed (the badge is absent, not an empty gap).
+  -- Grep check: no color literals added to TUI components; `yellow` imported from theme.
+  -- DESIGN.md contains the badge spec with copy, color, placement, persistence, and trigger.
+  -
+  -## References
+  -
+  -- `src/commands/start.ts` — `startCommand` boot order and the `interruptiblePause` injectable convention.
+
+... (more changes truncated)
+  +0 -54
+[full diff: rtk git diff --no-compact]

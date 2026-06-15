@@ -1,0 +1,126 @@
+{
+  "id": "01KV39HS9TEW4XBPNAS3JZZWJW",
+  "primary_repo_path": "/home/ubuntu/Code/cpe-exp/selfupd-granite-claude",
+  "worktree_path": "/home/ubuntu/.local/state/cpe/worktrees/01KV39HS9TEW4XBPNAS3JZZWJW",
+  "plan_folder": "self-update",
+  "feature_branch": "feature/self-update",
+  "target_branch": "main",
+  "status": "complete",
+  "total_cost_usd": 14.46057,
+  "bootstrapped": true,
+  "sandboxed": true,
+  "skip_permissions": true,
+  "phases": [
+    {
+      "number": 1,
+      "prompt_file": "PHASE_01.prompt.md",
+      "title": "Release checksums (SHA256SUMS)",
+      "status": "complete",
+      "retry_count": 1,
+      "started_at": "2026-06-14T15:44:11.088Z",
+      "head_before": "e152a8123d80b4cc0465609456d53718e6139e41",
+      "session_id": "1c1bcea6-fb57-4895-af85-31434e95ae13",
+      "completed_at": "2026-06-14T16:01:53.712Z",
+      "commit_sha": "c477c943f3aed09cc2d882383d6b31ef83097522",
+      "summary": "SHA256SUMS generation added to release workflow, checksum verification integrated into install.sh, documentation updated, and a single commit applied.",
+      "commit_message": "feat: phase 01 – publish SHA256SUMS with releases and verify in install.sh",
+      "notes_for_next_phase": "Proceed to Phase 02 – Updater core module implementation.",
+      "blockers": [],
+      "cost_usd": 2.6570199999999997,
+      "tokens": {
+        "input_tokens": 26902,
+        "output_tokens": 52,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0
+      },
+      "token_source": "litellm"
+    },
+    {
+      "number": 2,
+      "prompt_file": "PHASE_02.prompt.md",
+      "title": "Updater core module (src/update/)",
+      "status": "complete",
+      "retry_count": 0,
+      "started_at": "2026-06-14T16:01:53.713Z",
+      "head_before": "c477c943f3aed09cc2d882383d6b31ef83097522",
+      "session_id": "565d9ceb-ace6-4b47-9044-e580103b5ab6",
+      "completed_at": "2026-06-14T16:41:20.903Z",
+      "commit_sha": "fdd2bee9f8c19f715d93d0ebf3f1c4225740855e",
+      "summary": "Implemented version resolution, verified atomic binary installation, and persisted check-state in the updater core module. Unit tests for all components passed. PROGRESS.md updated to reflect phase completion on 2026-06-14.",
+      "commit_message": "feat: phase 02 – self-update core: version check, verified install, check-state",
+      "notes_for_next_phase": "Proceed to Phase 03 – CLI surface for self-update.",
+      "blockers": [],
+      "cost_usd": 4.45471,
+      "tokens": {
+        "input_tokens": 57371,
+        "output_tokens": 1690,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0
+      },
+      "token_source": "litellm"
+    },
+    {
+      "number": 3,
+      "prompt_file": "PHASE_03.prompt.md",
+      "title": "CLI surface: `cpe update`, config flag, nudge",
+      "status": "complete",
+      "retry_count": 0,
+      "started_at": "2026-06-14T16:41:20.904Z",
+      "head_before": "fdd2bee9f8c19f715d93d0ebf3f1c4225740855e",
+      "session_id": "04b45b83-da93-4075-bc9e-92b4b1ef54e5",
+      "completed_at": "2026-06-14T17:06:03.311Z",
+      "commit_sha": "02ca401e3b61b2aa3067bb777f668edaff238435",
+      "summary": "Implemented self‑update CLI surface, added update_auto configuration, created updateCommand, nudge.ts for throttled post‑command notification, updated README, and recorded progress.",
+      "commit_message": "feat: phase 03 – cpe update command, update_auto flag, post-command nudge",
+      "notes_for_next_phase": "Phase 04 will focus on the TUI auto‑update and benchmarking harness integration.",
+      "blockers": [],
+      "cost_usd": 3.1691000000000003,
+      "tokens": {
+        "input_tokens": 30863,
+        "output_tokens": 502,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0
+      },
+      "token_source": "litellm"
+    },
+    {
+      "number": 4,
+      "prompt_file": "PHASE_04.prompt.md",
+      "title": "TUI auto-update loop + footer badge",
+      "status": "complete",
+      "retry_count": 1,
+      "started_at": "2026-06-14T17:57:39.059Z",
+      "head_before": "02ca401e3b61b2aa3067bb777f668edaff238435",
+      "session_id": "f1962e2e-76ee-4169-b7c3-c197b8579740",
+      "completed_at": "2026-06-14T18:28:14.444Z",
+      "commit_sha": "eaa8e9499f93c83ff7d52e4cc2b74668fd4fb8a5",
+      "summary": "Implemented background auto-update loop, badge store, and footer badge in all TUI modes; updated DESIGN.md and PROGRESS.md; committed changes in one commit.",
+      "commit_message": "feat: phase 04 – TUI auto-update loop and restart-to-apply footer badge",
+      "notes_for_next_phase": "Phase 05 will focus on integrating user‑initiated update commands and telemetry.",
+      "blockers": [],
+      "cost_usd": 4.179740000000001,
+      "tokens": {
+        "input_tokens": 806467,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 5362,
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "token_source": "adapter"
+    }
+  ],
+  "harness": "claude-code",
+  "model": "ls/granite4.1:8b",
+  "provider": "homelab-litellm"
+}

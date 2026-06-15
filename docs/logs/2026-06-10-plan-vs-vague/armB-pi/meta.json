@@ -1,0 +1,102 @@
+{
+  "id": "01KTSCQYCC7ZNMPH7Z5N17TR95",
+  "primary_repo_path": "/home/ubuntu/Code/cpe-exp/armB-pi",
+  "worktree_path": "/home/ubuntu/.local/state/cpe/worktrees/01KTSCQYCC7ZNMPH7Z5N17TR95",
+  "plan_folder": "self-update",
+  "feature_branch": "feature/self-update",
+  "target_branch": "main",
+  "status": "complete",
+  "total_cost_usd": 0,
+  "bootstrapped": true,
+  "sandboxed": true,
+  "skip_permissions": true,
+  "phases": [
+    {
+      "number": 1,
+      "prompt_file": "PHASE_01.prompt.md",
+      "title": "Release checksums (SHA256SUMS)",
+      "status": "complete",
+      "retry_count": 0,
+      "started_at": "2026-06-10T18:33:20.480Z",
+      "head_before": "f8701831e34d329b55bec8bf1775c8608276d729",
+      "session_id": "85fd1bae-9538-495d-ba70-2a029dcb0204",
+      "completed_at": "2026-06-10T18:35:44.401Z",
+      "summary": "Changes: 1 file changed, 3 insertions(+), 3 deletions(-)",
+      "notes_for_next_phase": "",
+      "blockers": [],
+      "tokens": {
+        "input_tokens": 51856,
+        "output_tokens": 6209,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0
+      },
+      "token_source": "litellm"
+    },
+    {
+      "number": 2,
+      "prompt_file": "PHASE_02.prompt.md",
+      "title": "Updater core module (src/update/)",
+      "status": "complete",
+      "retry_count": 0,
+      "started_at": "2026-06-10T18:35:44.403Z",
+      "head_before": "f8701831e34d329b55bec8bf1775c8608276d729",
+      "session_id": "4e516270-1c02-448e-a749-7039650d273c",
+      "completed_at": "2026-06-10T18:39:35.990Z",
+      "summary": "Changes: 1 file changed, 6 insertions(+), 6 deletions(-)",
+      "notes_for_next_phase": "",
+      "blockers": [],
+      "tokens": {
+        "input_tokens": 124927,
+        "output_tokens": 11412,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0
+      },
+      "token_source": "litellm"
+    },
+    {
+      "number": 3,
+      "prompt_file": "PHASE_03.prompt.md",
+      "title": "CLI surface: `cpe update`, config flag, nudge",
+      "status": "complete",
+      "retry_count": 0,
+      "started_at": "2026-06-10T18:39:35.991Z",
+      "head_before": "f8701831e34d329b55bec8bf1775c8608276d729",
+      "session_id": "f8d502ff-adb7-42b7-8061-abf8e6083a5e",
+      "completed_at": "2026-06-10T18:44:50.207Z",
+      "summary": "Changes: 4 files changed, 19 insertions(+), 13 deletions(-)",
+      "notes_for_next_phase": "",
+      "blockers": [],
+      "tokens": {
+        "input_tokens": 574259,
+        "output_tokens": 13368,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0
+      },
+      "token_source": "litellm"
+    },
+    {
+      "number": 4,
+      "prompt_file": "PHASE_04.prompt.md",
+      "title": "TUI auto-update loop + footer badge",
+      "status": "complete",
+      "retry_count": 0,
+      "started_at": "2026-06-10T18:44:50.208Z",
+      "head_before": "f8701831e34d329b55bec8bf1775c8608276d729",
+      "session_id": "3baa13b0-ff06-40f5-8311-10519dc64c59",
+      "completed_at": "2026-06-10T18:46:55.128Z",
+      "summary": "Changes: 4 files changed, 25 insertions(+), 19 deletions(-)",
+      "notes_for_next_phase": "",
+      "blockers": [],
+      "tokens": {
+        "input_tokens": 164214,
+        "output_tokens": 4547,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0
+      },
+      "token_source": "litellm"
+    }
+  ],
+  "harness": "pi",
+  "model": "gemma4-cpe:12b",
+  "provider": "homelab-litellm"
+}

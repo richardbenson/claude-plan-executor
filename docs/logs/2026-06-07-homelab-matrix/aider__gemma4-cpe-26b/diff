@@ -1,0 +1,172 @@
+diff --git a/ansible/roles/app_deploy/tasks/main.yml b/ansible/roles/app_deploy/tasks/main.yml
+new file mode 100644
+index 0000000..91ac2f3
+--- /dev/null
++++ b/ansible/roles/app_deploy/tasks/main.yml
+@@ -0,0 +1,29 @@
++# Example of how to use the version manifest in your existing Ansible roles.
++# This task demonstrates pulling a specific version defined in our manifest.
++
++- name: Load version configuration
++  include_vars:
++    file: "../../../infrastructure/updates/versions.yaml"
++    name: version_config
++
++- name: Ensure directory for tools exists
++  file:
++    path: "/opt/apps"
++    state: directory
++
++- name: Download Opencode {{ version_config.tools.opencode.target_version }}
++  get_url:
++    url: "https://github.com/{{ version_config.tools.opencode.repository }}/releases/download/{{ version_config.tools.opencode.target_version }}/opencode.tar.gz"
++    dest: "/tmp/opencode.tar.gz"
++
++- name: Extract Opencode
++  unarchive:
++    src: "/tmp/opencode.tar.gz"
++    dest: "/opt/apps/opencode"
++    remote_src: yes
++
++- name: Restart Opencode service
++  systemd:
++    name: opencode
++    state: restarted
++    enabled: yes
+diff --git a/infrastructure/updates/versions.yaml b/infrastructure/updates/versions.yaml
+new file mode 100644
+index 0000000..207e2ba
+--- /dev/null
++++ b/infrastructure/updates/versions.yaml
+@@ -0,0 +1,15 @@
++# This file is managed by scripts/update_checker.py
++# Do not edit manually unless performing an emergency rollback.
++
++tools:
++  opencode:
++    target_version: "v1.2.0"
++    last_known_good: "v1.1.5"
++    repository: "owner/opencode"
++  openchamber:
++    target_version: "v0.9.0"
++    last_known_good: "v0.8.8"
++    repository: "owner/openchamber"
++
++metadata:
++  last_update_check: "2023-10-27T10:00:00Z"
+diff --git a/scripts/health_check.py b/scripts/health_check.py
+new file mode 100644
+index 0000000..b339706
+--- /dev/null
++++ b/scripts/health_check.py
+@@ -0,0 +1,39 @@
++#!/usr/bin/env python3
++import requests
++import sys
++
++# Configuration for services to check
++SERVICES = {
++    "opencode": "http://<vm_ip>:808to/api/health",
++    "openchamber": "http://<vm_ip>:9090/status"
++}
++
++def check_service(name, url):
++    try:
++        print(f"Checking {name} at {url}...")
++        response = requests.get(url, timeout=5)
++        if response.status_code == 200:
++            print(f"  [OK] {name} is healthy.")
++            return True
++        else:
++            print(f"  [FAIL] {name} returned status {response.status_code}")
++            return False
++    except Exception as e:
++        print(f"  [ERROR] Could not connect to {name}: {e}")
++        return False
++
++def main():
++    all_passed = True
++    for name, url in SERVICES.items():
++        if not check_service(name, url):
++            all_passed = False
++    
++    if not all_passed:
++        print("\nHealth check FAILED. Manual intervention or rollback required.")
++        sys.exit(1)
++    else:
++        print("\nAll services passed health checks.")
++        sys.exit(0)
++
++if __name__ == "__main__":
++    main()
+diff --git a/scripts/update_checker.py b/scripts/update_checker.py
+new file mode 100644
+index 0000000..812688c
+--- /dev/null
++++ b/scripts/update_checker.py
+@@ -0,0 +1,65 @@
++#!/usr/bin/env python3
++import yaml
++import requests
++import datetime
++import os
++import sys
++
++# Path to the version manifest
++MANIFEST_PATH = "infrastructure/updates/versions.yaml"
++
++def get_latest_github_tag(repo):
++    """Queries GitHub API for the latest release tag."""
++    url = f"https://api.github.com/repos/{repo}/releases/latest"
++    try:
++        response = requests.get(url, timeout=10)
++        response.raise_for_status()
++        return response.json()['tag_name']
++    except Exception as e:
++        print(f"Error checking {repo}: {e}")
++        return None
++
++def update_manifest():
++    if not os.path.exists(MANIFEST_PATH):
++        print(f"Error: Manifest not found at {MANIFEST_PATH}")
++        sys.exit(1)
++
++    with open(MANIFEST_PATH, 'r') as f:
++        data = yaml.safe_load(f)
++
++    changes_detected = False
++    tools = data.get('tools', {})
++
++    for tool_name, info in tools.items():
++        repo = info.get('repository')
++        if not repo:
++            arg_error = f"No repository defined for {tool_name}"
++            print(arg_error)
++            continue
++
++        latest_tag = get_latest_github_tag(repo)
++        if not latest_tag:
++            continue
++
++        current_target = info.get('target_version')
++
++        if latest_tag != current_target:
++            print(f"Update found for {tool_name}: {current_target} -> {latest_tag}")
++            # Move current target to last_known_good before updating
++            info['last_known_good'] = current_target
++            info['target_version'] = latest_tag
++            changes_detected = True
++
++    if changes_detected:
++        data['metadata']['last_update_check'] = datetime.datetime.now().isoformat()
++        with open(MANIFEST_PATH, 'w') as f:
++            yaml.dump(data, f, default_flow_style=False)
++        print("Manifest updated successfully.")
++        # In a real CI environment, you would trigger your Terraform/Ansible pipeline here.
++        return True
++    else:
++        print("No updates found.")
++        return False
++
++if __name__ == "__main__":
++    update_manifest()

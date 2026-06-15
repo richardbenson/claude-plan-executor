@@ -2,15 +2,23 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { readMeta, updateMeta, getLogsDir } from '../storage/meta.js';
-import { runSession } from './session.js';
 import { resolveProvider } from './provider.js';
+import { settleLitellmRun, runKeyDurationSeconds } from './litellm.js';
+import * as harnessRegistry from '../harness/registry.js';
+import { assertHarnessInstalled } from '../harness/detect.js';
 import { classifyEnvelope } from './envelope.js';
 import { handleRateLimit } from './limit.js';
 import { startJsonlTail } from './jsonl-tail.js';
+import { startOutputTail } from './output-tail.js';
 import { getHead } from '../git/repo.js';
-import { SINGLE_PROMPT_TEMPLATE, SINGLE_PROMPT_RESULT_SCHEMA } from '../prompts/index.js';
+import { SINGLE_PROMPT_TEMPLATE, BENCH_PROMPT_TEMPLATE, SINGLE_PROMPT_RESULT_SCHEMA, buildOpaquePrompt, withAutonomy } from '../prompts/index.js';
+import { acquireReport, excludeCpeArtifacts, summarizeReport } from './report.js';
+import { createClone, removeClone } from '../git/clone.js';
+import { captureRun } from './capture.js';
+import { RunGuard, registerGuard, unregisterGuard, activitySignature } from './run-guard.js';
 import type { ActivityBus } from '../events/bus.js';
-import type { AppConfig } from '../types/meta.js';
+import type { AppConfig, RunMeta, TokenSource } from '../types/meta.js';
+import type { Harness } from '../harness/types.js';
 
 export interface SinglePromptResult {
   completed: boolean;
@@ -25,7 +33,8 @@ export interface SinglePromptResult {
 export type SinglePromptOutcome =
   | { outcome: 'complete'; result: SinglePromptResult }
   | { outcome: 'paused'; resumeAt: Date; hadWork: boolean }
-  | { outcome: 'failed'; reason: string };
+  | { outcome: 'failed'; reason: string }
+  | { outcome: 'bench'; runOutcome: NonNullable<RunMeta['run_outcome']>; resultsDir: string };
 
 function isSinglePromptResult(v: unknown): v is SinglePromptResult {
   if (!v || typeof v !== 'object') return false;
@@ -62,13 +71,45 @@ export async function runSinglePrompt(
     return { outcome: 'failed', reason: 'no prompt found in metadata' };
   }
 
+  // Resolve the harness adapter up front so an unknown harness fails fast,
+  // before any execution. Defaults to claude-code, preserving current behaviour.
+  const harnessName = meta.harness ?? appConfig.harness_for_phases ?? 'claude-code';
+  let adapter;
+  try {
+    adapter = harnessRegistry.get(harnessName);
+    // Hard-block: the resolved harness (incl. the default) must be installed.
+    assertHarnessInstalled(appConfig, harnessName);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    await markFailed(runId, reason, bus);
+    return { outcome: 'failed', reason };
+  }
+
+  // Bench / clone-isolation runs take a distinct, simpler path: a fresh clone of
+  // the baseline as cwd, an activity-based timeout + bail guard, and post-run
+  // capture — no envelope-classification/retry/PR ceremony. Default worktree
+  // single-prompt runs fall through to the unchanged path below.
+  const isolation = meta.isolation ?? appConfig.isolation ?? 'worktree';
+  if (isolation === 'clone') {
+    return runBenchSinglePrompt(runId, meta, adapter, appConfig, bus);
+  }
+
+  // Opaque harnesses have no structured envelope: run with the reporting-contract
+  // prompt (commit + PR + write .cpe/result.json) and derive a normalized report.
+  // Structured (claude-code) falls through to the unchanged envelope path below.
+  if (adapter.completionMode === 'opaque') {
+    return runOpaqueSinglePrompt(runId, meta, adapter, appConfig, bus, _retryCount);
+  }
+
   // STEP 2 — inject user prompt and optional GitHub issue section into template
   const githubIssueSection = meta.github_issue_number
     ? `Include \`Closes #${meta.github_issue_number}\` in the PR body so GitHub automatically closes the issue when the PR is merged.`
     : '';
-  const combined = SINGLE_PROMPT_TEMPLATE
-    .replace('{{USER_PROMPT}}', meta.prompt)
-    .replace('{{GITHUB_ISSUE_SECTION}}', githubIssueSection);
+  const combined = withAutonomy(
+    SINGLE_PROMPT_TEMPLATE
+      .replace('{{USER_PROMPT}}', meta.prompt)
+      .replace('{{GITHUB_ISSUE_SECTION}}', githubIssueSection),
+  );
 
   // STEP 3 — write combined prompt to temp file
   const tmpFile = path.join(os.tmpdir(), `cpe-single-prompt-${runId}.md`);
@@ -102,25 +143,41 @@ export async function runSinglePrompt(
   const provider = await resolveProvider(
     appConfig.providers ?? [],
     'phase',
-    appConfig.provider_for_phases,
+    meta.provider ?? appConfig.provider_for_phases,
+    meta.model,
+    { litellmKeySeconds: runKeyDurationSeconds(appConfig.max_runtime_seconds), runId },
   );
-  const sessionPromise = runSession({
-    worktreePath: meta.worktree_path,
+  const sessionPromise = adapter.run({
+    cwd: meta.worktree_path,
     promptFile: tmpFile,
     sessionId: uuid,
     logPath,
     schema: SINGLE_PROMPT_RESULT_SCHEMA,
     dangerouslySkipPermissions: appConfig.dangerously_skip_permissions,
-    provider,
+    providerEnv: provider?.env ?? {},
+    model: provider?.model,
+    modelArgs: provider?.modelArgs ?? [],
   });
 
   // STEP 9 — start JSONL tail for activity feed
   const stopTail = await startJsonlTail(uuid, meta.worktree_path, runId, -1, bus, logPath);
 
   // STEP 10 — await session completion then stop tail
-  const result = await sessionPromise;
+  const harnessResult = await sessionPromise;
   stopTail();
   try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+
+  // Structured adapters (claude-code) carry the parsed envelope; the downstream
+  // classification path consumes it exactly as the SessionResult did before.
+  if (!harnessResult.envelope) {
+    await markFailed(
+      runId,
+      `harness '${adapter.name}' did not return a structured result (single-prompt requires structured mode)`,
+      bus,
+    );
+    return { outcome: 'failed', reason: 'harness returned no structured envelope' };
+  }
+  const result = { envelope: harnessResult.envelope, exitCode: harnessResult.exitCode };
 
   // STEP 11 — classify envelope
   const classified = classifyEnvelope(result.envelope);
@@ -193,11 +250,19 @@ export async function runSinglePrompt(
     commitSha = headAfter;
   }
 
-  // STEP 14 — update metadata and emit result
+  // STEP 14 — update metadata and emit result. Settle the gateway key first:
+  // spend-log totals (wire-accurate, all turns) replace the envelope's numbers
+  // when a LiteLLM run key was minted; the key is revoked either way. Failure
+  // paths above skip this — their keys simply auto-expire.
+  const ltTotals = await settleLitellmRun(provider?.litellm);
+  const tokens = ltTotals?.tokens ?? result.envelope.usage;
   const status = promptResult.pr_created ? 'pr-created' : 'complete';
   updateMeta(runId, {
     status,
     total_cost_usd: result.envelope.total_cost_usd,
+    ...(tokens
+      ? { tokens, token_source: (ltTotals ? 'litellm' : 'adapter') as TokenSource }
+      : {}),
     ...(promptResult.pr_url ? { pr_url: promptResult.pr_url } : {}),
   });
 
@@ -221,4 +286,346 @@ export async function runSinglePrompt(
   void commitSha;
 
   return { outcome: 'complete', result: promptResult };
+}
+
+/**
+ * Opaque-harness single-prompt execution (worktree, non-bench). Runs the task
+ * augmented with the reporting contract (commit + open a PR + write
+ * `.cpe/result.json`) and derives a normalized report via acquireReport. Commit
+ * truth comes from git; a non-zero exit is the only hard failure (retried).
+ */
+async function runOpaqueSinglePrompt(
+  runId: string,
+  meta: RunMeta,
+  adapter: Harness,
+  appConfig: AppConfig,
+  bus: ActivityBus,
+  retryCountIn: number,
+): Promise<SinglePromptOutcome> {
+  const githubIssueSection = meta.github_issue_number
+    ? `Include \`Closes #${meta.github_issue_number}\` in the PR body so GitHub automatically closes the issue when the PR is merged.`
+    : '';
+  const base = `${meta.prompt}${githubIssueSection ? `\n\n${githubIssueSection}` : ''}`;
+  // Only ask the agent to open a PR when there's actually a remote to push to;
+  // otherwise it flails on `git push origin` (mirrors finalise's skipPushAndPr).
+  const prompt = withAutonomy(buildOpaquePrompt(base, { withPr: Boolean(meta.remote) }));
+
+  updateMeta(runId, { status: 'executing' });
+  bus.emit({ kind: 'phase', timestamp: new Date(), runId, phaseNumber: -1, phaseName: 'single-prompt' });
+
+  excludeCpeArtifacts(meta.worktree_path);
+  const headBefore = getHead(meta.worktree_path);
+  const uuid = crypto.randomUUID();
+  const logPath = path.join(getLogsDir(runId), 'single-prompt.log');
+  const provider = await resolveProvider(
+    appConfig.providers ?? [],
+    'phase',
+    meta.provider ?? appConfig.provider_for_phases,
+    meta.model,
+    { litellmKeySeconds: runKeyDurationSeconds(appConfig.max_runtime_seconds), runId },
+  );
+
+  // Activity-based timeout + manual bail (off unless inactivity/max-runtime are
+  // configured), fed by the output tail — so a hung/runaway opaque run is killed.
+  const guard = new RunGuard({
+    inactivityMs: (appConfig.inactivity_timeout_seconds ?? 0) * 1000,
+    maxRuntimeMs: (appConfig.max_runtime_seconds ?? 0) * 1000,
+  });
+  registerGuard(runId, guard);
+  const unsub = bus.subscribe(e => { if (e.runId === runId) guard.noteActivity(activitySignature(e)); });
+  guard.start();
+  const sessionPromise = adapter.run({
+    cwd: meta.worktree_path,
+    prompt,
+    sessionId: uuid,
+    logPath,
+    dangerouslySkipPermissions: appConfig.dangerously_skip_permissions,
+    providerEnv: provider?.env ?? {},
+    model: provider?.model ?? meta.model,
+    modelArgs: provider?.modelArgs ?? [],
+    signal: guard.signal,
+  });
+  const stopTail = startOutputTail(logPath, runId, -1, bus);
+  let harnessResult;
+  try {
+    harnessResult = await sessionPromise;
+  } finally {
+    stopTail();
+    guard.dispose();
+    unsub();
+    unregisterGuard(runId);
+  }
+
+  // Guard fired (timeout/bail) → terminal; killing-and-retrying would just hang again.
+  if (guard.outcome) {
+    const reason = guard.reason === 'bailed' ? 'manually bailed'
+      : guard.reason === 'timeout-maxruntime' ? 'exceeded max runtime'
+      : 'no new output within inactivity window';
+    await markFailed(runId, `${adapter.name}: ${reason}`, bus);
+    return { outcome: 'failed', reason };
+  }
+
+  if (harnessResult.exitCode !== 0) {
+    const retryCount = retryCountIn + 1;
+    if (retryCount > appConfig.max_retries) {
+      await markFailed(runId, `harness '${adapter.name}' exited ${harnessResult.exitCode}`, bus);
+      return { outcome: 'failed', reason: `harness exited ${harnessResult.exitCode}` };
+    }
+    updateMeta(runId, { status: 'retrying' });
+    return runSinglePrompt(runId, appConfig, bus, retryCount);
+  }
+
+  const { report, source } = await acquireReport({
+    worktree: meta.worktree_path,
+    headBefore,
+    exitCode: harnessResult.exitCode,
+    summarize: () => summarizeReport({
+      worktree: meta.worktree_path,
+      headBefore,
+      transcriptPath: logPath,
+      providerEnv: provider?.env ?? {},
+      model: provider?.model ?? meta.model,
+    }),
+  });
+  const headAfter = getHead(meta.worktree_path);
+  const committed = headAfter !== headBefore;
+
+  // Settle the gateway key: spend-log totals replace adapter-parsed tokens
+  // (opaque adapters often can't report usage at all); key revoked either way.
+  const ltTotals = await settleLitellmRun(provider?.litellm);
+  const tokens = ltTotals?.tokens ?? harnessResult.tokens;
+  const status = report.pr_created ? 'pr-created' : 'complete';
+  updateMeta(runId, {
+    status,
+    ...(harnessResult.costUsd !== undefined ? { total_cost_usd: harnessResult.costUsd } : {}),
+    ...(tokens
+      ? { tokens, token_source: (ltTotals ? 'litellm' : 'adapter') as TokenSource }
+      : {}),
+    ...(report.pr_url ? { pr_url: report.pr_url } : {}),
+  });
+
+  bus.emit({
+    kind: 'ok',
+    timestamp: new Date(),
+    runId,
+    phaseNumber: -1,
+    summary: report.pr_url ? `PR opened: ${report.pr_url}` : `${report.summary} (via ${source})`,
+    costUsd: harnessResult.costUsd ?? 0,
+  });
+  for (const blocker of report.blockers) {
+    bus.emit({ kind: 'error', timestamp: new Date(), runId, phaseNumber: -1, message: blocker });
+  }
+
+  return {
+    outcome: 'complete',
+    result: {
+      completed: report.completed,
+      committed,
+      commit_message: report.commit_message ?? null,
+      summary: report.summary,
+      pr_created: report.pr_created ?? false,
+      pr_url: report.pr_url ?? null,
+      blockers: report.blockers,
+    },
+  };
+}
+
+/**
+ * Bench path: run a single prompt against a fresh clone of the baseline, under an
+ * activity-based timeout + manual-bail guard, then capture the result. No
+ * retries, no structured-output requirement, no PR — the diff and outcome are
+ * what matter. Clone is removed only on a clean completion; kept otherwise for
+ * debugging.
+ */
+async function runBenchSinglePrompt(
+  runId: string,
+  meta: RunMeta,
+  adapter: Harness,
+  appConfig: AppConfig,
+  bus: ActivityBus,
+): Promise<SinglePromptOutcome> {
+  const startTime = Date.now();
+
+  // 1 — fresh clone of the baseline (CWD repo + current branch by default).
+  let clone;
+  try {
+    clone = createClone(runId, { repo: meta.bench_repo, branch: meta.bench_branch });
+  } catch (err) {
+    const reason = `clone failed: ${err instanceof Error ? err.message : String(err)}`;
+    await markFailed(runId, reason, bus);
+    return { outcome: 'failed', reason };
+  }
+
+  updateMeta(runId, {
+    isolation: 'clone',
+    worktree_path: clone.path,
+    bench_repo: clone.baseline.repo,
+    bench_branch: clone.baseline.branch,
+    base_ref: clone.baseRef,
+    status: 'executing',
+  });
+  bus.emit({ kind: 'phase', timestamp: new Date(), runId, phaseNumber: -1, phaseName: 'bench' });
+
+  // 2 — prompt file. Structured adapters (claude-code) need a template that
+  // instructs the StructuredOutput envelope; we use the BENCH variant, which
+  // commits but explicitly does NOT push or open a PR — a bench clone's origin is
+  // the local baseline, so a push/PR request just makes the agent flail for ages
+  // (observed: claude-code burning ~90 min on gh/tea PR attempts). Opaque adapters
+  // have no envelope and get the raw user prompt; their outcome is exit + git diff.
+  // Structured harnesses get the commit/no-PR/structured-output template; opaque
+  // get the raw task. Both are then framed with the autonomy preamble (no human to
+  // answer questions; must produce concrete changes, not a chat reply).
+  const promptText = withAutonomy(
+    adapter.completionMode === 'structured'
+      ? BENCH_PROMPT_TEMPLATE.replace('{{USER_PROMPT}}', meta.prompt ?? '')
+      : (meta.prompt ?? ''),
+  );
+  const tmpFile = path.join(os.tmpdir(), `cpe-bench-${runId}.md`);
+  fs.writeFileSync(tmpFile, promptText);
+
+  // 3 — provider env + model. For a bench run the matrix model (meta.model) is
+  // the authoritative request and resolveProvider applies it (request > provider
+  // default > legacy), failing fast if a custom endpoint ends up with no model.
+  // The provider chosen via `cpe bench --provider` (meta.provider) takes
+  // precedence over the config default.
+  const provider = await resolveProvider(
+    appConfig.providers ?? [],
+    'phase',
+    meta.provider ?? appConfig.provider_for_phases,
+    meta.model,
+    { litellmKeySeconds: runKeyDurationSeconds(appConfig.max_runtime_seconds), runId },
+  );
+  const modelArgs = provider?.modelArgs ?? (meta.model ? ['--model', meta.model] : []);
+
+  // 4 — activity-based timeout + bail guard; activity comes from the bus (the
+  // same stream the live tail consumes), with repeat suppression in RunGuard.
+  const guard = new RunGuard({
+    inactivityMs: (appConfig.inactivity_timeout_seconds ?? 0) * 1000,
+    maxRuntimeMs: (appConfig.max_runtime_seconds ?? 0) * 1000,
+  });
+  registerGuard(runId, guard);
+  const unsub = bus.subscribe(e => {
+    if (e.runId === runId) guard.noteActivity(activitySignature(e));
+  });
+
+  const logPath = path.join(getLogsDir(runId), 'bench.log');
+  const uuid = crypto.randomUUID();
+
+  // Kick off the harness first, then start the JSONL tail (it polls for the
+  // session file the harness is creating) — same ordering as the non-bench
+  // path. The guard's inactivity timer starts with the run.
+  guard.start();
+  const runPromise = adapter.run({
+    cwd: clone.path,
+    promptFile: tmpFile,
+    sessionId: uuid,
+    logPath,
+    schema: SINGLE_PROMPT_RESULT_SCHEMA,
+    dangerouslySkipPermissions: appConfig.dangerously_skip_permissions,
+    providerEnv: provider?.env ?? {},
+    model: provider?.model ?? meta.model,
+    modelArgs,
+    signal: guard.signal,
+  });
+  // Structured adapters (claude-code) expose a parseable JSONL stream we tail for
+  // rich activity events; opaque adapters only append raw stdout to logPath, so
+  // we use the generic line tail. Both feed the bus, and the bus subscription
+  // above forwards every event to the guard as activity.
+  const stopTail = adapter.completionMode === 'structured'
+    ? await startJsonlTail(
+        uuid, clone.path, runId, -1, bus, logPath,
+        sig => {
+          guard.noteActivity(sig);
+          // Surface raw-line liveness to the TUI so the bench pane's "last output
+          // age" tracks the SAME signal the timeout watches. claude writes nothing
+          // renderable mid-turn (the assistant entry lands only when the turn
+          // completes), so during a slow first turn the structural lines
+          // (queue-operation, attachment, ai-title, …) are the only proof of life.
+          // We skip assistant/user lines — the classifier already renders those
+          // richly (text/edit/bash/commit) — to avoid duplicate pane rows.
+          let type = '';
+          try { type = (JSON.parse(sig) as { type?: string }).type ?? ''; } catch { /* non-JSON */ }
+          if (type && type !== 'assistant' && type !== 'user') {
+            bus.emit({ kind: 'output', timestamp: new Date(), runId, phaseNumber: -1, line: `· ${type}` });
+          }
+        },
+      )
+    : startOutputTail(logPath, runId, -1, bus);
+
+  let result;
+  try {
+    result = await runPromise;
+  } finally {
+    stopTail();
+    guard.dispose();
+    unsub();
+    unregisterGuard(runId);
+    try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+  }
+
+  const durationMs = Date.now() - startTime;
+  const runOutcome = guard.outcome ?? result?.outcome ?? 'error';
+  const outcomeReason =
+    guard.reason === 'timeout-inactivity' ? 'no new output within inactivity window'
+    : guard.reason === 'timeout-maxruntime' ? 'exceeded max runtime'
+    : guard.reason === 'bailed' ? 'manually bailed'
+    : undefined;
+
+  // Gateway settlement on ANY outcome — a timed-out/errored run still consumed
+  // real tokens, and the matrix wants them. Collects spend-log totals (poll for
+  // the flush) then revokes the per-run key.
+  const ltTotals = await settleLitellmRun(provider?.litellm);
+
+  // 5 — capture (diff/transcript/meta + optional harnesstests push) on any outcome.
+  const cap = captureRun({
+    runId,
+    meta: readMeta(runId),
+    cwd: clone.path,
+    baseRef: clone.baseRef,
+    result: result ?? { exitCode: -1, outcome: 'error' },
+    outcome: runOutcome,
+    outcomeReason,
+    durationMs,
+    transcriptPath: logPath,
+    ...(ltTotals ? { tokens: ltTotals.tokens, tokenSource: 'litellm' as TokenSource } : {}),
+  });
+
+  // A 'no-op' (the harness ran cleanly to exit 0 but produced no git diff) is a
+  // legitimate, non-error result — distinct from 'error'/'failed'. Map it to a
+  // terminal 'complete' status; the run_outcome ('no-op') still carries the
+  // distinction into the captured meta + `cpe bench summary` OUTCOME column.
+  const status =
+    runOutcome === 'completed' || runOutcome === 'no-op' ? 'complete'
+    : runOutcome === 'timeout' ? 'timeout'
+    : runOutcome === 'bailed' ? 'bailed'
+    : 'failed';
+  updateMeta(runId, {
+    status,
+    run_outcome: runOutcome,
+    ...(outcomeReason ? { outcome_reason: outcomeReason } : {}),
+    duration_ms: durationMs,
+    results_dir: cap.resultsDir,
+    total_cost_usd: result?.costUsd ?? 0,
+  });
+
+  if (runOutcome === 'timeout' || runOutcome === 'bailed' || runOutcome === 'error') {
+    bus.emit({
+      kind: 'error', timestamp: new Date(), runId, phaseNumber: -1,
+      message: `bench ${runOutcome}${outcomeReason ? ': ' + outcomeReason : ''} (results: ${cap.resultsDir})`,
+    });
+  } else {
+    bus.emit({
+      kind: 'ok', timestamp: new Date(), runId, phaseNumber: -1,
+      summary: `bench complete${cap.pushed ? ` — pushed ${cap.branch}` : ''} (results: ${cap.resultsDir})`,
+      costUsd: result?.costUsd ?? 0,
+    });
+  }
+
+  // 6 — keep the clone on failure/timeout/bail for debugging; remove on a clean
+  // run (completed with changes, or a no-op that left nothing to inspect).
+  if (runOutcome === 'completed' || runOutcome === 'no-op') {
+    try { removeClone(clone.path); } catch { /* ignore */ }
+  }
+
+  return { outcome: 'bench', runOutcome, resultsDir: cap.resultsDir };
 }

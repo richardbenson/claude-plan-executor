@@ -1,0 +1,25 @@
+{
+  "run_id": "01KTGS5J7YHZHE49QP3RSYNGM1",
+  "harness": "crush",
+  "model": "gemma4-cpe:31b",
+  "provider": "desktop-ollama",
+  "isolation": "clone",
+  "baseline": {
+    "repo": "/home/ubuntu/Code/homelab",
+    "branch": "modeltests/sandbox-no-docs",
+    "base_ref": "cadab2ac07fad2e26bcb3962cfc45c62f27a4de4"
+  },
+  "outcome": "bailed",
+  "outcome_reason": "manually bailed",
+  "duration_ms": 3920362,
+  "exit_code": 137,
+  "tokens": {
+    "input_tokens": 26939,
+    "output_tokens": 1181,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0
+  },
+  "diffstat": "ansible/group_vars/opencode_vms/all.yml  |  7 +++++++\n ansible/playbooks/provision-opencode.yml | 20 ++++++++++----------\n 2 files changed, 17 insertions(+), 10 deletions(-)",
+  "branch_pushed": "harnesstests/crush__gemma4-cpe-31b",
+  "captured_at": "2026-06-07T19:03:54.471Z"
+}

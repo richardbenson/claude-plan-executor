@@ -1,0 +1,37 @@
+{
+  "run_id": "01KTGS5J7DRCPBV3VS5CRKMS2F",
+  "harness": "claude-code",
+  "model": "gemma4-cpe:12b",
+  "provider": "desktop-ollama",
+  "isolation": "clone",
+  "baseline": {
+    "repo": "/home/ubuntu/Code/homelab",
+    "branch": "modeltests/sandbox-no-docs",
+    "base_ref": "cadab2ac07fad2e26bcb3962cfc45c62f27a4de4"
+  },
+  "outcome": "error",
+  "duration_ms": 35309,
+  "exit_code": 1,
+  "tokens": {
+    "input_tokens": 131068,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 4,
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 0,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "",
+    "iterations": [],
+    "speed": "standard"
+  },
+  "cost_usd": 0.401976,
+  "diffstat": "",
+  "branch_pushed": "harnesstests/claude-code__gemma4-cpe-12b",
+  "captured_at": "2026-06-07T10:15:16.281Z"
+}

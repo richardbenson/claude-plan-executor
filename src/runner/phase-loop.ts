@@ -2,15 +2,23 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { readMeta, updateMeta, updatePhase, getLogsDir } from '../storage/meta.js';
-import { runSession } from './session.js';
 import { resolveProvider } from './provider.js';
+import { settleLitellmRun, runKeyDurationSeconds } from './litellm.js';
+import * as harnessRegistry from '../harness/registry.js';
+import { assertHarnessInstalled } from '../harness/detect.js';
 import { classifyEnvelope } from './envelope.js';
 import { handleRateLimit } from './limit.js';
 import { startJsonlTail } from './jsonl-tail.js';
+import { startOutputTail } from './output-tail.js';
 import { getHead } from '../git/repo.js';
-import { PHASE_RESULT_SCHEMA } from '../prompts/index.js';
+import { PHASE_RESULT_SCHEMA, buildOpaquePrompt, withAutonomy } from '../prompts/index.js';
+import { acquireReport, excludeCpeArtifacts, readSelfReport, summarizeReport } from './report.js';
+import type { PhaseReport, ReportSource } from './report.js';
+import { RunGuard, registerGuard, unregisterGuard, activitySignature } from './run-guard.js';
+import type { ResolvedProvider } from './provider.js';
+import type { Harness } from '../harness/types.js';
 import type { ActivityBus } from '../events/bus.js';
-import type { AppConfig } from '../types/meta.js';
+import type { AppConfig, RunMeta, TokenSource } from '../types/meta.js';
 
 export interface PhaseResult {
   completed: boolean;
@@ -40,7 +48,7 @@ async function markPhaseFailed(
   reason: string,
   bus: ActivityBus,
 ): Promise<void> {
-  updatePhase(runId, phaseNumber, { status: 'failed' });
+  updatePhase(runId, phaseNumber, { status: 'failed', failure_reason: reason });
   updateMeta(runId, { status: 'failed' });
   bus.emit({
     kind: 'error',
@@ -68,6 +76,21 @@ export async function runPhase(
   if (!phaseEntry) {
     throw new Error(`Phase ${phaseNumber} not found in run ${runId}`);
   }
+
+  // Resolve the harness adapter up front so an unknown harness fails fast,
+  // before any execution. Defaults to claude-code, preserving current behaviour.
+  const harnessName = meta.harness ?? appConfig.harness_for_phases ?? 'claude-code';
+  let adapter;
+  try {
+    adapter = harnessRegistry.get(harnessName);
+    // Hard-block: the resolved harness (incl. the default) must be installed.
+    assertHarnessInstalled(appConfig, harnessName);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    await markPhaseFailed(runId, phaseNumber, reason, bus);
+    return { outcome: 'failed', reason };
+  }
+
   updateMeta(runId, { status: 'executing' });
   updatePhase(runId, phaseNumber, { status: 'executing', started_at: new Date().toISOString() });
   bus.emit({
@@ -91,46 +114,82 @@ export async function runPhase(
   const promptFile = path.join(meta.worktree_path, 'docs', meta.plan_folder ?? '', phaseEntry.prompt_file);
   const logPath = path.join(getLogsDir(runId), 'phase-' + String(phaseNumber).padStart(2, '0') + '.log');
 
-  // Prepend notes from the previous phase if present
+  // Build the effective prompt: the autonomy preamble (no human to answer; produce
+  // concrete changes), optional notes from the previous phase, then the phase body.
+  // Written to a temp file used by BOTH the structured (claude) and opaque paths.
   const prevPhase = phaseNumber > 1
     ? (meta.phases ?? []).find(p => p.number === phaseNumber - 1)
     : undefined;
   const prevNotes = prevPhase?.notes_for_next_phase?.trim();
-  let effectivePromptFile = promptFile;
-  if (prevNotes) {
-    const tmpDir = path.join(os.tmpdir(), 'cpe-phase-prompts');
-    fs.mkdirSync(tmpDir, { recursive: true });
-    const tmpPath = path.join(tmpDir, `${runId}-phase-${phaseNumber}.md`);
-    const originalContent = fs.readFileSync(promptFile, 'utf-8');
-    fs.writeFileSync(tmpPath, `## Notes from the previous phase\n\n${prevNotes}\n\n---\n\n${originalContent}`);
-    effectivePromptFile = tmpPath;
+  const originalContent = fs.readFileSync(promptFile, 'utf-8');
+  const body = prevNotes
+    ? `## Notes from the previous phase\n\n${prevNotes}\n\n---\n\n${originalContent}`
+    : originalContent;
+  const tmpDir = path.join(os.tmpdir(), 'cpe-phase-prompts');
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const effectivePromptFile = path.join(tmpDir, `${runId}-phase-${phaseNumber}.md`);
+  fs.writeFileSync(effectivePromptFile, withAutonomy(body));
+
+  let provider;
+  try {
+    provider = await resolveProvider(
+      appConfig.providers ?? [],
+      'phase',
+      meta.provider ?? appConfig.provider_for_phases,
+      meta.model,
+      { litellmKeySeconds: runKeyDurationSeconds(appConfig.max_runtime_seconds), runId },
+    );
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    await markPhaseFailed(runId, phaseNumber, reason, bus);
+    return { outcome: 'failed', reason };
   }
 
-  const provider = await resolveProvider(
-    appConfig.providers ?? [],
-    'phase',
-    appConfig.provider_for_phases,
-  );
+  // Opaque harnesses have no structured envelope: run with the reporting-contract
+  // prompt, then derive a normalized PhaseReport (self-report → git). Structured
+  // (claude-code) falls through to the unchanged envelope path below.
+  if (adapter.completionMode === 'opaque') {
+    return runOpaquePhase({
+      runId, phaseNumber, meta, appConfig, bus, adapter,
+      provider: provider ?? null, headBefore, uuid, logPath,
+      basePromptFile: effectivePromptFile, originalPromptFile: promptFile,
+    });
+  }
 
-  const sessionPromise = runSession({
-    worktreePath: meta.worktree_path,
+  const sessionPromise = adapter.run({
+    cwd: meta.worktree_path,
     promptFile: effectivePromptFile,
     sessionId: uuid,
     logPath,
     schema: PHASE_RESULT_SCHEMA,
     dangerouslySkipPermissions: appConfig.dangerously_skip_permissions,
-    provider,
+    providerEnv: provider?.env ?? {},
+    model: provider?.model,
+    modelArgs: provider?.modelArgs ?? [],
   });
 
   // STEP 6 — start JSONL tail (Claude is already starting; file appears within seconds)
   const stopTail = await startJsonlTail(uuid, meta.worktree_path, runId, phaseNumber, bus, logPath);
 
   // STEP 7 — await session completion then stop tail
-  const result = await sessionPromise;
+  const harnessResult = await sessionPromise;
   stopTail();
   if (effectivePromptFile !== promptFile) {
     try { fs.unlinkSync(effectivePromptFile); } catch { /* ignore */ }
   }
+
+  // Structured adapters (claude-code) carry the parsed envelope; the downstream
+  // classification path consumes it exactly as the SessionResult did before.
+  if (!harnessResult.envelope) {
+    await markPhaseFailed(
+      runId,
+      phaseNumber,
+      `harness '${adapter.name}' did not return a structured result (phase execution requires structured mode)`,
+      bus,
+    );
+    return { outcome: 'failed', reason: 'harness returned no structured envelope' };
+  }
+  const result = { envelope: harnessResult.envelope, exitCode: harnessResult.exitCode };
 
   // STEP 8 — classify envelope
   const classified = classifyEnvelope(result.envelope);
@@ -156,6 +215,13 @@ export async function runPhase(
   if (classified.type === 'auth-error') {
     await markPhaseFailed(runId, phaseNumber, 'auth error: ' + result.envelope.api_error_status, bus);
     return { outcome: 'failed', reason: 'auth error' };
+  }
+
+  // Context overflow is terminal — a retry hits the same wall (fix the model's
+  // context window, not the run).
+  if (classified.type === 'context-overflow') {
+    await markPhaseFailed(runId, phaseNumber, classified.reason, bus);
+    return { outcome: 'failed', reason: classified.reason };
   }
 
   if (classified.type === 'phase-failure') {
@@ -210,7 +276,10 @@ export async function runPhase(
     commitSha = headAfter;
   }
 
-  // STEP 10 — mark complete
+  // STEP 10 — mark complete. Settle the gateway key first: spend-log totals
+  // (wire-accurate, all turns) replace the envelope's numbers when a LiteLLM
+  // run key was minted; failure paths above leave their key to auto-expire.
+  const ltTotals = await settleLitellmRun(provider?.litellm);
   await updatePhase(runId, phaseNumber, {
     status: 'complete',
     completed_at: new Date().toISOString(),
@@ -220,7 +289,8 @@ export async function runPhase(
     notes_for_next_phase: phaseResult.notes_for_next_phase ?? '',
     blockers: phaseResult.blockers ?? [],
     cost_usd: result.envelope.total_cost_usd,
-    tokens: result.envelope.usage,
+    tokens: ltTotals?.tokens ?? result.envelope.usage,
+    token_source: (ltTotals ? 'litellm' : 'adapter') as TokenSource,
   });
 
   const freshMeta = readMeta(runId);
@@ -237,6 +307,179 @@ export async function runPhase(
   });
 
   return { outcome: 'complete', result: phaseResult };
+}
+
+/**
+ * Opaque-harness phase execution. Runs the phase prompt augmented with the
+ * reporting contract (commit + write `.cpe/result.json`), then derives a
+ * PhaseReport via acquireReport. Commit truth comes from git (HEAD moved), not
+ * the self-report. No envelope classification — a non-zero exit is the only hard
+ * failure and is retried up to `max_retries`.
+ */
+async function runOpaquePhase(args: {
+  runId: string;
+  phaseNumber: number;
+  meta: RunMeta;
+  appConfig: AppConfig;
+  bus: ActivityBus;
+  adapter: Harness;
+  provider: ResolvedProvider | null;
+  headBefore: string;
+  uuid: string;
+  logPath: string;
+  basePromptFile: string;
+  originalPromptFile: string;
+}): Promise<PhaseOutcome> {
+  const {
+    runId, phaseNumber, meta, appConfig, bus, adapter, provider,
+    headBefore, uuid, logPath, basePromptFile, originalPromptFile,
+  } = args;
+
+  excludeCpeArtifacts(meta.worktree_path);
+  const base = fs.readFileSync(basePromptFile, 'utf-8');
+  const prompt = buildOpaquePrompt(base, { withPr: false });
+
+  // Activity-based timeout + manual bail (off unless inactivity/max-runtime are
+  // configured), fed by the output tail — so a hung/runaway opaque phase is killed.
+  const guard = new RunGuard({
+    inactivityMs: (appConfig.inactivity_timeout_seconds ?? 0) * 1000,
+    maxRuntimeMs: (appConfig.max_runtime_seconds ?? 0) * 1000,
+  });
+  registerGuard(runId, guard);
+  const unsub = bus.subscribe(e => { if (e.runId === runId) guard.noteActivity(activitySignature(e)); });
+  guard.start();
+  const sessionPromise = adapter.run({
+    cwd: meta.worktree_path,
+    prompt,
+    sessionId: uuid,
+    logPath,
+    dangerouslySkipPermissions: appConfig.dangerously_skip_permissions,
+    providerEnv: provider?.env ?? {},
+    model: provider?.model ?? meta.model,
+    modelArgs: provider?.modelArgs ?? [],
+    signal: guard.signal,
+  });
+  const stopTail = startOutputTail(logPath, runId, phaseNumber, bus);
+  let harnessResult;
+  try {
+    harnessResult = await sessionPromise;
+  } finally {
+    stopTail();
+    guard.dispose();
+    unsub();
+    unregisterGuard(runId);
+  }
+  if (basePromptFile !== originalPromptFile) {
+    try { fs.unlinkSync(basePromptFile); } catch { /* ignore */ }
+  }
+
+  let report: PhaseReport;
+  let source: ReportSource;
+  if (guard.outcome) {
+    // Guard fired (timeout/bail) → normally terminal; killing-and-retrying would
+    // just hang again. But the kill can RACE a finished phase (observed twice on
+    // slow local models: the agent committed and wrote its self-report seconds
+    // before the cap). If there is a completed self-report AND a commit since
+    // phase entry, the work is done — record it instead of discarding it.
+    const salvaged = readSelfReport(meta.worktree_path);
+    if (salvaged?.completed && getHead(meta.worktree_path) !== headBefore) {
+      report = salvaged;
+      source = 'self-report';
+      bus.emit({
+        kind: 'text',
+        timestamp: new Date(),
+        runId,
+        phaseNumber,
+        text: `guard fired (${guard.reason}) after the phase had finished — salvaged self-report + commit`,
+      });
+    } else {
+      const reason = guard.reason === 'bailed' ? 'manually bailed'
+        : guard.reason === 'timeout-maxruntime' ? 'exceeded max runtime'
+        : 'no new output within inactivity window';
+      await markPhaseFailed(runId, phaseNumber, `${adapter.name}: ${reason}`, bus);
+      return { outcome: 'failed', reason };
+    }
+  } else if (harnessResult.exitCode !== 0) {
+    // The only other hard failure for an opaque harness is a non-zero exit; retry it.
+    const fresh = readMeta(runId);
+    const entry = (fresh.phases ?? []).find(p => p.number === phaseNumber)!;
+    const retryCount = entry.retry_count + 1;
+    if (retryCount > appConfig.max_retries) {
+      await markPhaseFailed(runId, phaseNumber, `harness '${adapter.name}' exited ${harnessResult.exitCode}`, bus);
+      return { outcome: 'failed', reason: `harness exited ${harnessResult.exitCode}` };
+    }
+    await updatePhase(runId, phaseNumber, { status: 'retrying', retry_count: retryCount });
+    return runPhase(runId, phaseNumber, appConfig, bus);
+  } else {
+    ({ report, source } = await acquireReport({
+      worktree: meta.worktree_path,
+      headBefore,
+      exitCode: harnessResult.exitCode,
+      summarize: () => summarizeReport({
+        worktree: meta.worktree_path,
+        headBefore,
+        transcriptPath: logPath,
+        providerEnv: provider?.env ?? {},
+        model: provider?.model ?? meta.model,
+      }),
+    }));
+  }
+
+  // Commit truth from git, not the self-report.
+  const headAfter = getHead(meta.worktree_path);
+  const committed = headAfter !== headBefore;
+  const commitSha = committed ? headAfter : undefined;
+
+  bus.emit({
+    kind: 'text',
+    timestamp: new Date(),
+    runId,
+    phaseNumber,
+    text: `phase result via ${source}: ${report.summary}`,
+  });
+
+  // Settle the gateway key: spend-log totals replace adapter-parsed tokens
+  // (opaque adapters often can't report usage at all); key revoked either way.
+  const ltTotals = await settleLitellmRun(provider?.litellm);
+  const tokens = ltTotals?.tokens ?? harnessResult.tokens;
+  await updatePhase(runId, phaseNumber, {
+    status: 'complete',
+    completed_at: new Date().toISOString(),
+    commit_sha: commitSha,
+    summary: report.summary,
+    commit_message: report.commit_message ?? undefined,
+    notes_for_next_phase: report.notes_for_next_phase ?? '',
+    blockers: report.blockers,
+    ...(harnessResult.costUsd !== undefined ? { cost_usd: harnessResult.costUsd } : {}),
+    ...(tokens
+      ? { tokens, token_source: (ltTotals ? 'litellm' : 'adapter') as TokenSource }
+      : {}),
+  });
+
+  const freshMeta = readMeta(runId);
+  const totalCost = (freshMeta.phases ?? []).reduce((sum, p) => sum + (p.cost_usd ?? 0), 0);
+  await updateMeta(runId, { total_cost_usd: totalCost });
+
+  bus.emit({
+    kind: 'ok',
+    timestamp: new Date(),
+    runId,
+    phaseNumber,
+    summary: report.summary,
+    costUsd: harnessResult.costUsd ?? 0,
+  });
+
+  return {
+    outcome: 'complete',
+    result: {
+      completed: report.completed,
+      committed,
+      commit_message: report.commit_message ?? null,
+      summary: report.summary,
+      blockers: report.blockers,
+      notes_for_next_phase: report.notes_for_next_phase ?? '',
+    },
+  };
 }
 
 export async function resumeOrRestart(
@@ -282,11 +525,19 @@ export async function resumeOrRestart(
   const { createWriteStream } = await import('fs');
   const logStream = createWriteStream(logPath, { flags: 'a' });
 
-  const provider = await resolveProvider(
-    appConfig.providers ?? [],
-    'phase',
-    appConfig.provider_for_phases,
-  );
+  let provider;
+  try {
+    provider = await resolveProvider(
+      appConfig.providers ?? [],
+      'phase',
+      meta.provider ?? appConfig.provider_for_phases,
+      meta.model,
+    );
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    await markPhaseFailed(runId, phaseNumber, reason, bus);
+    return { outcome: 'failed', reason };
+  }
   const providerEnv = provider?.env ?? {};
   const spawnEnv = Object.keys(providerEnv).length > 0
     ? { ...process.env, ...providerEnv }
@@ -360,6 +611,11 @@ export async function resumeOrRestart(
   if (classified.type === 'auth-error') {
     await markPhaseFailed(runId, phaseNumber, 'auth error: ' + envelope.api_error_status, bus);
     return { outcome: 'failed', reason: 'auth error' };
+  }
+
+  if (classified.type === 'context-overflow') {
+    await markPhaseFailed(runId, phaseNumber, classified.reason, bus);
+    return { outcome: 'failed', reason: classified.reason };
   }
 
   if (classified.type === 'transient-error' || classified.type === 'phase-failure') {

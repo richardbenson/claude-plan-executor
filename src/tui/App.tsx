@@ -3,6 +3,7 @@ import { Box, Text, useInput, useStdout } from 'ink';
 import { Header } from './components/Header.js';
 import { Watch } from './Watch.js';
 import { Manage } from './Manage.js';
+import { Bench } from './Bench.js';
 import { SubprocessContext } from './SubprocessContext.js';
 import { activityBus } from '../events/bus.js';
 import { yellow } from './theme.js';
@@ -44,7 +45,7 @@ function QuitConfirmBar(): React.ReactElement {
 export function App({ config, containerWarning, onInteractiveSubprocess }: AppProps): React.ReactElement {
   const { columns, rows } = useStdoutDimensions();
   const compact = columns < 100 || rows < 30;
-  const [mode, setMode] = useState<'watch' | 'manage'>('watch');
+  const [mode, setMode] = useState<'watch' | 'manage' | 'bench'>('watch');
   const [sessionActive, setSessionActive] = useState(false);
   const [showQuitConfirm, setShowQuitConfirm] = useState(false);
   const [, setEvents] = useState<ActivityEvent[]>([]);
@@ -75,7 +76,10 @@ export function App({ config, containerWarning, onInteractiveSubprocess }: AppPr
       return;
     }
     if (input === 'v') {
-      setMode(m => m === 'watch' ? 'manage' : 'watch');
+      // Cycle watch → manage → bench → watch. The first press from watch still
+      // lands on manage (unchanged for the common claude flow); a further press
+      // reveals the bench matrix view.
+      setMode(m => m === 'watch' ? 'manage' : m === 'manage' ? 'bench' : 'watch');
     } else if (input === 'q') {
       if (sessionActive) {
         setShowQuitConfirm(true);
@@ -101,7 +105,7 @@ export function App({ config, containerWarning, onInteractiveSubprocess }: AppPr
     <SubprocessContext.Provider value={subprocessContextValue}>
       <Box flexDirection="column" width={columns} height={rows}>
         <Header
-          mode={mode.toUpperCase() as 'WATCH' | 'MANAGE'}
+          mode={mode.toUpperCase() as 'WATCH' | 'MANAGE' | 'BENCH'}
           statusText={queueStatusText}
           sessionActive={sessionActive}
           startedAt={sessionStartedAt ?? undefined}
@@ -114,7 +118,9 @@ export function App({ config, containerWarning, onInteractiveSubprocess }: AppPr
         {showQuitConfirm && <QuitConfirmBar />}
         {mode === 'watch'
           ? <Watch columns={columns} rows={rows} compact={compact} />
-          : <Manage columns={columns} rows={rows} compact={compact} />}
+          : mode === 'manage'
+          ? <Manage columns={columns} rows={rows} compact={compact} />
+          : <Bench columns={columns} rows={rows} compact={compact} />}
       </Box>
     </SubprocessContext.Provider>
   );

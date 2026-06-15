@@ -8,7 +8,8 @@ export type ActivityEventKind =
   | 'resume'
   | 'error'
   | 'limit'
-  | 'text';
+  | 'text'
+  | 'output';
 
 export interface ActivityEventBase {
   kind: ActivityEventKind;
@@ -74,6 +75,16 @@ export interface TextEvent extends ActivityEventBase {
   text: string;
 }
 
+/**
+ * A single raw output line from a harness that has no structured JSONL stream
+ * (opaque adapters). Emitted by the generic output-tail; consumed by the bench
+ * TUI's bounded live pane and the activity-timeout (as activity).
+ */
+export interface OutputEvent extends ActivityEventBase {
+  kind: 'output';
+  line: string;
+}
+
 export type ActivityEvent =
   | PhaseEvent
   | EditEvent
@@ -84,4 +95,5 @@ export type ActivityEvent =
   | ResumeEvent
   | ErrorEvent
   | LimitEvent
-  | TextEvent;
+  | TextEvent
+  | OutputEvent;

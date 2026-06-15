@@ -1,0 +1,338 @@
+
+Aider v0.86.2
+Model: openai/gemma4-cpe:12b with whole edit format
+Git repo: .git with 134 files
+Repo-map: using 1024 tokens, auto refresh
+
+Initial repo scan can be slow in larger repos, but only happens once.
+Scanning repo:   0%|          | 0/134 [00:00<?, ?it/s]Scanning repo:  12%|█▏        | 16/134 [00:00<00:00, 159.07it/s]Scanning repo:  31%|███       | 41/134 [00:00<00:01, 84.91it/s] Scanning repo:  48%|████▊     | 64/134 [00:00<00:00, 119.44it/s]Scanning repo:  60%|█████▉    | 80/134 [00:00<00:00, 122.06it/s]Scanning repo:  76%|███████▌  | 102/134 [00:00<00:00, 147.40it/s]Scanning repo:  90%|████████▉ | 120/134 [00:00<00:00, 152.83it/s]Scanning repo: 100%|██████████| 134/134 [00:00<00:00, 141.92it/s]
+To solve this, we need an automated update management system that handles three things: 
+1. **System Package Updates**: Automating `apt` (or similar) updates.
+2. **Tool Version Tracking**: Monitoring specific tools (`opencode`, `openchamber`) without strict pinning but with "Last Known Good" (LKG) logging.
+3. **Automated Health Checks**: Ensuring that an update didn't break the service before committing to it as the new LKG version.
+
+Since none of the files in your provided summary need to be edited for this specific task, I am proceeding by creating a new management suite within the `scripts/` and `config/` directories, along with an Ansible role structure to deploy them.
+
+### Proposed Procedure:
+1. **Configuration-Driven**: All tools are defined in a JSON file including their update commands, version check commands, and health checks.
+2. **State Persistence**: The system maintains a state file that tracks the current version vs. the last known good version. If an update fails its health check, it logs the failure but keeps the previous LKG for easy rollback/rebuild reference.
+3. **Automated Execution**: A Python script runs via a Systemd timer (more efficient than Cron) to perform these checks periodically.
+
+path/to/config/tools_metadata.json
+```json
+{
+  "system_updates": {
+    "enabled": true,
+    "command": "apt-get update && apt-get upgrade -y"
+  },
+  "tools": [
+    {
+      "name": "opencode",
+      "update_command": "pip install --upgrade opencode",
+      "check_version_command": "opencode --version",
+      "health_check_command": "curl -f http://localhost:8080/health || true",
+      "last_known_good_version": "unknown",
+      "update_frequency_days": 1
+    },
+    {
+      "name": "openchamber",
+      "update_command": "git pull && make install",
+      "check_version_command": "openchamber --version",
+      "health_check_command": "pgrep openchamber > /dev/null",
+      "last_known_good_version": "unknown",
+      "update_frequency_days": 1
+    }
+  ]
+}
+```
+
+path/to/scripts/update_manager.py
+```python
+import json
+import subprocess
+import logging
+import os
+from datetime import datetime
+import re
+
+# Configuration paths
+CONFIG_PATH = "/etc/homelab/tools_metadata.json"
+STATE_PATH = "/var/lib/homelab/update_state.json"
+LOG_FILE = "/var/log/update_manager.log"
+
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+def run_command(command):
+    try:
+        result = subprocess.run(
+            command, shell=True, capture_output=True, text=True, check=False
+        )
+        return result.stdout.strip(), result.stderr.strip()
+out, err = run_command("ls") # Example
+
+def get_version(cmd):
+    stdout, _ = run_command(cmd)
+    # Simple regex to find version numbers (e.g., 1.2.3 or v1.0)
+    match = re.search(r'(\d+\.\d+\.\d+)', stdout)
+    return match.group(1) if match else "unknown"
+
+def load_json(path):
+    if not os.path.exists(path):
+        return {}
+    with open(path, 'r') as f:
+        return json.load(f)
+
+def save_json(path, data):
+    with open(path, 'w') as f:
+        json.dump(data, f, indent=2)
+
+def main():
+    config = load_json(CONFIG_PATH)
+    state = load_json(STATE_PATH)
+    if not state:
+        state = {"last_update": None}
+
+    logging.info("Starting update check cycle.")
+
+    # 1. System Updates
+    sys_cfg = config.get("system_updates", {})
+    if sys_cfg.get("enabled"):
+        logging.info("Running system package updates...")
+        out, err = run_command(sys_cfg["command"])
+        if out: logging.info(f"System update success: {out}")
+        else: logging.error(f"System update failed: {err}")
+
+    # 2. Tool Updates
+    for tool in config.get("tools", []):
+        name = tool["name"]
+        logging.info(f"Checking updates for {name}...")
+        
+        current_version = get_version(tool["check_version_command"])
+        lkg_version = state.get(name, {}).get("last_known_good", "unknown")
+
+        if current_version != lkg_version:
+            logging.info(f"New version detected for {name}: {current_version} (LKG: {lkg_version})")
+            
+            # Attempt Update
+            logging.info(f"Updating {name}...")
+            out, err = run_command(tool["update_command"])
+            
+            if out or not err: # Basic check if command didn't crash
+                # Health Check
+                h_out, h_err = run_command(tool["health_check_command"])
+                success = (h_out == "" and h_err == "") or "true" in h_out.lower()
+                
+                if success:
+                    logging.info(f"Update for {name} successful. New LKG set to {current_version}")
+                    state[name] = {
+                        "last_known_good": current_version,
+                        "updated_at": datetime.now().isoformat()
+                    }
+                else:
+                    logging.error(f"Update for {name} failed health check! Rolling back logic (keeping LKG: {lkg_version})")
+            else:
+                logging.error(f"Update command for {name} failed execution.")
+        else:
+            logging.info(f"{name} is up to date ({current_version}).")
+
+    save_json(STATE_PATH, state)
+    logging.info("Update cycle complete.")
+
+if __name__ == "__main__":
+    # Ensure directories exist
+    os.makedirs("/etc/homelab", exist_ok=True)
+    os.makedirs("/var/lib/homelab", exist_ok=True)
+    main()
+```
+
+path/to/ansible/roles/vm_updates/tasks/main.yml
+```yaml
+---
+- name: Ensure update manager configuration exists
+  copy:
+    dest: /etc/homelab/tools_metadata.json
+    content: "{{ lookup('file', 'files/tools_metadata.json') }}"
+
+- name: Create state directory
+  file:
+    path: /var/lib/homelab
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+
+- name: Deploy update manager script
+  copy:
+    dest: /usr/local/bin/update_manager.py
+    content: "{{ lookup('file', 'files/update_manager.py') }}"
+    mode: '0755'
+
+- name: Create systemd service for update manager
+  template:
+    src: vm_updates.service.j2
+    dest: /etc/systemd/system/vm_updates.service
+
+- name: Enable and start update manager timer
+  systemd:
+    name: vm_updates.timer
+    enabled: yes
+    state: started
+```
+Tokens: 2.0k sent, 1.5k received.
+
+path/to/config/tools_metadata.json
+
+path/to/scripts/update_manager.py
+
+path/to/ansible/roles/vm_updates/tasks/main.yml
+Applied edit to path/to/ansible/roles/vm_updates/tasks/main.yml
+Applied edit to path/to/scripts/update_manager.py
+Applied edit to path/to/config/tools_metadata.json
+Commit 2a86a16 feat: add automated tool update manager with health checks
+
+# Fix any errors below, if possible.
+
+Traceback (most recent call last):
+  File 
+"/home/ubuntu/.local/state/cpe/clones/01KTGS5J7QN9G3K20F5W9X3A8E/path/to/scripts
+/update_manager.py", line 25
+    out, err = run_command("ls") # Example
+SyntaxError: expected 'except' or 'finally' block
+
+## Running: /home/ubuntu/.local/share/uv/tools/aider-chat/bin/python -m flake8 
+--select=E9,F821,F823,F831,F406,F407,F701,F702,F704,F706 --show-source 
+--isolated path/to/scripts/update_manager.py
+
+path/to/scripts/update_manager.py:25:1: E999 SyntaxError: expected 'except' or 
+'finally' block
+out, err = run_command("ls") # Example
+^
+
+## See relevant line below marked with █.
+
+path/to/scripts/update_manager.py:
+...⋮...
+ 22│            command, shell=True, capture_output=True, text=True, check=False
+ 23│        )
+ 24│        return result.stdout.strip(), result.stderr.strip()
+ 25█out, err = run_command("ls") # Example
+ 26│
+ 27│def get_version(cmd):
+ 28│    stdout, _ = run_command(cmd)
+...⋮...
+
+
+path/to/scripts/update_manager.py
+```python
+import json
+import subprocess
+import logging
+import os
+from datetime import datetime
+import re
+
+# Configuration paths
+CONFIG_PATH = "/etc/homelab/tools_metadata.json"
+STATE_PATH = "/var/lib/homelab/update_state.json"
+LOG_FILE = "/var/log/update_manager.log"
+
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+def run_command(command):
+    try:
+        result = subprocess.run(
+            command, shell=True, capture_output=True, text=True, check=False
+        )
+        return result.stdout.strip(), result.stderr.strip()
+    except Exception as e:
+        logging.error(f"Exception running command '{command}': {str(e)}")
+        return "", str(e)
+
+def get_version(cmd):
+    stdout, _ = run_command(cmd)
+    # Simple regex to find version numbers (e.g., 1.2.3 or v1.0)
+    match = re.search(r'(\d+\.\d+\.\d+)', stdout)
+    return match.group(1) if match else "unknown"
+
+def load_json(path):
+    if not os.path.exists(path):
+        return {}
+    with open(path, 'r') as f:
+        return json.load(f)
+
+def save_json(path, data):
+    with open(path, 'w') as f:
+        json.dump(data, f, indent=2)
+
+def main():
+    config = load_json(CONFIG_PATH)
+    state = load_json(STATE_PATH)
+    if not state:
+        state = {"last_update": None}
+
+    logging.info("Starting update check cycle.")
+
+    # 1. System Updates
+    sys_cfg = config.get("system_updates", {})
+    if sys_cfg.get("enabled"):
+        logging.info("Running system package updates...")
+        out, err = run_command(sys_cfg["command"])
+        if out: logging.info(f"System update success: {out}")
+        else: logging.error(f"System update failed: {err}")
+
+    # 2. Tool Updates
+    for tool in config.get("tools", []):
+        name = tool["name"]
+        logging.info(f"Checking updates for {name}...")
+        
+        current_version = get_version(tool["check_version_command"])
+        lkg_version = state.get(name, {}).get("last_known_good", "unknown")
+
+        if current_version != lkg_version:
+            logging.info(f"New version detected for {name}: {current_version} (LKG: {lkg_version})")
+            
+            # Attempt Update
+            logging.info(f"Updating {name}...")
+            out, err = run_command(tool["update_command"])
+            
+            if out or not err: # Basic check if command didn't crash
+                # Health Check
+                h_out, h_err = run_command(tool["health_check_command"])
+                success = (h_out == "" and h_err == "") or "true" in h_out.lower()
+                
+                if success:
+                    logging.info(f"Update for {name} successful. New LKG set to {current_version}")
+                    state[name] = {
+                        "last_known_good": current_version,
+                        "updated_at": datetime.now().isoformat()
+                    }
+                else:
+                    logging.error(f"Update for {name} failed health check! Rolling back logic (keeping LKG: {lkg_version})")
+            else:
+                logging.error(f"Update command for {name} failed execution.")
+        else:
+            logging.info(f"{name} is up to date ({current_version}).")
+
+    save_json(STATE_PATH, state)
+    logging.info("Update cycle complete.")
+
+if __name__ == "__main__":
+    # Ensure directories exist
+    os.makedirs("/etc/homelab", exist_ok=True)
+    os.makedirs("/var/lib/homelab", exist_ok=True)
+    main()
+```
+Tokens: 5.0k sent, 801 received.
+Applied edit to path/to/scripts/update_manager.py
+Commit 3c4314e fix: add exception handling to run_command
+Summarization failed for model openai/gemma4-cpe:12b: cannot schedule new futures after shutdown
+Summarization failed for model openai/gemma4-cpe:12b: cannot schedule new futures after shutdown
+summarizer unexpectedly failed for all models

@@ -1,0 +1,24 @@
+{
+  "run_id": "01KTGS5J7RGCSHKP9N63QKNSA3",
+  "harness": "goose",
+  "model": "gemma4-cpe:12b",
+  "provider": "desktop-ollama",
+  "isolation": "clone",
+  "baseline": {
+    "repo": "/home/ubuntu/Code/homelab",
+    "branch": "modeltests/sandbox-no-docs",
+    "base_ref": "cadab2ac07fad2e26bcb3962cfc45c62f27a4de4"
+  },
+  "outcome": "completed",
+  "duration_ms": 297327,
+  "exit_code": 0,
+  "tokens": {
+    "input_tokens": 146901,
+    "output_tokens": 5741,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0
+  },
+  "diffstat": "ansible/playbooks/provision-opencode.yml          | 40 ++++++++++++++-\n maintenance/scripts/update_manager.sh             | 59 +++++++++++++++++++++++\n maintenance/templates/opencode-updater.service.j2 |  8 +++\n maintenance/templates/opencode-updater.timer.j2   | 10 ++++\n maintenance_overview.md                           | 21 ++++++++\n 5 files changed, 137 insertions(+), 1 deletion(-)",
+  "branch_pushed": "harnesstests/goose__gemma4-cpe-12b",
+  "captured_at": "2026-06-07T14:06:34.501Z"
+}

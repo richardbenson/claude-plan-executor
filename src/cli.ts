@@ -10,10 +10,13 @@ import { cleanCommand } from './commands/clean.js';
 import { bootstrapCommand } from './commands/bootstrap.js';
 import { worktreeCommand } from './commands/worktree.js';
 import { promptCommand } from './commands/prompt.js';
+import { benchCommand, benchSummaryCommand } from './commands/bench.js';
+import { harnessCheckCommand, harnessListCommand } from './commands/harness.js';
 import { readQueue, writeQueue } from './storage/queue.js';
 import {
   providerListCommand,
   providerAddCommand,
+  providerRefreshCommand,
   providerRemoveCommand,
   providerTestCommand,
 } from './commands/provider.js';
@@ -34,19 +37,25 @@ function wrap(fn: (...args: any[]) => Promise<void>) {
 export function setupCli(): void {
   program
     .name('cpe')
-    .description('Claude Plan Executor — automates planbot → next-phase → summarise-plan')
+    .description('Coding Plan Executor — automates planbot → next-phase → summarise-plan on any harness')
     .version(CPE_VERSION);
 
   program
     .command('plan [details...]')
     .description('Create a new plan interactively')
     .option('--disable-sandbox', 'Skip sandbox injection for this run')
+    .option('--provider <name>', 'Provider to use for this run')
+    .option('--model <model>', 'Model to use for this run')
+    .option('--harness <name>', 'Harness adapter to use for this run')
     .action(wrap(planCommand));
 
   program
     .command('queue [folder]')
     .description('Add a plan to the queue')
     .option('--disable-sandbox', 'Skip sandbox injection for this run')
+    .option('--provider <name>', 'Provider to use for this run')
+    .option('--model <model>', 'Model to use for this run')
+    .option('--harness <name>', 'Harness adapter to use for this run')
     .action(wrap(queueCommand));
 
   program
@@ -54,7 +63,27 @@ export function setupCli(): void {
     .description('Queue a single-prompt run (pass as args, pipe via stdin, or use --github-issue)')
     .option('--disable-sandbox', 'Skip sandbox injection for this run')
     .option('--github-issue <number>', 'Fetch a GitHub issue by number and use it as the prompt')
+    .option('--provider <name>', 'Provider to use for this run')
+    .option('--model <model>', 'Model to use for this run')
+    .option('--harness <name>', 'Harness adapter to use for this run')
     .action(wrap(promptCommand));
+
+  const benchCmd = program
+    .command('bench [prompt...]')
+    .description('Enqueue a harness×model matrix for one prompt (clone-isolated runs)')
+    .option('--harness <list>', 'Comma-separated harness names (default: claude-code)')
+    .option('--model <list>', 'Comma-separated model ids (required)')
+    .option('--provider <name>', 'Provider to use for the runs')
+    .option('--repo <path>', 'Baseline repo to clone (default: current repo)')
+    .option('--branch <name>', 'Baseline branch to clone (default: current branch)')
+    .option('--prompt-file <path>', 'Read the prompt from a file')
+    .option('--force', 'Re-run combos that already have captured results')
+    .action(wrap(benchCommand));
+
+  benchCmd
+    .command('summary')
+    .description('Print a table over captured bench results')
+    .action(wrap(benchSummaryCommand));
 
   program
     .command('start')
@@ -120,6 +149,20 @@ export function setupCli(): void {
     .option('--edit', 'Open cpe.config.json in $EDITOR')
     .action(wrap(bootstrapCommand));
 
+  const harnessCmd = program
+    .command('harness')
+    .description('Manage harness adapters (install detection)');
+
+  harnessCmd
+    .command('check')
+    .description('Probe every harness for its CLI on PATH + version and cache the result')
+    .action(wrap(harnessCheckCommand));
+
+  harnessCmd
+    .command('list')
+    .description('Show cached harness install status (probes once if never checked)')
+    .action(wrap(harnessListCommand));
+
   const providerCmd = program
     .command('provider')
     .description('Manage Claude providers (alternative models / API endpoints)');
@@ -133,6 +176,12 @@ export function setupCli(): void {
     .command('add')
     .description('Add a provider interactively')
     .action(wrap(providerAddCommand));
+
+  providerCmd
+    .command('refresh')
+    .description('Re-fetch model catalogues for providers (all, or one by name)')
+    .option('--provider <name>', 'Refresh only this provider')
+    .action(wrap(providerRefreshCommand));
 
   providerCmd
     .command('remove <name>')

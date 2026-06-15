@@ -1,0 +1,468 @@
+diff --git a/docs/self-update/PROGRESS.md b/docs/self-update/PROGRESS.md
+index 4f142f0..78e87df 100644
+--- a/docs/self-update/PROGRESS.md
++++ b/docs/self-update/PROGRESS.md
+@@ -2,26 +2,26 @@
+ 
+ | # | Title | Status | Branch | Depends on | Started | Completed | Notes |
+ |---|-------|--------|--------|------------|---------|-----------|-------|
+-| 01 | Release checksums (SHA256SUMS) | not-started | feature/self-update | — | — | — | — |
+-| 02 | Updater core module (src/update/) | not-started | feature/self-update | — | — | — | — |
++| 01 | Release checksums (SHA256SUMS) | complete | feature/self-update | — | 2024-05-23 | — | — |
++| 02 | Updater core module (src/update/) | in-progress | feature/self-update | — | 2024-05-23 | — | — |
+ | 03 | CLI surface: cpe update, config flag, nudge | not-started | feature/self-update | 02 | — | — | — |
+ | 04 | TUI auto-update loop + footer badge | not-started | feature/self-update | 02 | — | — | — |
+ 
+ ## Phase Details
+ 
+ ### Phase 01 — Release checksums (SHA256SUMS)
+-**Status:** not-started
++**Status:** complete
+ **Branch:** feature/self-update
+ **Dependencies:** —
+-**Date started:** —
+-**Date completed:** —
++**Date started:** 2024-05-23
++**Date completed:** 2024-05-23
+ **Notes:** —
+ 
+ ### Phase 02 — Updater core module (src/update/)
+-**Status:** not-started
++**Status:** in-progress
+ **Branch:** feature/self-update
+ **Dependencies:** —
+-**Date started:** —
++**Date started:** 2024-05-23
+ **Date completed:** —
+ **Notes:** —
+ 
+diff --git a/src/update/check.test.ts b/src/update/check.test.ts
+new file mode 100644
+index 0000000..32194a7
+--- /dev/null
++++ b/src/update/check.test.ts
+@@ -0,0 +1,25 @@
++import { expect, test } from 'bun:test';
++import { compareVersions, isNewer } from './check.js';
++
++test('compareVersions handles basic versioning', () => {
++  expect(compareVersions('v1.0.0', 'v0.9.0')).toBe(1);
++  expect(compareVersions('v2.0.0', 'v2.0.0')).toBe(0);
++  expect(compareVersions('v0.10.0', 'v0.9.0')).toBe(1); // Numeric check
++});
++
++test('compareVersions handles prereleases', () => {
++  // Prerelease is lower than release of same core
++  expect(compareVersions('v1.0.0-rc.1', 'v1.0.0')).toBe(-1);
++  // Lexical comparison for two prereleases
++  expect(compareVersions('v1.0.0-alpha', 'v1.0.0-beta')).toBe(-1);
++});
++
++test('isNewer handles dev builds correctly', () => {
++  expect(isNewer('v2.0.0', 'dev')).toBe(false);
++  expect(isNewer('v2.0.0', 'v1.0.0')).toBe(true);
++});
++
++test('compareVersions strips leading v and handles missing segments', () => {
++  expect(compareVersions('1.0', '1.0.0')).toBe(0);
++  expect(compareVersions('2', '1.9.9')).toBe(1);
++});
+diff --git a/src/update/check.ts b/src/update/check.ts
+new file mode 100644
+index 0000000..a59a3f3
+--- /dev/null
++++ b/src/update/check.ts
+@@ -0,0 +1,85 @@
++import type { Request } from 'undici'; // Or just use global fetch types if available, but we need to handle headers
++
++export const REPO_SLUG = 'richardbenson/claude-plan-executor';
++
++/**
++ * Fetches the latest release tag from GitHub.
++ * Uses a manual redirect to avoid API rate limits and get the Location header.
++ */
++export async function fetchLatestTag(timeoutMs: number = 5000): Promise<string> {
++  const url = `https://github.com/${REPO_SLUG}/releases/latest`;
++  
++  try {
++    const response = await fetch(url, {
++      redirect: 'manual',
++      signal: AbortSignal.timeout(timeoutMs),
++    });
++
++    if (response.status !== 302) {
++      throw new Error(`Expected redirect from GitHub releases/latest but got ${response.status}`);
++    }
++
++    const location = response.headers.get('location');
++    if (!location) {
++      throw new Error('Missing Location header in GitHub release redirect.');
++    }
++
++    // The location is usually /releases/tag/<tag> or similar, 
++    // but for the 'latest' endpoint it ends with /tag/<tag>
++    const parts = location.split('/');
++    const tagIndex = parts.lastIndexOf('tag');
++    if (tagIndex === -1 || !parts[tagIndex + 1]) {
++      throw new Error(`Could not parse release tag from Location header: ${location}`);
++    }
++
++    return parts[tagIndex + 1];
++  } catch (err) {
++    if (err instanceof AbortSignal.timeout) {
++      throw new Error(`Timeout fetching latest release from GitHub (${timeoutMs}ms).`);
++    }
++    throw err;
++  }
++}
++
++/**
++ * Compares two version strings. 
++ * Returns > 0 if a is newer, < 0 if b is newer, 0 if equal.
++ */
++export function compareVersions(a: string, b: string): number {
++  const parse = (v: string) => {
++    const [corePart, ...preParts] = v.replace(/^v/, '').split('-');
++    const segments = corePart.split('.').map((s) => parseInt(s, 10));
++    return { segments, prerelease: preParts.join('.') || null };
++  };
++
++  const verA = parse(a);
++  const verB = parse(b);
++
++  // Compare numeric segments
++  for (let i = 0; i < Math.max(verA.segments.length, verB.segments.length); i++) {
++    const segA = verA.segments[i] ?? 0;
++    const segB = verB.segments[i] ?? 0;
++    if (segA > segB) return 1;
++    if (segA < segB) return -1;
++  }
++
++  // Prerelease logic: a version with prerelease is LOWER than the same core without one
++  if (!verA.prerelease && verB.prerelease) return 1;
++  if (verA.prerelease && !verB.prerelease) return -1;
++
++  // If both have prereleases, compare them lexically
++  if (verA.prerelease && verB.prerelease) {
++    if (verA.prerelease === verB.prerelease) return 0;
++    return verA.prerelease > verB.prerelease ? 1 : -1;
++  }
++
++  return 0;
++}
++
++/**
++ * Checks if the latest tag is newer than the current version.
++ */
++export function isNewer(latestTag: string, currentVersion: string): boolean {
++  if (currentVersion === 'dev') return false;
++  return compareVersions(latestTag, currentVersion) > 0;
++}
+diff --git a/src/update/install.test.ts b/src/update/install.test.ts
+new file mode 100644
+index 0000000..c44efcd
+--- /dev/null
++++ b/src/update/install.test.ts
+@@ -0,0 +1,110 @@
++import { expect, test } from 'bun:test';
++import * as fs from 'fs';
++import * as path from 'path';
++import * as os from 'os';
++import { downloadAndInstall, getAssetName } from './install.js';
++
++test('getAssetName maps platforms correctly', () => {
++  expect(getAssetName('linux', 'x64')).toBe('cpe-linux-x64');
++  expect(getAssetName('darwin', 'arm64')).toBe('cpe-darwin-arm64');
++});
++
++test('getAssetName throws on unsupported platform', () => {
++  expect(() => getAssetName('windows', 'x86')).toThrow();
++});
++
++test('downloadAndInstall happy path (mocked)', async () => {
++  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cpe-install-'));
++  const targetPath = path.join(tmpDir, 'cpe-dummy');
++  fs.writeFileSync(targetPath, Buffer.from('old content'));
++
++  // Mock fetchImpl to return dummy SUMS and asset
++  const mockFetch = (url: string) => {
++    if (url.includes('SHA256SUMS')) {
++      return Promise.resolve({
++        ok: true,
++        status: 200,
++        text: () => Promise.resolve('e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca4230b0fff5bbeline cpe-linux-x64')
++      });
++    }
++    if (url.includes('download')) {
++      // The hash of an empty string is e3b0c4... 
++      // But we want to match the dummy content or just a known one.
++      return Promise.resolve({
++        ok: true,
++        status: 200,
++        arrayBuffer: () => Promise.resolve(new Uint8Array([])) // Empty buffer -> e3b0c4...
++      });
++    }
++    throw new Error('Unexpected URL');
++  };
++
++  // We need to mock process.platform/arch for getAssetName inside downloadAndInstall 
++  // or just ensure the test runs on a supported platform (which it will).
++  // Since we can't easily monkeypatch process, and this is running in an environment where 
++  // these are set, let's assume current env matches.
++
++  try {
++    await downloadAndInstall('v1.0.0', { execPath: targetPath, fetchImpl: mockFetch });
++    const content = fs.readFileSync(targetPath);
++    expect(content).toEqual(Buffer.from([])); // Should be empty because our dummy hash was for empty buffer
++  } finally {
++    fs.rmSync(tmpDir, { recursive: true, force: true });
++  }
++});
++
++test('downloadAndInstall fails on checksum mismatch', async () => {
++  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cpe-install-fail'));
++  const targetPath = path.join(tmpDir, 'cpe-dummy');
++  fs.writeFileSync(targetPath, Buffer.from('old content'));
++
++  const mockFetch = (url: string) => {
++    if (url.includes('SHA256SUMS')) {
++      return Promise.resolve({
++        ok: true,
++        status: 200,
++        text: () => Promise.resolve('wronghash cpe-linux-x64')
++      });
++    }
++    if (url.includes('download')) {
++      return Promise.resolve({
++        ok: true,
++        status: 200,
++        arrayBuffer: () => Promise.resolve(new Uint8Array([]))
++      });
++    }
++    throw new Error('Unexpected URL');
++  };
++
++  try {
++    await downloadAndInstall('v1.0.0', { execPath: targetPath, fetchImpl: mockFetch });
++  } catch (e) {
++    expect(e.message).toContain('Checksum mismatch');
++  } finally {
++    fs.rmSync(tmpDir, { recursive: true, force: true });
++  }
++});
++
++test('downloadAndInstall fails on missing SUMS', async () => {
++  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cpe-install-no-sums'));
++  const targetPath = path.join(tmpDir, 'cpe-dummy');
++  fs.writeFileSync(targetPath, Buffer.from('old content'));
++
++  const mockFetch = (url: string) => {
++    if (url.includes('SHA256SUMS')) {
++      return Promise.resolve({ ok: false, status: 404 });
++    }
++    if (url.includes('download')) {
++      return Promise.resolve({ ok: true, status: 200, arrayBuffer: () => Promise.resolve(new Uint8Array([])) });
++    }
++    throw new Error('Unexpected URL');
++  };
++
++  try {
++    await downloadAndInstall('v1.0.0', { execPath: targetPath, fetchImpl: mockFetch });
++  } catch (e) {
++    expect(e.message).toContain('predates checksums');
++  } finally {
++    fs.rmSync(tmpDir, { recursive: true, force: true });
++  }
++});
+diff --git a/src/update/install.ts b/src/update/install.ts
+new file mode 100644
+index 0000000..0249fe2
+--- /dev/null
++++ b/src/update/install.ts
+@@ -0,0 +1,94 @@
++import * as fs from 'fs';
++import * as path from 'path';
++import { Buffer } from 'buffer';
++
++/**
++ * Maps platform and arch to the expected asset name.
++ */
++export function getAssetName(platform: string, arch: string): string {
++  const osMap: Record<string, string> = { linux: 'linux', darwin: 'darwin' };
++  const archMap: Record<string, string> = { x64: 'x64', arm64: 'arm64' };
++
++  const os = osMap[platform.toLowerCase()];
++  const archStr = archMap[arch.toLowerCase()];
++
++  if (!os || !archStr) {
++    throw new Error(`Unsupported platform/architecture combination: ${platform}-${arch}`);
++  }
++
++  return `cpe-${os}-${archStr}`;
++}
++
++/**
++ * Downloads and installs a new binary version atomically.
++ */
++export async function downloadAndInstall(
++  tag: string, 
++  opts?: { execPath?: string; fetchImpl?: typeof fetch }
++): Promise<void> {
++  const execPath = opts?.execPath ?? process.execPath;
++  const fetchImpl = opts?.fetchImpl ?? fetch;
++  const targetDir = path.dirname(execPath);
++
++  // 1. Determine asset name
++  const assetName = getAssetName(process.platform, process.arch);
++  const sumsUrl = `https://github.com/richardbenson/claude-plan-executor/releases/download/${tag}/SHA256SUMS`;
++  const assetUrl = `https://github.com/richardbenson/claude-plan-executor/releases/download/${tag}/${assetName}`;
++
++  // 2. Download SHA256SUMS
++  let sumsContent: string;
++  try {
++    const resSums = await fetchImpl(sumsUrl);
++    if (resSums.status === 404) {
++      throw new Error('The release predates checksums (SHA256SUMS file missing).');
++    }
++    if (!resSums.ok) throw new Error(`Failed to download SHA256SUMS: ${resSums.statusText}`);
++    sumsContent = await resSums.text();
++  } catch (e) {
++    throw new Error(`Error fetching checksums: ${e instanceof Error ? e.message : String(e)}`);
++  }
++
++  // 3. Download Asset to temp file
++  const tmpPath = path.join(targetDir, `.cpe-update-${process.pid}.tmp`);
++  try {
++    const resAsset = await fetchImpl(assetUrl);
++    if (!resAsset.ok) throw new Error(`Failed to download asset ${assetName}: ${resAsset.statusText}`);
++
++    // Stream the body to a file (using Bun's native ability or standard fs write)
++    // Since we are in Node/Bun environment, let's use a simple buffer for now 
++    // but ideally stream it if possible. For this task, reading as arrayBuffer is fine.
++    const data = await resAsset.arrayBuffer();
++    fs.writeFileSync(tmpPath, Buffer.from(data));
++
++    // 4. Verify Checksum
++    const hasher = new Bun.CryptoHasher('sha256');
++    hasher.update(Buffer.from(data));
++    const actualHash = hasher.digest('hex');
++
++    let expectedHash: string | null = null;
++    const lines = sumsContent.split(/\r?\n/);
++    for (const line of lines) {
++      // Format is usually "hash  filename" or "hash filename"
++      const parts = line.trim().split(/\s+/);
++      if (parts.length >= 2 && parts[1] === assetName) {
++        expectedHash = parts[0];
++        break;
++      }
++    }
++
++    if (!expectedHash) {
++      throw new Error(`Could not find entry for ${assetName} in SHA256SUMS.`);
++    }
++
++    if (actualHash !== expectedHash) {
++      throw new Error(`Checksum mismatch! Expected ${expectedHash}, got ${actualHash}`);
++    }
++
++    // 5. Atomic Swap
++    fs.chmodSync(tmpPath, 0o755);
++    fs.renameSync(tmpPath, execPath);
++  } catch (err) {
++    if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
++    throw err;
++  }
++}
+diff --git a/src/update/state.test.ts b/src/update/state.test.ts
+new file mode 100644
+index 0000000..bd70981
+--- /dev/null
++++ b/src/update/state.test.ts
+@@ -0,0 +1,39 @@
++import { expect, test } from 'bun:test';
++import * as fs from 'fs';
++import * as path from 'path';
++import * as os from 'os';
++import { readUpdateState, writeUpdateState, shouldCheck } from './state.js';
++
++test('read/write state round-trip', () => {
++  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cpe-state-'));
++  const base = tmpDir;
++  const mockState = { last_checked_at: '2024-01-01T00:00:00Z', latest_seen: 'v1.0.0' };
++
++  writeUpdateState(mockState, base);
++  const result = readUpdateState(base);
++  expect(result).toEqual(mockState);
++
++  fs.rmSync(tmpDir, { recursive: true, force: true });
++});
++
++test('shouldCheck logic', () => {
++  // No state -> true
++  const tmpDir1 = fs.mkdtempSync(path.join(os.tmpdir(), 'cpe-state-1'));
++  expect(shouldCheck(24, new Date(), tmpDir1)).toBe(true);
++
++  // Fresh state (within interval) -> false
++  const mockStateFresh = { last_checked_at: new Date().toISOString() };
++  writeUpdateState(mockStateFresh, tmpDir1);
++  expect(shouldCheck(24, new Date(), tmpDir1)).toBe(false);
++
++  // Old state (outside interval) -> true
++  const mockStateOld = { last_checked_at: '2000-01-01T00:00:00Z' };
++  writeUpdateState(mockStateOld, tmpDir1);
++  expect(shouldCheck(24, new Date(), tmpDir1)).toBe(true);
++
++  // Corrupt state -> true
++  fs.writeFileSync(path.join(tmpDir1, 'update-check.json'), 'not json');
++  expect(shouldCheck(24, new Date(), tmpDir1)).toBe(true);
++
++  fs.rmSync(tmpDir1, { recursive: true, force: true });
++});
+diff --git a/src/update/state.ts b/src/update/state.ts
+new file mode 100644
+index 0000000..997dec7
+--- /dev/null
++++ b/src/update/state.ts
+@@ -0,0 +1,41 @@
++import * as fs from 'fs';
++import * as path from 'path';
++import * as os from 'os';
++
++const DEFAULT_STATE_BASE = path.join(os.homedir(), '.local', 'state', 'cpe');
++
++export interface UpdateState {
++  last_checked_at?: string;
++  latest_seen?: string;
++}
++
++function getStatePath(base?: string): string {
++  return path.join(base ?? DEFAULT_STATE_BASE, 'update-check.json');
++}
++
++export function readUpdateState(base?: string): UpdateState | null {
++  const p = getStatePath(base);
++  try {
++    if (!fs.existsSync(p)) return null;
++    return JSON.parse(fs.readFileSync(p, 'utf8')) as UpdateState;
++  } catch {
++    return null; // Treat corrupt or unreadable as null (trigger check)
++  }
++}
++
++export function writeUpdateState(state: UpdateState, base?: string): void {
++  const p = getStatePath(base);
++  fs.mkdirSync(path.dirname(p), { recursive: true });
++  fs.writeFileSync(p, JSON.stringify(state, null, 2) + '\n');
++}
++
++export function shouldCheck(intervalHours: number, now?: Date, base?: string): boolean {
++  const state = readUpdateState(base);
++  if (!state || !state.last_checked_at) return true;
++
++  const lastChecked = new Date(state.last_checked_at);
++  const currentTime = now ?? new Date();
++  
++  const diffMs = currentTime.getTime() - lastChecked.getTime();
++  return diffMs > intervalHours * 60 * 60 * 1000;
++}

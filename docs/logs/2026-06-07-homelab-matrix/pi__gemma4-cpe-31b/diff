@@ -1,0 +1,51 @@
+diff --git a/ansible/playbooks/provision-opencode.yml b/ansible/playbooks/provision-opencode.yml
+index f217700..adb4b21 100644
+--- a/ansible/playbooks/provision-opencode.yml
++++ b/ansible/playbooks/provision-opencode.yml
+@@ -21,23 +21,30 @@
+ 
+   tasks:
+ 
+-    # -- System packages ------------------------------------------------------
++    # -- Tool Version Discovery ---------------------------------------------
++
++    - name: Set target versions for tools
++      ansible.builtin.set_fact:
++        target_versions:
++          gh: "{{ opencode_gh_version | default(latest_gh_version) }}"
++          tea: "{{ opencode_tea_version | default(latest_tea_version) }}"
++          rtk: "{{ opencode_rtk_version | default(latest_rtk_version) }}"
++          openchamber: "{{ opencode_openchamber_version | default(latest_openchamber_version) }}"
++      vars:
++        # Fetch latest from APIs if not pinned in vars
++        latest_gh_version: "{{ (query('uri', 'https://api.github.com/repos/cli/cli/releases/latest').json.tag_name) if opencode_gh_version is undefined else '' }}"
++        latest_tea_version: "{{ (query('uri', 'https://gitea.com/api/v1/repos/gitea/tea/releases/latest').json.tag_name) if opencode_tea_version is undefined else '' }}"
++        latest_rtk_version: "{{ (query('uri', 'https://api.github.com/repos/rtk-ai/rtk/releases/latest').json.tag_name) if opencode_rtk_version is undefined else '' }}"
++        latest_openchamber_version: "{{ (query('uri', 'https://api.github.com/repos/openchamber/openchamber/releases/latest').json.tag_name) if opencode_openchamber_version is undefined else '' }}"
++
++    - name: Ensure update log exists
++      ansible.builtin.file:
++        path: /var/log/opencode_updates.log
++        state: touch
++        owner: root
++        group: root
++        mode: "0644"
+ 
+-    - name: Install system packages
+-      ansible.builtin.apt:
+-        name:
+-          - acl
+-          - curl
+-          - git
+-          - jq
+-          - unzip
+-          - ca-certificates
+-          - gnupg
+-          - lsb-release
+-        state: present
+-        update_cache: true
+-      environment:
+-        DEBIAN_FRONTEND: noninteractive
+ 
+     # -- Node.js 22 -----------------------------------------------------------
+ 

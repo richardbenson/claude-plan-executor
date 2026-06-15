@@ -1,0 +1,122 @@
+diff --git a/ansible/playbooks/roles/tool_manager/tasks/update_tool.yml b/ansible/playbooks/roles/tool_manager/tasks/update_tool.yml
+new file mode 100644
+index 0000000..128c0b7
+--- /dev/null
++++ b/ansible/playbooks/roles/tool_manager/tasks/update_tool.yml
+@@ -0,0 +1,60 @@
++---
++# Task to update a single tool
++
++- name: Get current version of {{ tool.name }} from registry
++  ansible.builtin.shell: |
++    jq -r '.["{{ tool.name }}"].version // empty' {{ version_registry_path }}
++  register: current_reg_raw
++  changed_when: false
++
++- name: Set current version variable
++  ansible.builtin.set_fact:
++    current_tool_version: "{{ current_reg_raw.stdout | trim }}"
++
++- name: Get latest version for {{ tool.name }} using {{ tool.get_version_cmd }}
++  ansible.builtin.shell: "{{ tool.get_version_cmd }}"
++  register: latest_ver_raw
++  changed_when: false
++
++- name: Set latest version variable
++  ansible.builtin.set_fact:
++    latest_tool_version: "{{ latest_ver_raw.stdout | trim }}"
++
++- name: Check if update is needed for {{ tool.name }}
++  ansible.builtin.set_fact:
++    needs_update: >
++      {{ (current_tool_version == '' or current_tool_version == 'none') and latest_tool_version != '' 
++         or (current_tool_version != latest_tool_version and latest_tool_version != '') }}
++
++- name: Perform update for {{ tool.name }}
++  when: needs_update
++  block:
++    - name: Run update command for {{ tool.name }}
++      ansible.builtin.shell: "{{ tool.update_cmd }}"
++      register: update_result
++
++    - name: Verify health of {{ tool.name }} after update
++      ansible.builtin.shell: "{{ tool.health_check_cmd }}"
++      register: health_check_result
++      failed_when: false
++
++    - name: Handle successful update
++      ansible.builtin.shell: |
++        jq --arg name "{{ tool.name }}"            --arg ver "{{ latest_tool_version }}"            '.[] = {"version": , "status": "ok", "updated_at": "'2026-06-08T08:28:41Z'"}'            {{ version_registry_path }} > {{ version_registry_path }}.tmp && mv {{ version_registry_path }}.tmp {{ version_registry_path }}
++      when: health_check_result.rc == 0
++
++    - name: Handle failed update (revert/log)
++      ansible.builtin.shell: |
++        jq --arg name "{{ tool.name }}"            --arg ver "{{ current_tool_version }}"            '.[] = {"version": , "status": "failed", "error": "Health check failed after update"}'            {{ version_registry_path }} > {{ version_registry_path }}.tmp && mv {{ version_registry_path }}.tmp {{ version_registry_path }}
++      when: health_check_result.rc != 0
++
++    - name: Notify user of failure (via stderr)
++      ansible.builtin.fail:
++        msg: "Update failed for {{ tool.name }}. Please check the registry and investigate."
++      when: health_check_result.rc != 0
++
++- name: Handle first time registration if no update was performed but version is missing
++  when: (current_tool_version == '' or current_tool_version == 'none') and not needs_update
++  ansible.builtin.shell: |
++    jq --arg name "{{ tool.name }}"        --arg ver "{{ latest_tool_version }}"        '.[] = {"version": , "status": "ok", "updated_at": "'2026-06-08T08:28:41Z'"}'        {{ version_registry_path }} > {{ version_registry_path }}.tmp && mv {{ version_registry_path }}.tmp {{ version_registry_path }}
++  when: latest_tool_version != ""
+diff --git a/ansible/playbooks/update-tools.yml b/ansible/playbooks/update-tools.yml
+new file mode 100644
+index 0000000..f69190a
+--- /dev/null
++++ b/ansible/playbooks/update-tools.yml
+@@ -0,0 +1,50 @@
++---
++# Playbook to update tools in the homelab with health checks and version tracking.
++# This playbook is designed to be run periodically (e.g., via cron).
++
++- name: Update Homlab Tools
++  hosts: opencode_vms
++  become: true
++  vars:
++    version_registry_path: "/var/lib/homelab/versions.json"
++    tools:
++      - name: "opencode"
++        update_cmd: "npm install -g opencode-ai"
++        health_check_cmd: "opencode --version"
++        get_version_cmd: "npm view opencode-ai version"
++
++      - name: "openchamber"
++        # We use a shell script on the target to find the latest release URL and install it.
++        update_cmd: >
++          VERSION=$(curl -s https://api.github.com/repos/openchamber/openchamber/releases/latest | jq -r .tag_name | sed 's/^v//') &&
++          npm install -g "https://github.com/openchamber/openchamber/releases/download/v$VERSION/openchamber-web-$VERSION.tgz"
++        health_check_cmd: "openchamber --version"
++        get_version_cmd: "curl -s https://api.github.com/repos/openchamber/openchamber/releases/latest | jq -r .tag_name | sed 's/^v//'"
++
++      - name: "gh-cli"
++        update_cmd: >
++          VERSION=$(curl -s https://api.github.com/repos/cli/cli/releases/latest | jq -r .tag_name | sed 's/^v//') &&
++          mkdir -p /tmp/gh_$VERSION_linux_amd64 &&
++          curl -L "https://github.com/cli/cli/releases/download/v$VERSION/gh_$VERSION_linux_amd64.tar.gz" | tar -xz -C /tmp/gh_$VERSION_linux_amd64 --strip-components=1 &&
++          cp /tmp/gh_$VERSION_linux_amd64/bin/gh /usr/local/bin/gh
++        health_check_cmd: "gh --version"
++        get_version_cmd: "curl -s https://api.github.com/repos/cli/cli/releases/latest | jq -r .tag_name | sed 's/^v//'"
++
++  tasks:
++    - name: Ensure version registry directory exists
++      ansible.builtin.file:
++        path: "{{ version_registry_path | dirname }}"
++        state: directory
++        mode: '0755'
++
++    - name: Initialize version registry if not exists
++      ansible.builtin.copy:
++        content: "{}"
++        dest: "{{ version_registry_path }}"
++        force: false
++
++    - name: Update tools loop
++      include_tasks: roles/tool_manager/tasks/update_tool.yml
++      loop: "{{ tools }}"
++      loop_control:
++        loop_var: tool

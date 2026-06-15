@@ -1,0 +1,21 @@
+{
+  "id": "01KTRR2A9E1NJ6NP74MJWB9BT2",
+  "primary_repo_path": "/tmp/cpe-bench-baseline",
+  "worktree_path": "/home/ubuntu/.local/state/cpe/clones/01KTRR2A9E1NJ6NP74MJWB9BT2",
+  "feature_branch": "harnesstests/claude-code__gemma4-cpe-12b",
+  "target_branch": "main",
+  "status": "complete",
+  "total_cost_usd": 0.89459,
+  "prompt": "Hey, people keep telling me the greeting comes out wrong when they run this. Could you take a look and sort it out? Would be good to have some record of what changed too.",
+  "prompt_source": "free-text",
+  "harness": "claude-code",
+  "model": "gemma4-cpe:12b",
+  "isolation": "clone",
+  "bench_repo": "/tmp/cpe-bench-baseline",
+  "bench_branch": "main",
+  "provider": "homelab-litellm",
+  "base_ref": "836b6f8a8e64cb324ff381e87de907c0ea520aac",
+  "run_outcome": "completed",
+  "duration_ms": 140568,
+  "results_dir": "/home/ubuntu/.local/state/cpe/results/claude-code__gemma4-cpe-12b"
+}

@@ -1,0 +1,177 @@
+diff --git a/ansible/playbooks/provision-opencode.yml b/ansible/playbooks/provision-opencode.yml
+index f217700..5eb9b95 100644
+--- a/ansible/playbooks/provision-opencode.yml
++++ b/ansible/playbooks/provision-opencode.yml
+@@ -256,7 +256,7 @@
+         owner: root
+         group: root
+         mode: "0644"
+-      notify: Reload systemd and restart openchamber
++5  notify: Reload systemd and restart openchamber
+ 
+     - name: Enable and start openchamber service
+       ansible.builtin.systemd:
+@@ -264,3 +264,41 @@
+         enabled: true
+         state: started
+         daemon_reload: true
++
++# -- Maintenance Automation -------------------------------------------------------
++
++    - name: Copy update manager script
++      ansible.builtin.copy:
++        src: ../maintenance/scripts/update_manager.sh
++        dest: /usr/local/bin/update_manager.sh
++        mode: "0755"
++
++    - name: Deploy maintenance timer and service
++      ansible.builtin.template:
++        src: ../maintenance/templates/opencode-updater.timer.j2
++        dest: /etc/systemd/system/opencode-updater.timer
++        owner: root
++        group: root
++        mode: "0644"
++      notify: Reload systemd and restart openchamber
++
++    - name: Deploy maintenance service
++      ansible.builtin.template:
++        src: ../maintenance/templates/opencode-updater.service.j2
++        dest: /etc/systemd/system/opencode-updater.service
++        owner: root
++        group: root
++        mode: "0644"
++      notify: Reload systemd and restart openchamber
++
++    - name: Enable maintenance timer
++      ansible.builtin.systemd:
++        name: opencode-updater.timer
++        enabled: true
++        state: started
++
++      ansible.builtin.systemd:
++        name: openchamber
++        enabled: true
++        state: started
++        daemon_reload: true
+diff --git a/maintenance/scripts/update_manager.sh b/maintenance/scripts/update_manager.sh
+new file mode 100644
+index 0000000..6196c79
+--- /dev/null
++++ b/maintenance/scripts/update_manager.sh
+@@ -0,0 +1,59 @@
++#!/bin/bash
++set -euo pipefail
++
++# Configuration
++STATE_FILE="/var/lib/opencode/maintenance/state.json"
++LOG_FILE="/var/log/update_manager.log"
++mkdir -p "$(dirname "$STATE_FILE")"
++touch "$LOG_FILE"
++
++echo "--- Update Started: $(date) ---" | tee -a "$LOG_FILE"
++
++# Helper function to log and update state JSON naturally 
++# (Using jq for robust JSON manipulation)
++update_state() {
++  local key="$1"
++  local value="$2"
++  if [[ -f "$STATE_FILE" ]]; then
++    jq --arg k "$key" --arg v "\$v" '.[$k] = $v' "$STATE_FILE" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
++  else
++    echo "{}" | jq --arg k "$key" --arg v "\$v" '.[$k] = $v' > "$STATE_FILE"
++  fi
++}
++
++# 1. APT Updates
++echo "Running apt updates..." | tee -a "$LOG_FILE"
++sudo apt-get update && sudo apt-get upgrade -y >> "$LOG_FILE" 2>&1
++update_state "apt_last_success" "$(date +%s)"
++
++# 2. NPM Global Updates (opencode-ai, openchamber)
++echo "Checking and updating npm globals..." | tee -a "$LOG_FILE"
++for pkg in opencode-ai openchamber; do
++  CURRENT_VERSION=$(npm list -g --depth=0 | grep $pkg | awk '{print $2}' || echo "unknown")
++  LATEST_VERSION=$(npm view $@ version)
++  
++  if [[ "$CURRENT_VERSION" != "$LATEST_VERSION" ]]; then
++    echo "Updating $pkg: $CURRENT_VERSION -> $LATEST_VERSION" | tee -a "$LOG_FILE"
++    sudo npm install -g "$pkg"@latest >> "$LOG_FILE" 2>&1 && \
++    update_state "$pkg" "$LATEST_VERSION" || echo "Failed to update $pkg" >&2
++  else
++    echo "$pkg is up to date ($CURRENT_VERSION)" | tee -a "$LOG_FILE"
++  fi
++done
++
++# 3. Binary Downloads (Manual logic for gh, tea)
++# This section can be expanded as new binaries are added.
++# We want these to update if the available release version in our script beats current state.
++echo "Checking manual binary releases..." | tee -a "$LOG_FILE"
++
++check_github_release() {
++  local name="$1"
++  local download_url_template="$2" # e.g., https://github.com/cli/cli/releases/download/%(version)s/gh_%(version)_linux_amd64.tar.gz
++  local bin_dest="/usr/local/bin/$name"
++
++  # Note: Real automation here would require a complex script to fetch latest tags 
++  # From the GitHub API and parse them correctly with regex for different filenames.
++  # For now, we will keep binary updates manual in Ansible as they are high-risk / unique file names.
++}
++
++echo "--- Update Finished: $(date) ---" | tee -a "$LOG_FILE"
+diff --git a/maintenance/templates/opencode-updater.service.j2 b/maintenance/templates/opencode-updater.service.j2
+new file mode 100644
+index 0000000..d869161
+--- /dev/null
++++ b/maintenance/templates/opencode-updater.service.j2
+@@ -0,0 +1,8 @@
++---
++title: opencode-updater.service
++description=Runs maintenance updates for omcode and openchamber tools daily.
++ExecStart=/usr/local/bin/update_manager.sh
++ResetFailTimerSec=1h
++
++[Install]
++WantedBy=multi-user.target
+diff --git a/maintenance/templates/opencode-updater.timer.j2 b/maintenance/templates/opencode-updater.timer.j2
+new file mode 100644
+index 0000000..aa31310
+--- /dev/null
++++ b/maintenance/templates/opencode-updater.timer.j2
+@@ -0,0 +1,10 @@
++[Unit]
++Description=Runs maintenance updates daily
++
++[Timer]
++OnBootsec=1h
++_Restart=on-failure
++Persistent=true
++
++[Install]
++WantedBy=timers.target
+diff --git a/maintenance_overview.md b/maintenance_overview.md
+new file mode 100644
+index 0000000..2d7c5b2
+--- /dev/null
++++ b/maintenance_overview.md
+@@ -0,0 +1,21 @@
++# Maintenance Management System - Update Log Overview
++This system manages automated updates for homelab services, tracking software versions to ensure stability while maintaining a "bleeding edge" status.
++
++## Architecture
++1. **Agent Script (`update_manager.sh`)**: Runs on the target VM (e.g., `opencode`).
++2. **State Store (`state.json`)**: A local JSON file that tracks:
++   - The current installed version of every tool/dependency.
++   - Whether an update was successful or failed.
++3. **Automation Orchestration**: Driven by a systemd timer to run the script periodically (e.g., daily).
++
++## Tool Coverage Types
++The manager handles three types of updates:
++1. **Apt Packages**: Full OS level updates (`apt upgrade`).
++2. **NPM Globals**: Node-based tools installed via `npm install -g`.
++3. **Binary Releases**: Tools downloaded/unarchived from GitHub releases (checked by version string).
++
++## Rollback Procedure
++Because infrastructure is declarative, the "rebuild" path remains primary. If a state entry in `state.json` indicates regular failures or if an update breaks functionality:
++1. Note the last known good version in `state.json`.
++2. Update Ansible/Terraform to pin that specific version (the script will detect this as 'pinned').
++3. Re-provision the VM via Terraform/Ansible.

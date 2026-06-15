@@ -1,0 +1,174 @@
+diff --git a/scripts/systemd/update-tools.service b/scripts/systemd/update-tools.service
+new file mode 100644
+index 0000000..9645652
+--- /dev/null
++++ b/scripts/systemd/update-tools.service
+@@ -0,0 +1,13 @@
++[Unit]
++Description=Homelab Tool Auto-Updater
++
++[Service]
++Type=oneshot
++ExecStart=/usr/local/bin/update_tools.sh
++User=root
++Group=root
++StandardOutput=journal+console
++StandardError=journal+console
++
++[Install]
++WantedBy=multi-user.target
+diff --git a/scripts/systemd/update-tools.timer b/scripts/systemd/update-tools.timer
+new file mode 100644
+index 0000000..4a6d8cd
+--- /dev/null
++++ b/scripts/systemd/update-tools.timer
+@@ -0,0 +1,9 @@
++[Unit]
++Description=Run Homelab Tool Auto-Updater daily
++
++[Timer]
++OnCalendar=*-*-* 03:00:00
++Persistent=true
++
++[Install]
++WantedBy=timers.target
+diff --git a/scripts/tools_config.json b/scripts/tools_config.json
+new file mode 100644
+index 0000000..96f502a
+--- /dev/null
++++ b/scripts/tools_config.json
+@@ -0,0 +1,10 @@
++{
++  "npm_global": [
++    "opencode-ai"
++  ],
++  "github_releases": {
++    "gh": "cli/cli",
++    "tea": "gitea/tea",
++    "rtk": "rtk-ai/rtk"
++  }
++}
+diff --git a/scripts/update-tools.sh b/scripts/update-tools.sh
+new file mode 100755
+index 0000000..dadb6b8
+--- /dev/null
++++ b/scripts/update-tools.sh
+@@ -0,0 +1,118 @@
++#!/bin/bash
++
++# Configuration paths - we use absolute paths in systemd context, 
++# but for manual run it can fallback to local path relative to script or current dir.
++CONFIG_FILE="/home/ubuntu/.local/state/cpe/clones/01KTGS5J7Y2P86AY7H22KWKB0H/scripts/tools_config.json"
++# Note: The absolute paths in the environment might change if clones are moved, 
++# but we'll use a relative discovery mechanism for config if it fails to find at home ubuntu...
++
++if [ ! -f "" ]; then
++  # Try finding locally if not found in hardcoded path (for local development/manual runs)
++  if [ -f "./scripts/tools_config.json" ]; then
++    CONFIG_FILE="./scripts/tools_config.json"
++  else
++    echo "ERROR: Configuration file for update-tools.sh not found."
++    exit 1
++  fi
++fi
++
++STATE_FILE="/var/lib/homelab_updates/state.json"
++LOG_FILE="/var/log/homelab_updates.log"
++
++mkdir -p "." || true
++touch "" || true
++
++log() {
++  echo "[2026-06-08T09:21:08] $1" | tee -a ""
++}
++
++update_apt() {
++  log "Updating system packages via apt..."
++  if apt-get update && apt-get upgrade -y >> "" 2>&1; then
++    log "System package update successful."
++  else
++    log "ERROR: System package update failed. Check $LOG_FILE for details."
++  fi
++}
++
++update_npm_global() {
++  local pkg=$1
++  log "Updating NPM global package: $pkg"
++  if npm install -g "$pkg" >> "" 2>&1; then
++    # Capture version if possible, or just mark as updated.
++    echo "{\"package\": \"$pkg\", \"timestamp\": \"$(date +%s)\", \"status\": \"success\"}" >> "" || true
++  else
++    log "ERROR: Failed to update NPM package $pkg."
++  fi
++}
++
++update_github_binary() {
++  local repo\_path=$1
++  # Extract owner/name from path like 'cli/cli' or 'openchamber/openchamber'
++  IFS='/' read -r owner name <<< "$repo\_path"
++  log "Checking for latest release of github repository: $owner/$name"
++
++  local releases=$(curl -s https://api.github.com/repos/$owner/$name/releases | jq -r '.assets[] | select(.name | contains("linux_amd64") and (contains(".tar.gz") or contains(".zip")) | .browser_download_url')
++  local latest\_url=$(echo "$releases" | head -n 1)
++
++  if [ -z "$latest\_url" ]; then
++    log "ERROR: Could not find a suitable release for $owner/$name"
++    return 1
++  fi
++
++  # Check if we already have this version. We use the URL as an identifier of the specific release asset.
++  if grep -q "$latest\_url" ""; then
++     log "Tool from github ($owner/$name) is already up to date."
++     return 0
++  fi
++
++  log "Downloading latest binary/tarball from $latest\_url..."
++  curl -L "$latest\_url" -o "/tmp/${name}_update.tgz" || return 1
++  
++  # Extracting logic: find the right directory and move it to /usr/local/bin
++  # This is slightly tricky because repo structures vary. We'll try a generic approach then adapt if needed for specific ones.
++  tar -xzf "/tmp/${name}_update.tgz" -C /tmp --strip-components=1 || true
++
++  if [ -d "/tmp/${name}" ]; then
++     mv "/tmp/${name}"/bin/"$name" /usr/local/bin/ 2>/dev/null || mv "/tmp/${name}" "$name_extracted" && cp "/tmp/${name}_extracted"/* /usr/local/bin/
++  elif [ -f "/tmp/${name}_update.tgz" ]; then # fallback for simple binary downloads if it wasn't a tarball (though our selector looks for .tar.gz)
++     mv "/tmp/${name}" /usr/local/bin/"$name" 2>/dev/null || true
++  fi
++
++  if [ -f "/usr/local/bin/$name" ]; then
++    log "Successfully installed $name."
++    echo "{\"tool\": \"$name\", \"url\": \"$latest\_url\", \"timestamp\": \"$(date +%s)\", \"status\": \"success\"}" >> "" || true
++  else
++    log "ERROR: Could not find binary for $name after extraction."
++  fi
++
++  rm -f "/tmp/${name}_update.tgz" 2>/dev/null
++}
++
++main() {
++  if [ "1000" -ne 0 ]; then
++    echo "Please run as root (or with sudo)"
++    exit 1
++  fi
++
++  log "Starting automated update process..."
++  
++  update_apt
++
++  # Parse configuration using jq to be robust.
++  local npm\_pkgs=$(jq -r '.npm_global[]' "")
++  for pkg in $npm\_pkgs; do
++    if [ ! -z "$pkg" ]; then update_npm_global "$pkg"; fi
++  done
++
++  # Parse GitHub repos: we iterate over the keys of github_releases object.
++  local repo\_keys=$(jq -r '.github_releases | to_entries | .[] | .key' "")
++  for key in $repo\_keys; do
++    local path=$(jq -r ".github_releases[$key]" "")
++    if [ ! -z "$path" ]; then update_github_binary "$path"; fi
++  done
++
++  log "All automated updates completed successfully."
++}
++
++main

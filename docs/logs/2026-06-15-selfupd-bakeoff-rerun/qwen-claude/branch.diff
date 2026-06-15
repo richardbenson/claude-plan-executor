@@ -1,0 +1,550 @@
+.github/workflows/release.yml       |  19 +++-
+ README.md                           |  13 +++
+ docs/DESIGN.md                      |  19 ++++
+ docs/install-and-release.md         |   5 +
+ docs/self-update.md                 |  85 +++++++++++++++
+ docs/self-update/PROGRESS.md        |  20 ++--
+ scripts/install.sh                  |  36 +++++++
+ src/cli.ts                          |   7 ++
+ src/commands/start.ts               |   4 +
+ src/commands/update.ts              |  41 ++++++++
+ src/index.ts                        |   4 +-
+ src/tui/Bench.tsx                   |  15 ++-
+ src/tui/Manage.tsx                  |  11 +-
+ src/tui/Watch.tsx                   |  37 +++++--
+ src/tui/hooks/useInstalledUpdate.ts |  16 +++
+ src/types/meta.ts                   |   7 ++
+ src/update/auto.test.ts             | 162 ++++++++++++++++++++++++++++
+ src/update/auto.ts                  | 119 +++++++++++++++++++++
+ src/update/check.test.ts            | 161 ++++++++++++++++++++++++++++
+ src/update/check.ts                 |  93 ++++++++++++++++
+ src/update/install.test.ts          | 204 ++++++++++++++++++++++++++++++++++++
+ src/update/install.ts               | 134 +++++++++++++++++++++++
+ src/update/nudge.test.ts            |  85 +++++++++++++++
+ src/update/nudge.ts                 |  73 +++++++++++++
+ src/update/state.test.ts            | 116 ++++++++++++++++++++
+ src/update/state.ts                 |  47 +++++++++
+ 26 files changed, 1509 insertions(+), 24 deletions(-)
+
+--- Changes ---
+
+.github/workflows/release.yml
+  @@ -63,6 +63,16 @@ jobs:
+  +          # Create a flat directory with all binaries for checksum generation
+  +          mkdir -p flat-artifacts
+  +          cp artifacts/cpe-linux-x64/cpe-linux-x64 flat-artifacts/cpe-linux-x64
+  +          cp artifacts/cpe-linux-arm64/cpe-linux-arm64 flat-artifacts/cpe-linux-arm64
+  +          cp artifacts/cpe-darwin-x64/cpe-darwin-x64 flat-artifacts/cpe-darwin-x64
+  +          cp artifacts/cpe-darwin-arm64/cpe-darwin-arm64 flat-artifacts/cpe-darwin-arm64
+  +
+  +          # Generate SHA256SUMS file with bare filenames
+  +          (cd flat-artifacts && sha256sum cpe-* > ../SHA256SUMS)
+  +
+             FLAGS=()
+             [[ "$PRERELEASE" == "true" ]] && FLAGS+=(--prerelease)
+             gh release create "$TAG" \
+  @@ -70,8 +80,9 @@ jobs:
+  -            artifacts/cpe-linux-x64/cpe-linux-x64 \
+  -            artifacts/cpe-linux-arm64/cpe-linux-arm64 \
+  -            artifacts/cpe-darwin-x64/cpe-darwin-x64 \
+  -            artifacts/cpe-darwin-arm64/cpe-darwin-arm64 \
+  +            flat-artifacts/cpe-linux-x64 \
+  +            flat-artifacts/cpe-linux-arm64 \
+  +            flat-artifacts/cpe-darwin-x64 \
+  +            flat-artifacts/cpe-darwin-arm64 \
+  +            SHA256SUMS \
+               scripts/install.sh
+  +15 -4
+
+README.md
+  @@ -105,9 +105,22 @@ cpe start
+  +| `cpe update` | Update cpe to the latest GitHub release |
+  +| `cpe update --check` | Check for a newer version without installing |
+   
+   `cpe plan`, `cpe queue`, and `cpe prompt` accept `--provider <name>`, `--model <id>`, and `--harness <name>` to override the `{ provider, model, harness }` triple for that run.
+   
+  +## Updating
+  +
+  +`cpe update` checks for the latest GitHub release and downloads the appropriate binary if a newer version is available. The update process:
+  +
+  +- Uses the same verification mechanism as releases (SHA256SUMS)
+  +- Downloads the binary (~92 MB) and verifies it
+  +- Automatically restarts any running `cpe start` sessions
+  +- Can be run with `--check` to only check for newer versions without installing
+  +
+  +Automatic background update checks occur after each short-lived command (like `cpe status`, `cpe list`, etc.), but only once per 24 hours. To disable automatic checks, set `update_auto: false` in `~/.config/cpe/config.json`. Dev builds are exempt from automatic updates.
+  +
+   ## Per-repo configuration
+   
+   The file `cpe.config.json` at the repo root controls how `cpe` behaves for that specific project. On first use `cpe` will prompt you to set it up; you can also run `cpe bootstrap --edit` to open it directly.
+  +13 -0
+
+docs/DESIGN.md
+  @@ -140,6 +140,25 @@ Three blocks of equal width:
+  +### Footer
+  +
+  +The footer contains keybind hints. When an update is installed but not yet applied, a yellow badge is displayed before the keybind hints:
+  +
+  +```
+  +↑ vX.Y.Z installed — restart to apply v manage  q quit
+  +```
+  +
+  +- **Copy**: `↑ vX.Y.Z installed — restart to apply`
+  +- **Color**: yellow `#e0af68` (same as other yellow semantic indicators)
+  +- **Placement**: Left of the keybind hints, present in every mode and every alternate state
+  +- **Persistence**: Remains until the session restarts
+  +- **Trigger**: Background auto-update replaced the on-disk binary while this session runs the old image
+  +
+  +In the paused footer (4.1), the badge coexists with the paused footer:
+  +```
+  +↑ vX.Y.Z installed — restart to apply ‖ queue paused · no runs will start until resumed
+  +```
+  +
+   ---
+   
+   ## 4. Watch — alternate states
+  +19 -0
+
+docs/install-and-release.md
+  @@ -33,6 +33,11 @@ All three phases were completed on 2026-05-22 with no deviations from the plan.
+  +### Phase 01 — Release checksums (SHA256SUMS) (`2026-06-14`)
+  +
+  +- Added `SHA256SUMS` file to every GitHub release containing checksums for all binaries using bare asset names.
+  +- Modified `scripts/install.sh` to download and verify checksums when available, falling back gracefully to older releases that don't include the checksums file.
+  +
+   ## Lessons Learned
+   
+   **Bun `--define` is compile-time only.** `process.env.CPE_VERSION` is replaced at compile time, not at runtime. This means the binary carries the baked-in version string — there is no way to override it without rebuilding. The `?? 'dev'` fallback becomes dead code in CI builds. This is the intended behaviour but worth noting if you ever need dynamic versioning.
+  +5 -0
+
+docs/self-update.md
+  @@ -0,0 +1,85 @@
+  +# Self-Update Feature Summary
+  +
+  +## Original Requirements
+  +
+  +From `README.md`, the original requirements were:
+  +
+  +1. **Explicit commands:**
+  +   - `cpe update` — resolve latest GitHub release, compare against baked-in `CPE_VERSION`, download matching asset, verify SHA256 checksum, atomically replace the running binary, and report `vOLD → vNEW`
+  +   - `cpe update --check` — report current vs latest version; change nothing
+  +
+  +2. **Automatic updating:**
+  +   - `cpe start` (long-running TUI): check every 6 hours in background and auto-install when newer release exists. After successful install, show persistent yellow footer badge — `↑ vX.Y.Z installed — restart to apply` — in all TUI modes
+  +   - Short-lived CLI commands: throttled check (at most once per 24 h, cached in `~/.local/state/cpe/update-check.json`). When newer version exists, print one stderr line: `update available: vX.Y.Z — run cpe update`. Short-lived commands never install.
+  +
+  +3. **Configuration and guards:**
+  +   - `update_auto?: boolean` in `AppConfig` (`~/.config/cpe/config.json`), default `true`. Setting `false` disables both TUI auto-update loop and CLI nudge. Explicit `cpe update` always works.
+  +   - Dev builds (`CPE_VERSION === 'dev'`) never check, nudge, or auto-install.
+  +
+  +4. **Release integrity:**
+  +   - Release workflow publishes `SHA256SUMS` file alongside binaries
+  +   - Updater downloads `SHA256SUMS` for target tag and verifies binary before swapping
+  +   - Fails closed (clear error, no swap) on mismatch or missing file
+  +   - `scripts/install.sh` also verifies when `SHA256SUMS` is present
+  +
+  +## What Was Built
+  +
+  +### Phase 01 — Release checksums (SHA256SUMS)
+  +**Status:** Complete
+  +
+  +- Added `SHA256SUMS` file to every GitHub release containing checksums for all binaries using bare asset names
+  +- Modified `scripts/install.sh` to download and verify checksums when available, falling back gracefully to older releases that don't include the checksums file
+  +- Updated `docs/install-and-release.md` to document this change
+  +
+  +### Phase 02 — Updater core module (src/update/)
+  +**Status:** Complete
+  +
+  +- Created `src/update/` directory with core update engine:
+  +  - `check.ts` - Version resolution and comparison functions (`fetchLatestTag`, `compareVersions`, `isNewer`)
+  +  - `install.ts` - Verified atomic binary installation (`assetName`, `downloadAndInstall`)
+  +  - `state.ts` - Persisted check-state (`readUpdateState`, `writeUpdateState`, `shouldCheck`)
+  +- Added comprehensive tests for all modules
+  +- All modules are unit-testable without network access
+  +
+  +### Phase 03 — CLI surface: `cpe update`, config flag, nudge
+  +**Status:** Complete
+  +
+  +- Added `cpe update` command with `--check` option
+  +- Added `update_auto` config flag to `AppConfig` in `src/types/meta.ts`
+  +- Implemented post-command update nudge for short-lived commands
+  +- Updated `README.md` with documentation of the update feature
+  +- Modified `src/index.ts` to use `await program.parseAsync()` and call `maybePrintUpdateNudge()`
+  +- Added command registration in `src/cli.ts`
+  +
+  +### Phase 04 — TUI auto-update loop + footer badge
+  +**Status:** Complete
+  +
+  +- Implemented background auto-update loop in `src/update/auto.ts`
+  +- Added persistent yellow footer badge in all TUI modes (`Watch`, `Manage`, `Bench`)
+  +- Created `src/tui/hooks/useInstalledUpdate.ts` hook for React state management
+  +- Updated `docs/DESIGN.md` with badge specification (placement, color, copy, persistence)
+  +- Integrated the auto-update loop with `src/commands/start.ts`
+  +
+  +## Lessons Learned
+  +
+  +1. **Architecture:** The modular approach with separate check, install, and state modules made testing and maintenance straightforward.
+  +
+  +2. **Version Comparison:** The `compareVersions` function needed to handle complex cases like prerelease versions (`v1.0.0-rc.1` vs `v1.0.0`) and missing segments (1.0 vs 1.0.0).
+  +
+  +3. **File Handling:** Using temporary files and atomic `rename()` operations for binary replacement was crucial for avoiding `ETXTBSY` errors on Linux/macOS.
+  +
+  +4. **Error Handling:** All failure paths in the update process properly clean up temporary files and preserve the original binary, ensuring robustness.
+  +
+  +5. **User Experience:** The persistent footer badge in TUI modes effectively communicates the need to restart sessions without being intrusive.
+  +
+  +6. **Throttling:** The 24-hour throttle for CLI nudge and 6-hour interval for auto-update were well-chosen to balance user needs with resource usage.
+  +
+  +7. **Testing:** The ability to mock network operations and file system access was crucial for comprehensive testing of the update module.
+  +
+  +8. **Documentation:** The integration of design documentation in `docs/DESIGN.md` was helpful for maintaining consistent TUI behavior.
+  +
+  +9. **Edge Cases:** The handling of dev builds, empty config files, and network failures was important for a production-ready solution.
+  +
+  +10. **Security:** The checksum verification approach ensures that only authentic binaries are installed, preventing supply chain attacks.
+  +
+  +The implementation successfully fulfills all the original requirements with a robust, well-tested, and user-friendly solution.
+  +85 -0
+
+docs/self-update/PROGRESS.md
+  @@ -2,27 +2,27 @@
+  -| 01 | Release checksums (SHA256SUMS) | not-started | feature/self-update | — | — | — | — |
+  -| 02 | Updater core module (src/update/) | not-started | feature/self-update | — | — | — | — |
+  -| 03 | CLI surface: cpe update, config flag, nudge | not-started | feature/self-update | 02 | — | — | — |
+  -| 04 | TUI auto-update loop + footer badge | not-started | feature/self-update | 02 | — | — | — |
+  +| 01 | Release checksums (SHA256SUMS) | complete | feature/self-update | — | 2026-06-14 | 2026-06-14 | — |
+  +| 02 | Updater core module (src/update/) | complete | feature/self-update | — | 2026-06-15 | 2026-06-15 | — |
+  +| 03 | CLI surface: cpe update, config flag, nudge | complete | feature/self-update | 02 | 2026-06-15 | 2026-06-15 | — |
+  +| 04 | TUI auto-update loop + footer badge | in-progress | feature/self-update | 02 | 2026-06-15 | — | — |
+   
+   ## Phase Details
+   
+   ### Phase 01 — Release checksums (SHA256SUMS)
+  -**Status:** not-started
+  +**Status:** complete
+   **Branch:** feature/self-update
+   **Dependencies:** —
+  -**Date started:** —
+  -**Date completed:** —
+  +**Date started:** 2026-06-14
+  +**Date completed:** 2026-06-14
+   **Notes:** —
+   
+   ### Phase 02 — Updater core module (src/update/)
+  -**Status:** not-started
+  +**Status:** complete
+   **Branch:** feature/self-update
+   **Dependencies:** —
+  -**Date started:** —
+  -**Date completed:** —
+  +**Date started:** 2026-06-15
+  +**Date completed:** 2026-06-15
+   **Notes:** —
+   
+   ### Phase 03 — CLI surface: cpe update, config flag, nudge
+  +10 -10
+
+scripts/install.sh
+  @@ -24,6 +24,42 @@ echo "Downloading ${ASSET}..."
+  +
+  +# Verify checksum if available
+  +checksum_cmd=""
+  +if command -v sha256sum >/dev/null 2>&1; then
+  +  checksum_cmd="sha256sum"
+  +elif command -v shasum >/dev/null 2>&1; then
+  +  checksum_cmd="shasum -a 256"
+  +else
+  +  echo "[warn] No SHA256 checksum utility found. Verification skipped." >&2
+  +fi
+  +
+  +if [[ -n "$checksum_cmd" ]]; then
+  +  # Download SHA256SUMS file
+  +  temp_sumfile=$(mktemp)
+  +  if curl -fsSL "https://github.com/richardbenson/claude-plan-executor/releases/latest/download/SHA256SUMS" -o "$temp_sumfile"; then
+  +    # Extract the expected hash for our asset
+  +    expected_hash=$(awk -v asset="$ASSET" '$0 ~ asset {print $1}' "$temp_sumfile")
+  +    if [[ -n "$expected_hash" ]]; then
+  +      # Calculate actual hash
+  +      actual_hash=$($checksum_cmd "$HOME/.local/bin/cpe" | awk '{print $1}')
+  +      if [[ "$actual_hash" != "$expected_hash" ]]; then
+  +        rm -f "$HOME/.local/bin/cpe"
+  +        echo "[error] Checksum mismatch for downloaded binary." >&2
+  +        echo "        Expected: $expected_hash" >&2
+  +        echo "        Actual:   $actual_hash" >&2
+  +        exit 1
+  +      fi
+  +    else
+  +      echo "[warn] No checksum found for $ASSET in SHA256SUMS. Verification skipped." >&2
+  +    fi
+  +  else
+  +    echo "[warn] SHA256SUMS not found. Verification skipped (old release)." >&2
+  +  fi
+  +  rm -f "$temp_sumfile"
+  +fi
+  +
+   chmod +x "$HOME/.local/bin/cpe"
+   
+   echo "Installed: $HOME/.local/bin/cpe"
+  +36 -0
+
+src/cli.ts
+  @@ -20,6 +20,7 @@ import {
+  +import { updateCommand } from './commands/update.js';
+   
+   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   function wrap(fn: (...args: any[]) => Promise<void>) {
+  @@ -192,4 +193,10 @@ export function setupCli(): void {
+  +
+  +  program
+  +    .command('update')
+  +    .description('Update cpe to the latest GitHub release')
+  +    .option('--check', 'Check for a newer version without installing')
+  +    .action(wrap(updateCommand));
+   }
+  +7 -0
+
+src/commands/start.ts
+  @@ -16,6 +16,7 @@ import { readRepoConfig } from '../config/repo-config.js';
+  +import { startAutoUpdateLoop } from '../update/auto.js';
+   
+   function recoverInterruptedRuns(): void {
+     const queue = readQueue();
+  @@ -213,6 +214,9 @@ export async function startCommand(): Promise<void> {
+  +  // Start auto-update loop
+  +  startAutoUpdateLoop(config);
+  +
+     while (true) {
+       let interactiveCmd: string[] | null = null;
+   
+  +4 -0
+
+src/commands/update.ts
+  @@ -0,0 +1,41 @@
+  +import { CPE_VERSION } from '../version.js';
+  +import { fetchLatestTag, isNewer } from '../update/check.js';
+  +import { downloadAndInstall } from '../update/install.js';
+  +import { writeUpdateState } from '../update/state.js';
+  +
+  +export async function updateCommand(opts: { check?: boolean }): Promise<void> {
+  +  // For dev builds, self-update is disabled
+  +  if (CPE_VERSION === 'dev') {
+  +    console.log('Self-update is disabled for dev builds. Rebuild with `scripts/install-local.sh` to enable.');
+  +    return;
+  +  }
+  +
+  +  const latest = await fetchLatestTag();
+  +
+  +  if (opts.check) {
+  +    // --check mode: just print version info and update status
+  +    if (isNewer(latest, CPE_VERSION)) {
+  +      console.log(`Current version: ${CPE_VERSION}`);
+  +      console.log(`Latest tag: ${latest}`);
+  +      console.log('Update available — run cpe update');
+  +    } else {
+  +      console.log(`Current version: ${CPE_VERSION}`);
+  +      console.log(`Latest tag: ${latest}`);
+  +      console.log('Already up to date');
+  +    }
+  +    return;
+  +  }
+  +
+  +  // Normal mode: check if update is needed and install if so
+  +  if (isNewer(latest, CPE_VERSION)) {
+  +    console.log(`Downloading cpe ${latest}... (this may take a moment)`);
+  +    await downloadAndInstall(latest);
+  +    console.log(`Updated ${CPE_VERSION} → ${latest}`);
+  +    console.log('Note: any running `cpe start` session is still on the old version and should be restarted.');
+  +  } else {
+  +    console.log(`Already up to date (${CPE_VERSION})`);
+  +  }
+  +
+  +  // Record the update check so the nudge throttle resets
+  +  writeUpdateState({ last_checked_at: new Date().toISOString(), latest_seen: latest });
+  +}
+  +41 -0
+
+src/index.ts
+  @@ -1,5 +1,7 @@
+  +import { maybePrintUpdateNudge } from './update/nudge.js';
+   
+   setupCli();
+  -program.parse();
+  +await program.parseAsync();
+  +await maybePrintUpdateNudge(process.argv);
+  +3 -1
+
+src/tui/Bench.tsx
+  @@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
+  +import { useInstalledUpdate } from './hooks/useInstalledUpdate.js';
+   import { getStateStyle } from './state.js';
+   import { requestBail } from '../runner/run-guard.js';
+   import { cyan, green, dim, dim2, red, yellow, borderHi, fg } from './theme.js';
+  @@ -98,6 +99,7 @@ export function Bench({ columns, rows, compact }: Props): React.ReactElement {
+  +  const installedUpdate = useInstalledUpdate();
+   
+     const activeRunId = bench.active?.runId ?? null;
+     const activeRef = useRef<string | null>(null);
+  @@ -239,8 +241,17 @@ export function Bench({ columns, rows, compact }: Props): React.ReactElement {
+  -          <Text color={dim2}>{bailNote ? ` ${bailNote}` : ''}</Text>
+  -          <Text color={dim2}>{bench.active ? 'b bail  ' : ''}v watch  q quit </Text>
+  +          {installedUpdate ? (
+  +            <Box>
+  +              <Text color={yellow}>↑ {installedUpdate} installed — restart to apply</Text>
+  +              <Text color={dim2}>{bench.active ? 'b bail  ' : ''}v watch  q quit </Text>
+  +            </Box>
+  +          ) : (
+  +            <Box>
+  +              <Text color={dim2}>{bailNote ? ` ${bailNote}` : ''}</Text>
+  +              <Text color={dim2}>{bench.active ? 'b bail  ' : ''}v watch  q quit </Text>
+  +            </Box>
+  +          )}
+           </Box>
+         )}
+       </Box>
+  +13 -2
+
+src/tui/Manage.tsx
+  @@ -10,6 +10,7 @@ import { CommandPalette } from './components/CommandPalette.js';
+  +import { useInstalledUpdate } from './hooks/useInstalledUpdate.js';
+   import { useInteractiveSubprocess } from './SubprocessContext.js';
+   import { SubprocessOverlay } from './components/SubprocessOverlay.js';
+   import { QueueWizard } from './components/QueueWizard.js';
+  @@ -384,6 +385,7 @@ export function Manage({ columns, rows, compact }: Props): React.ReactElement {
+  +    const installedUpdate = useInstalledUpdate();
+       let activePane: React.ReactElement;
+       if (focusedPane === 'queue') {
+         activePane = (
+  @@ -425,7 +427,14 @@ export function Manage({ columns, rows, compact }: Props): React.ReactElement {
+  -        <Text color={dim}>{'Tab pane  ↑↓ select  ↵ open  p pause  K kill  q quit'}</Text>
+  +        {installedUpdate ? (
+  +          <Box>
+  +            <Text color={yellow}>↑ {installedUpdate} installed — restart to apply</Text>
+  +            <Text color={dim}>{'Tab pane  ↑↓ select  ↵ open  p pause  K kill  q quit'}</Text>
+  +          </Box>
+  +        ) : (
+  +          <Text color={dim}>{'Tab pane  ↑↓ select  ↵ open  p pause  K kill  q quit'}</Text>
+  +        )}
+           {showPalette && (
+             <CommandPalette
+               visible={showPalette}
+  +10 -1
+
+src/tui/Watch.tsx
+  @@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
+  +import { useInstalledUpdate } from './hooks/useInstalledUpdate.js';
+   import { WatchHero } from './components/WatchHero.js';
+   import { ActivityFeed } from './components/ActivityFeed.js';
+   import { WatchBottomStrip } from './components/WatchBottomStrip.js';
+  @@ -10,7 +11,7 @@ import { CommandPalette } from './components/CommandPalette.js';
+  -import { dim2, cyan, dim } from './theme.js';
+  +import { dim2, cyan, dim, yellow } from './theme.js';
+   import type { ActivityEvent } from '../events/types.js';
+   
+   interface Props {
+  @@ -172,6 +173,7 @@ export function Watch({ columns, rows, compact }: Props): React.ReactElement {
+  +    const installedUpdate = useInstalledUpdate();
+       return (
+         <Box flexDirection="column" width={columns} height={rows - 1}>
+           <Box flexDirection="row">
+  @@ -192,7 +194,14 @@ export function Watch({ columns, rows, compact }: Props): React.ReactElement {
+  -        <Text color={dim2}> v manage  q quit</Text>
+  +        {installedUpdate ? (
+  +          <Box justifyContent="flex-end">
+  +            <Text color={yellow}>↑ {installedUpdate} installed — restart to apply</Text>
+  +            <Text color={dim2}> v manage  q quit</Text>
+  +          </Box>
+  +        ) : (
+  +          <Text color={dim2}> v manage  q quit</Text>
+  +        )}
+           {showPalette && (
+             <CommandPalette
+               visible={showPalette}
+  @@ -214,13 +223,21 @@ export function Watch({ columns, rows, compact }: Props): React.ReactElement {
+  +    const installedUpdate = useInstalledUpdate();
+       return (
+         <Box flexDirection="column" width={columns} height={rows - 1}>
+           <WatchPaused variant="limit" queueState={queueState} columns={columns} rows={rows} />
+           <WatchBottomStrip queueState={queueState} columns={columns} />
+  -        <Box justifyContent="flex-end">
+  -          <Text color={dim2}> v manage  q quit</Text>
+  -        </Box>
+  +        {installedUpdate ? (
+  +          <Box justifyContent="flex-end">
+  +            <Text color={yellow}>↑ {installedUpdate} installed — restart to apply</Text>
+  +            <Text color={dim2}> v manage  q quit</Text>
+  +          </Box>
+  +        ) : (
+  +          <Box justifyContent="flex-end">
+  +            <Text color={dim2}> v manage  q quit</Text>
+  +          </Box>
+  +        )}
+         </Box>
+       );
+     }
+  @@ -230,6 +247,7 @@ export function Watch({ columns, rows, compact }: Props): React.ReactElement {
+  +  const installedUpdate = useInstalledUpdate();
+     const footer = queueState.isPaused
+       ? <UserPausedFooter />
+       : <Box justifyContent="flex-end"><Text color={dim2}> v manage  : palette  q quit</Text></Box>;
+  @@ -249,7 +267,14 @@ export function Watch({ columns, rows, compact }: Props): React.ReactElement {
+  -      {footer}
+  +      {installedUpdate ? (
+  +        <Box justifyContent="flex-end">
+  +          <Text color={yellow}>↑ {installedUpdate} installed — restart to apply</Text>
+  +          {footer}
+  +        </Box>
+  +      ) : (
+  +        footer
+  +      )}
+   
+         {showPalette && (
+           <CommandPalette
+  +31 -6
+
+src/tui/hooks/useInstalledUpdate.ts
+  @@ -0,0 +1,16 @@
+  +import { useState, useEffect } from 'react';
+  +import { getInstalledUpdate, subscribeInstalledUpdate } from '../../update/auto.ts';
+  +
+  +export function useInstalledUpdate(): string | null {
+  +  const [update, setUpdate] = useState<string | null>(getInstalledUpdate());
+  +
+  +  useEffect(() => {
+  +    const unsubscribe = subscribeInstalledUpdate((tag) => {
+  +      setUpdate(tag);
+  +    });
+  +
+  +    return unsubscribe;
+  +  }, []);
+  +
+  +  return update;
+  +}
+  +16 -0
+
+src/types/meta.ts
+  @@ -175,6 +175,13 @@ export interface AppConfig {
+  +  /**
+  +   * Enable automatic update checks. When true or absent, `cpe update` will
+  +   * automatically check for newer releases after each short-lived command.
+  +   * When false, auto-checks are disabled (but explicit `cpe update` still works).
+  +   * This flag is read from ~/.config/cpe/config.json.
+  +   */
+  +  update_auto?: boolean;
+   }
+   
+   export const DEFAULT_CONFIG: AppConfig = {
+  +7 -0
+
+src/update/auto.test.ts
+  @@ -0,0 +1,162 @@
+  +import { test } from "bun:test";
+  +import { startAutoUpdateLoop, getInstalledUpdate, subscribeInstalledUpdate } from "./auto.ts";
+  +import { CPE_VERSION } from "../version.ts";
+  +
+  +// Mock implementations
+  +let mockFetchLatestTag: () => Promise<string> = () => Promise.resolve("v1.2.3");
+  +let mockIsNewer: (latest: string, current: string) => boolean = (latest, current) => latest !== current;
+
+... (more changes truncated)
+  +7 -0
+[full diff: rtk git diff --no-compact]
