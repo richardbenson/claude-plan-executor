@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ulid } from 'ulid';
 import { getPrimaryRepo, getRemote } from '../git/repo.js';
-import { createWorktree } from '../git/worktree.js';
+import { createWorktree, removeWorktree, deleteBranch } from '../git/worktree.js';
 import { readConfig } from '../storage/config.js';
 import { writeMeta, updateMeta, getLogsDir, extractPhaseTitle } from '../storage/meta.js';
 import { enqueue } from '../storage/queue.js';
@@ -86,16 +86,17 @@ export async function queuePlan(
   );
   (box as LiveBox | null)?.close();
   if (!bootstrapResult.success) {
-    console.error(
-      `Bootstrap failed: ${bootstrapResult.failedCommand} (exit ${bootstrapResult.exitCode})`,
-    );
-    console.error(`Run logs at: ${getLogsDir(runId)}/bootstrap.log`);
     try {
       updateMeta(runId, { status: 'failed' });
     } catch {
       // meta may not exist yet
     }
-    process.exit(1);
+    // Throw (don't process.exit) so the caller can tear down the worktree +
+    // branch it created — a left-behind worktree on the feature branch later
+    // poisons unrelated runs (opencode's project resolver follows git to it).
+    throw new Error(
+      `Bootstrap failed: ${bootstrapResult.failedCommand} (exit ${bootstrapResult.exitCode}) — see ${getLogsDir(runId)}/bootstrap.log`,
+    );
   }
 
   const planDir = path.join(worktreePath, 'docs', folder);
@@ -217,5 +218,15 @@ export async function queueCommand(
     process.exit(1);
   }
 
-  await queuePlan(repoPath, folder, runId, worktreePath, config, repoConfig, options?.disableSandbox ?? false, runOptions);
+  try {
+    await queuePlan(repoPath, folder, runId, worktreePath, config, repoConfig, options?.disableSandbox ?? false, runOptions);
+  } catch (err) {
+    // queuePlan failed AFTER the worktree was created (bootstrap error, missing
+    // plan dir, …). Tear down the worktree AND its branch so no git debris is
+    // left to derail a later run; then surface the failure.
+    console.error(String(err instanceof Error ? err.message : err));
+    try { removeWorktree(repoPath, worktreePath, true); } catch { /* best effort */ }
+    try { deleteBranch(repoPath, featureBranch); } catch { /* best effort */ }
+    process.exit(1);
+  }
 }

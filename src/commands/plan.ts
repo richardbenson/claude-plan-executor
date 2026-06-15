@@ -206,7 +206,16 @@ export async function planCommand(
   if (answer.toLowerCase() === 'n') {
     console.log('Run `cpe queue ' + folder + '` to queue it later.');
   } else {
-    await queuePlan(repoPath, folder, runId, worktreePath, config, repoConfig, options?.disableSandbox ?? false, runOptions);
-    console.log('Run `cpe start` to begin execution.');
+    try {
+      await queuePlan(repoPath, folder, runId, worktreePath, config, repoConfig, options?.disableSandbox ?? false, runOptions);
+      console.log('Run `cpe start` to begin execution.');
+    } catch (err) {
+      // queuePlan now throws on a post-worktree failure (bootstrap, etc.) — tear
+      // down the worktree + branch so no git debris is left behind.
+      console.error(String(err instanceof Error ? err.message : err));
+      try { removeWorktree(repoPath, worktreePath, true); } catch { /* best effort */ }
+      try { deleteBranch(repoPath, featureBranch); } catch { /* best effort */ }
+      process.exit(1);
+    }
   }
 }
