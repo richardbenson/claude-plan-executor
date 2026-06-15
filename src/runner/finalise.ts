@@ -62,16 +62,24 @@ export async function finaliseRun(runId: string, bus: ActivityBus, appConfig?: A
     const providerEnv = provider?.env ?? {};
     const spawnEnv = Object.keys(providerEnv).length > 0 ? { ...process.env, ...providerEnv } : undefined;
     const modelArgs = provider?.modelArgs ?? [];
-    const proc = Bun.spawn(['claude', '-p', '--dangerously-skip-permissions', ...modelArgs], {
-      cwd: worktreePath,
-      stdin: fs.openSync(tmpFile, 'r'),
-      stdout: logFd,
-      stderr: logFd,
-      ...(spawnEnv ? { env: spawnEnv } : {}),
-    });
-    exitCode = await proc.exited;
-    try { fs.closeSync(logFd); } catch { /* ignore */ }
-    try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+    // Tail the finalise log into the activity bus so the TUI shows progress —
+    // the structured path was previously un-tailed and the whole finalise looked
+    // idle in the TUI even while claude -p was working (observed 2026-06-15).
+    const stopTail = startOutputTail(logPath, runId, -1, bus);
+    try {
+      const proc = Bun.spawn(['claude', '-p', '--dangerously-skip-permissions', ...modelArgs], {
+        cwd: worktreePath,
+        stdin: fs.openSync(tmpFile, 'r'),
+        stdout: logFd,
+        stderr: logFd,
+        ...(spawnEnv ? { env: spawnEnv } : {}),
+      });
+      exitCode = await proc.exited;
+    } finally {
+      stopTail();
+      try { fs.closeSync(logFd); } catch { /* ignore */ }
+      try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+    }
   } else {
     // Route the summarise step through the opaque harness. Tail the log into
     // the activity bus like phases do — without this the TUI goes silent for
