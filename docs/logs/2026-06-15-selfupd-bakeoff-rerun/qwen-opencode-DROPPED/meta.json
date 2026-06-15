@@ -1,0 +1,101 @@
+{
+  "id": "01KV39Z717WQ3HMJN49VW6VAF7",
+  "primary_repo_path": "/home/ubuntu/Code/cpe-exp/selfupd-qwen-opencode",
+  "worktree_path": "/home/ubuntu/.local/state/cpe/worktrees/01KV39Z717WQ3HMJN49VW6VAF7",
+  "plan_folder": "self-update",
+  "feature_branch": "feature/self-update",
+  "target_branch": "main",
+  "status": "failed",
+  "total_cost_usd": 0,
+  "bootstrapped": true,
+  "sandboxed": true,
+  "skip_permissions": true,
+  "phases": [
+    {
+      "number": 1,
+      "prompt_file": "PHASE_01.prompt.md",
+      "title": "Release checksums (SHA256SUMS)",
+      "status": "complete",
+      "retry_count": 0,
+      "started_at": "2026-06-14T18:40:02.286Z",
+      "head_before": "d35d33cdebde569902ccf061989cdee8b614668a",
+      "session_id": "006db654-4834-4a9e-b14e-754cfff376d2",
+      "completed_at": "2026-06-14T18:45:14.517Z",
+      "commit_sha": "fd525c31482b20e7159fc7bfdab5eb2ccf179382",
+      "summary": "Added SHA256 checksum publication to release pipeline and checksum verification to remote install script. Updated documentation to reflect these changes.",
+      "commit_message": "feat: phase 01 \u2014 publish SHA256SUMS with releases and verify in install.sh",
+      "notes_for_next_phase": "",
+      "blockers": [],
+      "cost_usd": 0,
+      "tokens": {
+        "input_tokens": 393634,
+        "output_tokens": 5753,
+        "cache_read_input_tokens": 373877,
+        "cache_creation_input_tokens": 0
+      },
+      "token_source": "litellm"
+    },
+    {
+      "number": 2,
+      "prompt_file": "PHASE_02.prompt.md",
+      "title": "Updater core module (src/update/)",
+      "status": "complete",
+      "retry_count": 0,
+      "started_at": "2026-06-14T18:45:14.519Z",
+      "head_before": "fd525c31482b20e7159fc7bfdab5eb2ccf179382",
+      "session_id": "76e5c214-bcb3-412a-9399-54ae95821bec",
+      "completed_at": "2026-06-14T18:50:47.141Z",
+      "commit_sha": "84f6e4937b2cb54cf1075fa3fdbb146f8af2e6ad",
+      "summary": "Created the updater core module with version resolution and comparison, verified atomic binary installation, and persisted check-state functionality.",
+      "commit_message": "feat: phase 02 \u2014 self-update core: version check, verified install, check-state",
+      "notes_for_next_phase": "",
+      "blockers": [],
+      "cost_usd": 0,
+      "tokens": {
+        "input_tokens": 507187,
+        "output_tokens": 8339,
+        "cache_read_input_tokens": 498457,
+        "cache_creation_input_tokens": 0
+      },
+      "token_source": "litellm"
+    },
+    {
+      "number": 3,
+      "prompt_file": "PHASE_03.prompt.md",
+      "title": "CLI surface: `cpe update`, config flag, nudge",
+      "status": "complete",
+      "retry_count": 0,
+      "started_at": "2026-06-15T11:00:22.642Z",
+      "head_before": "84f6e4937b2cb54cf1075fa3fdbb146f8af2e6ad",
+      "session_id": "fc767a51-5f9c-494f-b1c7-06e0052f7565",
+      "completed_at": "2026-06-15T11:09:46.600Z",
+      "commit_sha": "9cc1d62d1e732aad7b980af6047fc29275efafce",
+      "summary": "Removed SHA256 checksum generation and verification from the release pipeline and install script, along with associated documentation and phase files.",
+      "commit_message": "feat: phase 01 \u2014 publish SHA256SUMS with releases and verify in install.sh",
+      "notes_for_next_phase": "",
+      "blockers": [],
+      "cost_usd": 0,
+      "tokens": {
+        "input_tokens": 1869908,
+        "output_tokens": 9861,
+        "cache_read_input_tokens": 1810918,
+        "cache_creation_input_tokens": 0
+      },
+      "token_source": "litellm"
+    },
+    {
+      "number": 4,
+      "prompt_file": "PHASE_04.prompt.md",
+      "title": "TUI auto-update loop + footer badge",
+      "status": "pending",
+      "retry_count": 0,
+      "started_at": "2026-06-15T11:09:46.602Z",
+      "head_before": "9cc1d62d1e732aad7b980af6047fc29275efafce",
+      "session_id": "c74bd41f-83c7-41c6-b50e-b36b705abc3d",
+      "failure_reason": "stopped: worktree drifted onto stale feature/self-update lineage (git debris); P01-P03 sound on main"
+    }
+  ],
+  "harness": "opencode",
+  "model": "ls/qwen3-coder:30b",
+  "provider": "homelab-litellm"
+}

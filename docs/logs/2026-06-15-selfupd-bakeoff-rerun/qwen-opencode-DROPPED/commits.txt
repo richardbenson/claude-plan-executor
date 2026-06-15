@@ -1,0 +1,6 @@
+8007436 feat: phase 03 — cpe update command, update_auto flag, post-command nudge
+84f6e49 feat: phase 02 — self-update core: version check, verified install, check-state
+fd525c3 feat: phase 01 — publish SHA256SUMS with releases and verify in install.sh
+d35d33c docs: plan self-update
+2ccd844 Archive 2026-06-13 new-model bake-off: granite4.1:8b in, 80B not worth it, gemma4:26b out
+77f1fe7 Archive plan-vs-vague 31b round: planning advantage narrows, verification gap persists
